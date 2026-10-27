@@ -1,0 +1,15 @@
+.env
+.env.*
+!.env.example
+*.db
+__pycache__/
+.pytest_cache/
+.venv/
+node_modules/
+frontend/static/build/
+dist/
+.format-cache/
+.pip-cache/
+.pip-tmp/
+.ruff-tool/
+frontend/static/uploads/

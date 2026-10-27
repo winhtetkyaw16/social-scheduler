@@ -5,11 +5,11 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import or_, select
 
+from app.core.config import SCHEDULER_POLL_SECONDS
 from app.db.session import SessionLocal
 from app.models import ScheduledPost
 from app.tasks.celery_app import celery_app
 from app.tasks.publish_post import publish_post_task
-from app.core.config import SCHEDULER_POLL_SECONDS
 
 logger = logging.getLogger(__name__)
 
@@ -38,8 +38,9 @@ def dispatch_due_posts(batch_size: int = 100) -> int:
             .where(or_(due_schedule, stale_queued, auto_published_pending))
             .order_by(ScheduledPost.scheduled_at)
             .limit(batch_size)
-            .with_for_update(skip_locked=True)
         )
+        if db.bind is not None and db.bind.dialect.name == "postgresql":
+            stmt = stmt.with_for_update(skip_locked=True)
         posts = list(db.scalars(stmt).all())
         for post in posts:
             if post.status != "published":

@@ -1,11 +1,14 @@
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
+from app.core.security import refresh_token_subject
 from app.models import User
-from app.schemas.auth import Token, UserCreate, UserLogin, UserOut
-from app.services.auth import authenticate_user, issue_access_token, register_user
+from app.schemas.auth import RefreshRequest, Token, UserCreate, UserLogin, UserOut
+from app.services.auth import authenticate_user, issue_token_pair, register_user
 
 router = APIRouter()
 
@@ -33,11 +36,7 @@ def _authenticate(email: str, password: str, db: Session) -> Token:
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    return Token(
-        access_token=issue_access_token(user),
-        full_name=user.full_name,
-        workspace_name=user.workspace_name,
-    )
+    return Token(**issue_token_pair(user))
 
 
 @router.post("/login", response_model=Token)
@@ -53,3 +52,24 @@ def oauth_token(
 ) -> Token:
     """Keep the OAuth2 password-form endpoint used by OAuth2PasswordBearer docs."""
     return _authenticate(form.username, form.password, db)
+
+
+@router.post("/refresh", response_model=Token)
+def refresh(payload: RefreshRequest, db: Session = Depends(get_db)) -> Token:
+    """Exchange a refresh token for a new access token and refresh token."""
+    try:
+        user_id = UUID(refresh_token_subject(payload.refresh_token))
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid refresh token",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
+    user = db.get(User, user_id)
+    if user is None or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid refresh token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return Token(**issue_token_pair(user))

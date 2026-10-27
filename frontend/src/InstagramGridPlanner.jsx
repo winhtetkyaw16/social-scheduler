@@ -12,7 +12,7 @@ function GridTile({ src, caption, video, current = false, index = 0 }) {
 export default function InstagramGridPlanner({ account, posts = [], currentMediaUrl = "", caption = "", isVideo = false }) {
   const safePosts = Array.isArray(posts) ? posts.filter((post) => post && typeof post === "object") : [];
   const previousPosts = safePosts
-    .filter((post) => post.connected_account_id === account?.id && post.status === "published")
+    .filter((post) => post.connected_account_id === account?.id && post.status === "published" && post.provider_post_id)
     .sort((a, b) => new Date(b.published_at || b.scheduled_at || b.created_at) - new Date(a.published_at || a.scheduled_at || a.created_at))
     .slice(0, 8);
   const tiles = [{ id: "current", current: true, src: currentMediaUrl, caption, video: isVideo }, ...previousPosts.map((post, index) => ({

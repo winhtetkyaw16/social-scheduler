@@ -50,7 +50,7 @@ def get_posts(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> list[ScheduledPost]:
-    """List all owned posts and dispatch previously auto-published schedules."""
+    """List owned posts. Legacy rows marked published before a provider id existed are still dispatched."""
     posts = list_posts(db, user.id)
     pending_ids = [str(post.id) for post in posts if _is_pending_immediate_publish(post)]
     if pending_ids:

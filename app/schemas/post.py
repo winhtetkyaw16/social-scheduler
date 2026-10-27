@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, model_validator
 
 
 class PostCreate(BaseModel):
@@ -46,8 +46,20 @@ class PostRead(BaseModel):
     last_error_code: str | None
     last_error_message: str | None
     post_metadata: dict[str, Any]
+    latest_execution_outcome: str | None = None
     created_at: datetime
     updated_at: datetime
+
+    @model_validator(mode="wrap")
+    @classmethod
+    def default_missing_execution_outcome(cls, value, handler):
+        """ORM rows created before a log summary was attached still serialize."""
+        if value is not None and not isinstance(value, dict) and not hasattr(value, "latest_execution_outcome"):
+            try:
+                setattr(value, "latest_execution_outcome", None)
+            except Exception:
+                pass
+        return handler(value)
 
     @field_validator("scheduled_at", "published_at", mode="before")
     @classmethod

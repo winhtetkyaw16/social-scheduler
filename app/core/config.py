@@ -11,8 +11,25 @@ DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./local.db")
 SECRET_KEY = os.getenv("SECRET_KEY", "development-only-change-me")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "14"))
+PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "http://localhost:8000").rstrip("/")
 TOKEN_ENCRYPTION_KEY = os.getenv("TOKEN_ENCRYPTION_KEY", "")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+INSTAGRAM_CLIENT_ID = os.getenv("INSTAGRAM_CLIENT_ID", "")
+INSTAGRAM_CLIENT_SECRET = os.getenv("INSTAGRAM_CLIENT_SECRET", "")
+INSTAGRAM_REDIRECT_URI = os.getenv(
+    "INSTAGRAM_REDIRECT_URI", f"{PUBLIC_BASE_URL}/api/v1/accounts/instagram/callback"
+)
+INSTAGRAM_GRAPH_API_VERSION = os.getenv("INSTAGRAM_GRAPH_API_VERSION", "v24.0")
+LINKEDIN_CLIENT_ID = os.getenv("LINKEDIN_CLIENT_ID", "")
+LINKEDIN_CLIENT_SECRET = os.getenv("LINKEDIN_CLIENT_SECRET", "")
+LINKEDIN_REDIRECT_URI = os.getenv(
+    "LINKEDIN_REDIRECT_URI", f"{PUBLIC_BASE_URL}/api/v1/accounts/linkedin/callback"
+)
+LINKEDIN_VERSION = os.getenv("LINKEDIN_VERSION", "202610")
+X_CLIENT_ID = os.getenv("X_CLIENT_ID", "")
+X_CLIENT_SECRET = os.getenv("X_CLIENT_SECRET", "")
+X_REDIRECT_URI = os.getenv("X_REDIRECT_URI", f"{PUBLIC_BASE_URL}/api/v1/accounts/x/callback")
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", REDIS_URL)
 # Task results are not read by this application, so disable the Redis result
 # backend and its connection attempts entirely.

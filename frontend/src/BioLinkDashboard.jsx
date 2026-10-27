@@ -28,7 +28,7 @@ export default function BioLinkDashboard({ user, accounts = [], posts = [] }) {
   const [savedLabel, setSavedLabel] = useState("Saved on this device");
   const safePosts = Array.isArray(posts) ? posts.filter(Boolean) : [];
   const safeAccounts = Array.isArray(accounts) ? accounts.filter(Boolean) : [];
-  const publishedPosts = useMemo(() => safePosts.filter((post) => post.status === "published"), [safePosts]);
+  const publishedPosts = useMemo(() => safePosts.filter((post) => post.status === "published" && post.provider_post_id), [safePosts]);
 
   useEffect(() => {
     const profile = { profileName, avatarUrl, bio, socialLinks, linkCards };

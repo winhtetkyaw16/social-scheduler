@@ -37,9 +37,17 @@ class UserOut(BaseModel):
 
 
 class Token(BaseModel):
-    """OAuth-compatible bearer access token response."""
+    """Bearer access token plus a refresh token for silent renewal."""
 
     access_token: str
+    refresh_token: str
     token_type: str = "bearer"
+    expires_in: int
     full_name: str = ""
     workspace_name: str = "My Workspace"
+
+
+class RefreshRequest(BaseModel):
+    """Refresh-token exchange used to mint a new access token."""
+
+    refresh_token: str = Field(min_length=1)

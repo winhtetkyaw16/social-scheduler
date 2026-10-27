@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { createRoot } from "react-dom/client";
 import PublishSection, { toLocalInputValue } from "./PublishSection.jsx";
 import LivePreview from "./LivePreview.jsx";
@@ -333,7 +334,170 @@ function ChannelBrandImage({ channelId }) {
   );
 }
 
+function accountPickerName(account) {
+  return String(account.display_name || account.account_name || "").trim() || "Connected account";
+}
+
+function accountPickerHandle(account) {
+  const handle = String(account.platform_account_id || "").trim();
+  const name = accountPickerName(account);
+  if (!handle || handle === name) return "";
+  return handle.startsWith("@") ? handle : `@${handle}`;
+}
+
+function ChannelAccountPicker({ channel, accounts, selectedIds, toggleAccount, onConnect, anchorRef, onClose }) {
+  const pickerRef = useRef(null);
+  const [layout, setLayout] = useState(() => ({
+    top: 0,
+    left: 0,
+    ready: false,
+    sheet: typeof window !== "undefined" && window.matchMedia("(max-width: 639px)").matches,
+  }));
+  const selectedCount = accounts.filter((account) => selectedIds.includes(account.id)).length;
+
+  useLayoutEffect(() => {
+    const place = () => {
+      const sheet = window.matchMedia("(max-width: 639px)").matches;
+      if (sheet) {
+        setLayout((current) => (current.ready && current.sheet ? current : { top: 0, left: 0, ready: true, sheet: true }));
+        return;
+      }
+      const anchor = anchorRef?.current;
+      if (!anchor) return;
+      const rect = anchor.getBoundingClientRect();
+      const width = Math.min(320, window.innerWidth - 24);
+      const height = pickerRef.current?.offsetHeight || 280;
+      const left = Math.max(12, Math.min(rect.left, window.innerWidth - width - 12));
+      const below = rect.bottom + 8;
+      const top = below + height <= window.innerHeight - 12 ? below : Math.max(12, rect.top - height - 8);
+      setLayout((current) => (
+        current.ready && !current.sheet && current.top === top && current.left === left
+          ? current
+          : { top, left, ready: true, sheet: false }
+      ));
+    };
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [anchorRef, accounts.length, selectedCount]);
+
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  useEffect(() => {
+    const close = () => onCloseRef.current?.();
+    const onPointerDown = (event) => {
+      if (pickerRef.current?.contains(event.target) || anchorRef?.current?.contains(event.target)) return;
+      close();
+    };
+    const onKeyDown = (event) => { if (event.key === "Escape") close(); };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [anchorRef]);
+
+  useEffect(() => {
+    if (!layout.sheet) return undefined;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = previous; };
+  }, [layout.sheet]);
+
+  useEffect(() => {
+    pickerRef.current?.focus();
+  }, []);
+
+  function selectAll() {
+    accounts.forEach((account) => {
+      if (!selectedIds.includes(account.id)) toggleAccount(account.id);
+    });
+  }
+
+  function clearSelected() {
+    accounts.forEach((account) => {
+      if (selectedIds.includes(account.id)) toggleAccount(account.id);
+    });
+  }
+
+  const body = (
+    <>
+      {layout.sheet && <div className="mx-auto mt-2.5 h-1 w-10 rounded-full bg-slate-200 dark:bg-slate-700" aria-hidden="true" />}
+      <div className="flex items-start justify-between gap-3 px-3 pb-1 pt-3">
+        <div className="min-w-0">
+          <p className="text-xs font-extrabold text-slate-900 dark:text-slate-100">{channel.label} accounts</p>
+          <p className="mt-0.5 text-[10px] text-slate-500">{selectedCount} of {accounts.length} selected for this post</p>
+        </div>
+        <button type="button" onClick={onClose} className="icon-button !h-7 !w-7 shrink-0" aria-label={`Close ${channel.label} accounts`}><XIcon size={14} /></button>
+      </div>
+      <div className="flex items-center gap-3 px-3 pb-1">
+        <button type="button" onClick={selectAll} disabled={selectedCount === accounts.length} className="text-[10px] font-bold text-indigo-600 disabled:cursor-not-allowed disabled:text-slate-300 dark:text-indigo-300 dark:disabled:text-slate-600">Select all</button>
+        <button type="button" onClick={clearSelected} disabled={selectedCount === 0} className="text-[10px] font-bold text-slate-500 disabled:cursor-not-allowed disabled:text-slate-300 dark:text-slate-400 dark:disabled:text-slate-600">Clear</button>
+      </div>
+      <ul className="max-h-64 space-y-0.5 overflow-y-auto px-2 py-1" aria-label={`${channel.label} accounts`}>
+        {accounts.map((account) => {
+          const checked = selectedIds.includes(account.id);
+          const name = accountPickerName(account);
+          const handle = accountPickerHandle(account);
+          return (
+            <li key={account.id}>
+              <label className={`flex cursor-pointer items-center gap-2.5 rounded-xl px-2 py-2 transition hover:bg-slate-50 dark:hover:bg-slate-800/80 ${checked ? "bg-indigo-50/80 dark:bg-indigo-950/40" : ""}`}>
+                <input type="checkbox" className="h-4 w-4 shrink-0 accent-indigo-600" checked={checked} onChange={() => toggleAccount(account.id)} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-xs font-bold text-slate-800 dark:text-slate-100">{name}</span>
+                  {handle && <span className="block truncate text-[10px] text-slate-400">{handle}</span>}
+                </span>
+              </label>
+            </li>
+          );
+        })}
+      </ul>
+      <div className={`border-t border-slate-100 p-2 dark:border-slate-800 ${layout.sheet ? "pb-[max(12px,env(safe-area-inset-bottom))]" : ""}`}>
+        <button type="button" onClick={() => { onClose?.(); onConnect(channel); }} className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2.5 text-left text-xs font-bold text-indigo-600 transition hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40">
+          <Plus size={14} /> Connect another {channel.label} account
+        </button>
+      </div>
+    </>
+  );
+
+  if (typeof document === "undefined") return null;
+
+  if (layout.sheet) {
+    return createPortal(
+      <div className="modal-backdrop !items-end !justify-center !p-0" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose?.(); }}>
+        <section ref={pickerRef} id="channel-account-picker" role="dialog" aria-modal="true" aria-label={`${channel.label} accounts`} tabIndex={-1} className="modal-card w-full max-w-lg !rounded-b-none !rounded-t-[20px] !p-0 outline-none">
+          {body}
+        </section>
+      </div>,
+      document.body,
+    );
+  }
+
+  return createPortal(
+    <section
+      ref={pickerRef}
+      id="channel-account-picker"
+      role="dialog"
+      aria-label={`${channel.label} accounts`}
+      tabIndex={-1}
+      className="fixed z-[120] w-[min(320px,calc(100vw-24px))] overflow-hidden rounded-2xl border border-slate-200 bg-white text-slate-800 shadow-[0_22px_65px_rgba(15,23,42,.18)] outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+      style={{ top: layout.top, left: layout.left, visibility: layout.ready ? "visible" : "hidden" }}
+    >
+      {body}
+    </section>,
+    document.body,
+  );
+}
+
 function ChannelBar({ accounts, selectedIds, toggleAccount, openConnect }) {
+  const [openChannelId, setOpenChannelId] = useState("");
+  const anchors = useRef({});
   const activeByPlatform = useMemo(() => {
     const map = new Map();
     accounts.filter((account) => account.is_active).forEach((account) => {
@@ -341,15 +505,27 @@ function ChannelBar({ accounts, selectedIds, toggleAccount, openConnect }) {
     });
     return map;
   }, [accounts]);
+  const openChannel = CHANNELS.find((channel) => channel.id === openChannelId) || null;
+  const openAccounts = openChannel ? activeByPlatform.get(openChannel.id) || [] : [];
+
+  function anchorFor(channelId) {
+    if (!anchors.current[channelId]) anchors.current[channelId] = { current: null };
+    return anchors.current[channelId];
+  }
+
   return <section className="surface-card px-4 py-4 sm:px-5">
-    <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><div><h2 className="text-sm font-extrabold">Choose your channels</h2><p className="mt-0.5 text-[11px] text-slate-500">Select one or more connected accounts to publish to.</p></div><span className="inline-flex items-center gap-1.5 text-[10px] font-semibold text-emerald-600"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />{accounts.filter((a) => a.is_active).length} connected</span></div>
+    <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><div><h2 className="text-sm font-extrabold">Choose your channels</h2><p className="mt-0.5 text-[11px] text-slate-500">Open a channel and choose which accounts should receive this post.</p></div><span className="inline-flex items-center gap-1.5 text-[10px] font-semibold text-emerald-600"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />{accounts.filter((a) => a.is_active).length} connected</span></div>
     <div className="flex gap-2 overflow-x-auto pb-1" role="group" aria-label="Select social channels">{CHANNELS.map((channel) => {
       const connected = activeByPlatform.get(channel.id) || [];
-      const selected = connected.some((a) => selectedIds.includes(a.id));
-      return <button key={channel.id} type="button" aria-pressed={selected} onClick={() => connected.length ? connected.forEach((account) => toggleAccount(account.id)) : openConnect(channel)} className={`channel-pill ${selected ? "channel-pill-active" : ""} ${connected.length ? "" : "channel-pill-offline"}`} style={selected ? { "--channel-color": channel.brand } : {}} title={connected.length ? `${connected.length} ${channel.label} account${connected.length === 1 ? "" : "s"} connected` : `${channel.label} is not connected — click to add an account`}>
-        <ChannelBrandImage channelId={channel.id} /><span>{channel.label}</span>{connected.length ? <span className="channel-state-dot" /> : <Plus size={12} className="text-slate-400" />}</button>;
+      const selectedCount = connected.filter((account) => selectedIds.includes(account.id)).length;
+      const selected = selectedCount > 0;
+      const open = openChannelId === channel.id;
+      const label = selectedCount > 0 ? `${channel.label} · ${selectedCount}` : channel.label;
+      return <button key={channel.id} ref={(node) => { anchorFor(channel.id).current = node; }} type="button" aria-pressed={selected} aria-expanded={connected.length ? open : undefined} aria-haspopup={connected.length ? "dialog" : undefined} aria-controls={open ? "channel-account-picker" : undefined} onClick={() => { if (!connected.length) { openConnect(channel); return; } setOpenChannelId((current) => current === channel.id ? "" : channel.id); }} className={`channel-pill ${selected ? "channel-pill-active" : ""} ${connected.length ? "" : "channel-pill-offline"}`} style={selected ? { "--channel-color": channel.brand } : {}} title={connected.length ? (selectedCount ? `${selectedCount} of ${connected.length} ${channel.label} ${connected.length === 1 ? "account" : "accounts"} selected` : `${connected.length} ${channel.label} ${connected.length === 1 ? "account" : "accounts"} connected — click to choose`) : `${channel.label} is not connected — click to add an account`}>
+        <ChannelBrandImage channelId={channel.id} /><span className="whitespace-nowrap">{label}</span>{connected.length ? <ChevronDown size={12} className={`shrink-0 opacity-70 transition-transform ${open ? "rotate-180" : ""}`} /> : <Plus size={12} className="text-slate-400" />}</button>;
     })}</div>
-    {selectedIds.length > 0 && <p className="mt-2 text-[10px] text-slate-500">{selectedIds.length} account{selectedIds.length === 1 ? "" : "s"} selected · Click a selected channel to deselect it</p>}
+    {selectedIds.length > 0 && <p className="mt-2 text-[10px] text-slate-500">{selectedIds.length} account{selectedIds.length === 1 ? "" : "s"} selected · Open a channel to change which accounts receive this post</p>}
+    {openChannel && openAccounts.length > 0 && <ChannelAccountPicker channel={openChannel} accounts={openAccounts} selectedIds={selectedIds} toggleAccount={toggleAccount} onConnect={openConnect} anchorRef={anchorFor(openChannel.id)} onClose={() => setOpenChannelId("")} />}
   </section>;
 }
 

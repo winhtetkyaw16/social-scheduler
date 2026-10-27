@@ -1,7 +1,7 @@
 """Database operations and ownership checks for connected accounts."""
 
 import logging
-from datetime import timezone
+from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import HTTPException
@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.security import encrypt_token
+from app.integrations.registry import supported_platform_names
 from app.models import ConnectedAccount
 from app.schemas.account import AccountCreate
 
@@ -29,6 +30,9 @@ def list_accounts(db: Session, user_id: UUID) -> list[ConnectedAccount]:
 
 def create_account(db: Session, user_id: UUID, payload: AccountCreate) -> ConnectedAccount:
     """Encrypt provider credentials and persist an account owned by the user."""
+    if payload.platform not in supported_platform_names():
+        allowed = ", ".join(sorted(supported_platform_names()))
+        raise HTTPException(status_code=422, detail=f"Unsupported platform. Choose one of: {allowed}")
     expires_at = payload.token_expires_at
     if expires_at is not None:
         if expires_at.tzinfo is None or expires_at.utcoffset() is None:
@@ -72,6 +76,52 @@ def create_account(db: Session, user_id: UUID, payload: AccountCreate) -> Connec
         raise
     db.refresh(account)
     return account
+
+
+def upsert_oauth_account(
+    db: Session,
+    user_id: UUID,
+    *,
+    platform: str,
+    platform_account_id: str,
+    account_name: str,
+    access_token: str,
+    refresh_token: str | None,
+    token_expires_at: datetime | None,
+    scopes: list[str],
+) -> ConnectedAccount:
+    """Store or refresh an OAuth account without returning its tokens."""
+    existing = db.scalar(
+        select(ConnectedAccount).where(
+            ConnectedAccount.user_id == user_id,
+            ConnectedAccount.platform == platform,
+            ConnectedAccount.platform_account_id == platform_account_id,
+        )
+    )
+    if existing is None:
+        return create_account(
+            db,
+            user_id,
+            AccountCreate(
+                platform=platform,
+                platform_account_id=platform_account_id,
+                account_name=account_name,
+                access_token=access_token,
+                refresh_token=refresh_token,
+                token_expires_at=token_expires_at,
+                scopes=scopes,
+            ),
+        )
+    existing.account_name = account_name
+    existing.access_token_ciphertext = encrypt_token(access_token)
+    if refresh_token:
+        existing.refresh_token_ciphertext = encrypt_token(refresh_token)
+    existing.token_expires_at = token_expires_at.astimezone(timezone.utc) if token_expires_at else None
+    existing.scopes = [scope.strip() for scope in scopes]
+    existing.is_active = True
+    db.commit()
+    db.refresh(existing)
+    return existing
 
 
 def get_owned_account(db: Session, user_id: UUID, account_id: UUID) -> ConnectedAccount:

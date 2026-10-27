@@ -9,6 +9,11 @@ from app.integrations.platforms.x import XPlatform
 _PROVIDERS = {"instagram": InstagramPlatform, "linkedin": LinkedInPlatform, "x": XPlatform}
 
 
+def supported_platform_names() -> frozenset[str]:
+    """Return platform ids that have a publisher adapter."""
+    return frozenset(_PROVIDERS)
+
+
 def get_platform(name: str) -> SocialPlatform:
     """Instantiate the adapter registered for a platform name."""
     try:

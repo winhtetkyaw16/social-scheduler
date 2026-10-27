@@ -21,7 +21,10 @@ def publish_post_task(post_id: str) -> dict[str, str]:
     """Claim a post, call its platform adapter, and persist the outcome."""
     db = SessionLocal()
     try:
-        post = db.scalar(select(ScheduledPost).where(ScheduledPost.id == UUID(post_id)).with_for_update())
+        claim = select(ScheduledPost).where(ScheduledPost.id == UUID(post_id))
+        if db.bind is not None and db.bind.dialect.name == "postgresql":
+            claim = claim.with_for_update()
+        post = db.scalar(claim)
         auto_published_pending = bool(
             post
             and post.status == "published"

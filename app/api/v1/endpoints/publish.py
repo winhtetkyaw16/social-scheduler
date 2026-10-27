@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
@@ -61,6 +61,8 @@ def update_draft(item_id: UUID, payload: PublishItemUpdate, db: Session = Depend
     for key, value in payload.model_dump(exclude_unset=True).items():
         if key == "metadata":
             item.metadata_json = value or {}
+        elif key == "scheduled_at":
+            item.scheduled_at = value
         elif value is not None:
             setattr(item, key, value)
     db.commit()
@@ -106,16 +108,39 @@ def list_approvals(db: Session = Depends(get_db), user: User = Depends(get_curre
 
 
 @router.post("/approvals/{item_id}/decision", response_model=PublishItemRead)
-def decide_approval(item_id: UUID, payload: ApprovalDecision, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def decide_approval(
+    item_id: UUID,
+    payload: ApprovalDecision,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     item = _owned_item(db, item_id, user.id)
     if item.status != "pending_approval" or item.approval is None:
         raise HTTPException(status_code=409, detail="This item is not awaiting approval")
+    due_ids: list[str] = []
+    if payload.decision == "approved":
+        from app.services.posts import schedule_posts_for_approved_item
+
+        posts = schedule_posts_for_approved_item(db, user.id, item)
+        now = datetime.now(timezone.utc)
+        for post in posts:
+            scheduled_at = post.scheduled_at
+            if scheduled_at.tzinfo is None:
+                scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
+            if post.status == "scheduled" and post.provider_post_id is None and scheduled_at <= now:
+                due_ids.append(str(post.id))
     item.approval.state = payload.decision
     item.approval.reviewer_id = user.id
     item.approval.comment = payload.comment
     item.approval.decided_at = datetime.now(timezone.utc)
     item.status = "approved" if payload.decision == "approved" else payload.decision
     db.commit()
+    if due_ids:
+        from app.api.v1.endpoints.posts import enqueue_immediate_publish
+
+        for post_id in due_ids:
+            background_tasks.add_task(enqueue_immediate_publish, post_id)
     db.refresh(item)
     return item
 

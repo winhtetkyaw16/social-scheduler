@@ -5,11 +5,17 @@ from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 
 from cryptography.fernet import Fernet, InvalidToken
-from jose import jwt
+from jose import JWTError, jwt
 from passlib.context import CryptContext
 from passlib.exc import UnknownHashError
 
-from app.core.config import ACCESS_TOKEN_EXPIRE_MINUTES, ALGORITHM, SECRET_KEY, TOKEN_ENCRYPTION_KEY
+from app.core.config import (
+    ACCESS_TOKEN_EXPIRE_MINUTES,
+    ALGORITHM,
+    REFRESH_TOKEN_EXPIRE_DAYS,
+    SECRET_KEY,
+    TOKEN_ENCRYPTION_KEY,
+)
 
 # bcrypt_sha256 safely supports long passwords; legacy bcrypt hashes still verify.
 password_context = CryptContext(schemes=["bcrypt_sha256", "bcrypt"], deprecated="auto")
@@ -34,7 +40,27 @@ def create_access_token(subject: str) -> str:
     if not subject:
         raise ValueError("Token subject cannot be empty")
     expires = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    return jwt.encode({"sub": subject, "exp": expires}, SECRET_KEY, algorithm=ALGORITHM)
+    return jwt.encode({"sub": subject, "exp": expires, "typ": "access"}, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def create_refresh_token(subject: str) -> str:
+    """Create a longer-lived refresh JWT. It cannot be used as an API bearer token."""
+    if not subject:
+        raise ValueError("Token subject cannot be empty")
+    expires = datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    return jwt.encode({"sub": subject, "exp": expires, "typ": "refresh"}, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def refresh_token_subject(token: str) -> str:
+    """Return the user id from a refresh token, or raise ValueError."""
+    try:
+        claims = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    except JWTError as exc:
+        raise ValueError("Invalid refresh token") from exc
+    subject = claims.get("sub")
+    if claims.get("typ") != "refresh" or not isinstance(subject, str) or not subject:
+        raise ValueError("Invalid refresh token")
+    return subject
 
 
 def _fernet() -> Fernet:

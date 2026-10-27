@@ -35,7 +35,8 @@ def get_current_user(
     try:
         claims = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         subject = claims.get("sub")
-        if not isinstance(subject, str):
+        token_type = claims.get("typ", "access")
+        if token_type != "access" or not isinstance(subject, str):
             raise credentials_error
         user_id = UUID(subject)
     except (JWTError, TypeError, ValueError, AttributeError):

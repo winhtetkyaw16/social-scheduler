@@ -5,7 +5,8 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.core.security import create_access_token, hash_password, verify_password
+from app.core.config import ACCESS_TOKEN_EXPIRE_MINUTES
+from app.core.security import create_access_token, create_refresh_token, hash_password, verify_password
 from app.models import User, Workspace
 
 
@@ -57,3 +58,15 @@ def authenticate_user(db: Session, email: str, password: str) -> User | None:
 def issue_access_token(user: User) -> str:
     """Create a signed bearer token for a user."""
     return create_access_token(str(user.id))
+
+
+def issue_token_pair(user: User) -> dict[str, str | int]:
+    """Return an access token and a refresh token for a signed-in user."""
+    return {
+        "access_token": create_access_token(str(user.id)),
+        "refresh_token": create_refresh_token(str(user.id)),
+        "token_type": "bearer",
+        "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        "full_name": user.full_name,
+        "workspace_name": user.workspace_name,
+    }

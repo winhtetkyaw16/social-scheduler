@@ -1,14 +1,20 @@
+import os
 from logging.config import fileConfig
 
 from alembic import context
+from dotenv import load_dotenv
 from sqlalchemy import engine_from_config, pool
 
 import app.models  # noqa: F401 -- register every mapped model with Alembic metadata.
-from app.core.config import DATABASE_URL
 from app.db.base import Base
 
+load_dotenv()
+
 config = context.config
-config.set_main_option("sqlalchemy.url", DATABASE_URL.replace("%", "%%"))
+# Read the URL at migration time. Importing app.core.config caches DATABASE_URL
+# from process start, which hides the URL Compose or a test subprocess sets.
+database_url = os.getenv("DATABASE_URL", "sqlite:///./local.db")
+config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
 if config.config_file_name:
     fileConfig(config.config_file_name)
 target_metadata = Base.metadata
@@ -16,7 +22,7 @@ target_metadata = Base.metadata
 
 def run_migrations_offline() -> None:
     context.configure(
-        url=DATABASE_URL,
+        url=database_url,
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},

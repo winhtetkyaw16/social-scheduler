@@ -1,14 +1,38 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Response, status
+from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_db
 from app.models import ConnectedAccount, User
 from app.schemas import AccountCreate, AccountRead
+from app.schemas.account import OAuthStart
 from app.services.accounts import activate_account, create_account, deactivate_account, delete_account, list_accounts
+from app.services.oauth import finish_oauth, start_oauth
 
 router = APIRouter()
+
+
+@router.get("/{platform}/connect", response_model=OAuthStart)
+def begin_oauth(
+    platform: str,
+    user: User = Depends(get_current_user),
+) -> dict[str, str]:
+    """Return the provider authorization URL for X, LinkedIn, or Instagram."""
+    return start_oauth(platform, user.id)
+
+
+@router.get("/{platform}/callback", include_in_schema=True)
+def oauth_callback(
+    platform: str,
+    db: Session = Depends(get_db),
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+) -> RedirectResponse:
+    """Finish OAuth and redirect back to the studio without exposing tokens."""
+    return finish_oauth(db, platform, code=code, state=state, provider_error=error)
 
 
 @router.get("", response_model=list[AccountRead])

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import PublishSection from "./PublishSection.jsx";
+import PublishSection, { toLocalInputValue } from "./PublishSection.jsx";
 import LivePreview from "./LivePreview.jsx";
 import BioLinkDashboard from "./BioLinkDashboard.jsx";
 import ComposerChannelEditor from "./ComposerChannelEditor.jsx";
@@ -25,6 +25,11 @@ import "./styles.css";
 const API_BASE = (import.meta.env.VITE_API_BASE || `${window.location.origin}/api/v1`).replace(/\/$/, "");
 const API_ORIGIN = API_BASE.replace(/\/api\/v1\/?$/, "");
 const TOKEN_KEY = "social_studio_access_token";
+const REFRESH_KEY = "social_studio_refresh_token";
+const OAUTH_PLATFORMS = new Set(["x", "linkedin", "instagram"]);
+let sessionAccessToken = "";
+let sessionRefreshHandler = null;
+let refreshInFlight = null;
 const THEME_KEY = "social_studio_theme";
 const MAX_CHARS = 10000;
 
@@ -68,25 +73,27 @@ function readStoredValue(key) {
   catch { return ""; }
 }
 
-function persistSession(token, user, remember) {
+function persistSession(token, refreshToken, user, remember) {
+  sessionAccessToken = token || "";
   try {
     const destination = remember ? localStorage : sessionStorage;
     const other = remember ? sessionStorage : localStorage;
     destination.setItem(TOKEN_KEY, token);
+    if (refreshToken) destination.setItem(REFRESH_KEY, refreshToken);
     destination.setItem("social_studio_full_name", user.full_name || "");
     destination.setItem("social_studio_workspace_name", user.workspace_name || "");
-    other.removeItem(TOKEN_KEY);
-    other.removeItem("social_studio_full_name");
-    other.removeItem("social_studio_workspace_name");
+    [TOKEN_KEY, REFRESH_KEY, "social_studio_full_name", "social_studio_workspace_name"].forEach((key) => other.removeItem(key));
   } catch {
     // Authentication should still transition if browser storage is disabled.
   }
 }
 
 function clearStoredSession() {
+  sessionAccessToken = "";
   try {
     [localStorage, sessionStorage].forEach((storage) => {
       storage.removeItem(TOKEN_KEY);
+      storage.removeItem(REFRESH_KEY);
       storage.removeItem("social_studio_full_name");
       storage.removeItem("social_studio_workspace_name");
     });
@@ -137,13 +144,53 @@ async function suggestFormatForMedia(files, platform) {
   return supported.includes(candidate) ? candidate : supported.includes("Post") ? "Post" : supported[0];
 }
 
-async function api(path, { token, ...options } = {}) {
+function sessionRemembered() {
+  try { return Boolean(localStorage.getItem(REFRESH_KEY) || localStorage.getItem(TOKEN_KEY)); }
+  catch { return true; }
+}
+
+async function refreshAccessToken() {
+  const refreshToken = readStoredValue(REFRESH_KEY);
+  if (!refreshToken) return "";
+  if (!refreshInFlight) {
+    refreshInFlight = (async () => {
+      let response;
+      try {
+        response = await fetch(`${API_BASE}/auth/refresh`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ refresh_token: refreshToken }),
+        });
+      } catch {
+        return "";
+      }
+      if (!response.ok) return "";
+      const body = await response.json().catch(() => null);
+      if (!body?.access_token) return "";
+      const user = {
+        full_name: body.full_name || readStoredValue("social_studio_full_name"),
+        workspace_name: body.workspace_name || readStoredValue("social_studio_workspace_name"),
+      };
+      persistSession(body.access_token, body.refresh_token || refreshToken, user, sessionRemembered());
+      sessionRefreshHandler?.(body.access_token);
+      return body.access_token;
+    })().finally(() => { refreshInFlight = null; });
+  }
+  return refreshInFlight;
+}
+
+async function api(path, { token, _retried = false, ...options } = {}) {
+  const bearer = token || sessionAccessToken;
   const headers = new Headers(options.headers || {});
-  if (token) headers.set("Authorization", `Bearer ${token}`);
+  if (bearer) headers.set("Authorization", `Bearer ${bearer}`);
   if (options.body && !(options.body instanceof FormData)) headers.set("Content-Type", "application/json");
   let response;
   try { response = await fetch(`${API_BASE}${path}`, { ...options, headers }); }
   catch { throw new Error("Could not reach SocialStudio. Check that the API is running and try again."); }
+  if (response.status === 401 && !_retried && !["/auth/refresh", "/auth/login", "/auth/token"].includes(path)) {
+    const next = await refreshAccessToken();
+    if (next) return api(path, { ...options, token: next, _retried: true });
+  }
   if (response.status === 204) return null;
   const text = await response.text();
   let body = null;
@@ -151,6 +198,8 @@ async function api(path, { token, ...options } = {}) {
   if (!response.ok) throw Object.assign(new Error(getErrorMessage(body, `Request failed (${response.status})`)), { status: response.status });
   return body;
 }
+
+sessionAccessToken = readStoredValue(TOKEN_KEY);
 
 function dateInZone(date, timeZone) {
   return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
@@ -412,9 +461,9 @@ function QuickStudioDialogContent({ tool, file, brightness, setBrightness, contr
 }
 
 function ConnectDialog({ channel, onClose, onConnect, busy, error }) {
-  const [form, setForm] = useState({ platform_account_id: "", account_name: "", access_token: "" });
   if (!channel) return null;
-  return <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}><form onSubmit={(e) => { e.preventDefault(); onConnect(channel.id, form); }} className="modal-card max-w-md" role="dialog" aria-modal="true" aria-labelledby="connect-title"><div className="flex items-start justify-between"><div><span className="eyebrow">CONNECT SOCIAL ACCOUNT</span><h2 id="connect-title" className="mt-1 font-display text-xl font-extrabold">Connect {channel.label}</h2></div><button type="button" onClick={onClose} className="icon-button"><XIcon size={17} /></button></div><p className="mt-2 text-xs leading-5 text-slate-500">Enter a provider-issued access token. SocialStudio encrypts account credentials at rest. OAuth connection is not enabled by this backend.</p><div className="mt-4 space-y-3"><Field label="Account ID"><input required value={form.platform_account_id} onChange={(e) => setForm({ ...form, platform_account_id: e.target.value })} /></Field><Field label="Account name"><input required value={form.account_name} onChange={(e) => setForm({ ...form, account_name: e.target.value })} placeholder="Your brand name" /></Field><Field label="Access token"><input required type="password" autoComplete="off" value={form.access_token} onChange={(e) => setForm({ ...form, access_token: e.target.value })} /></Field></div>{error && <p role="alert" className="mt-3 rounded-xl bg-rose-50 p-3 text-xs text-rose-700">{error}</p>}<div className="mt-5 flex justify-end gap-2"><button type="button" className="secondary-button" onClick={onClose}>Cancel</button><button disabled={busy} className="primary-button !px-5 !py-2.5">{busy ? "Connecting…" : "Connect account"}</button></div></form></div>;
+  const supported = OAUTH_PLATFORMS.has(channel.id);
+  return <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}><div className="modal-card max-w-md" role="dialog" aria-modal="true" aria-labelledby="connect-title"><div className="flex items-start justify-between"><div><span className="eyebrow">CONNECT SOCIAL ACCOUNT</span><h2 id="connect-title" className="mt-1 font-display text-xl font-extrabold">Connect {channel.label}</h2></div><button type="button" onClick={onClose} className="icon-button"><XIcon size={17} /></button></div>{supported ? <p className="mt-2 text-xs leading-5 text-slate-500">You’ll continue to {channel.label} to authorize SocialStudio. The access token is encrypted before it is stored and is never sent back to the browser.</p> : <p className="mt-2 text-xs leading-5 text-slate-500">Publishing is available for X, LinkedIn, and Instagram. {channel.label} can’t be connected, because posts to it would fail.</p>}{error && <p role="alert" className="mt-3 rounded-xl bg-rose-50 p-3 text-xs text-rose-700">{error}</p>}<div className="mt-5 flex justify-end gap-2"><button type="button" className="secondary-button" onClick={onClose}>Cancel</button>{supported && <button type="button" disabled={busy} onClick={() => onConnect(channel.id)} className="primary-button !px-5 !py-2.5">{busy ? "Redirecting…" : `Continue with ${channel.label}`}</button>}</div></div></div>;
 }
 
 function MetricCard({ icon: Icon, label, value, detail, accent, progress, footnote }) {
@@ -433,15 +482,23 @@ function HomeDashboard({ user, accounts, posts, openStudio, openConnect, openPla
   const hour = now.getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
   const weekStart = new Date(now); weekStart.setHours(0, 0, 0, 0); weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7));
-  const weekPosts = posts.filter((post) => { const date = new Date(post.created_at || post.scheduled_at); return date >= weekStart && date <= now; }).length;
+  const confirmedPosts = posts.filter((post) => post.status === "published" && post.provider_post_id);
+  const weekPosts = confirmedPosts.filter((post) => { const date = new Date(post.published_at || post.scheduled_at); return date >= weekStart && date <= now; }).length;
   const weeklyGoal = 5;
-  const completedPosts = posts.filter((post) => post.status === "published");
-  const engagement = completedPosts.reduce((sum, post) => sum + Number(post.post_metadata?.analytics?.engagements ?? post.post_metadata?.metrics?.engagements ?? 0), 0);
-  const comments = completedPosts.reduce((sum, post) => sum + Number(post.post_metadata?.analytics?.comments ?? post.post_metadata?.metrics?.comments ?? 0), 0);
+  const analyticsPosts = confirmedPosts.flatMap((post) => {
+    const analytics = post.post_metadata?.analytics;
+    if (!analytics || analytics.source === "simulated") return [];
+    const engagements = Number(analytics.engagements ?? analytics.engagement_count);
+    const commentCount = Number(analytics.comments ?? analytics.comment_count);
+    return [{ engagements: Number.isFinite(engagements) ? engagements : 0, comments: Number.isFinite(commentCount) ? commentCount : 0 }];
+  });
+  const engagement = analyticsPosts.reduce((sum, item) => sum + item.engagements, 0);
+  const comments = analyticsPosts.reduce((sum, item) => sum + item.comments, 0);
+  const failedPosts = posts.filter((post) => post.status === "failed");
   const activeChannels = accounts.filter((account) => account.is_active);
   const upcoming = posts.filter((post) => ["scheduled", "queued", "publishing"].includes(post.status) && new Date(post.scheduled_at) > now).sort((a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at)).slice(0, 4);
   const stepsDone = [activeChannels.length > 0, posts.length > 0, false].filter(Boolean).length;
-  const postedDayKeys = new Set(posts.filter((post) => post.status === "published").map((post) => new Date(post.published_at || post.created_at).toDateString()));
+  const postedDayKeys = new Set(confirmedPosts.map((post) => new Date(post.published_at || post.created_at).toDateString()));
   let streak = 0;
   const streakCursor = new Date(now); streakCursor.setHours(0, 0, 0, 0);
   if (!postedDayKeys.has(streakCursor.toDateString())) streakCursor.setDate(streakCursor.getDate() - 1);
@@ -453,10 +510,11 @@ function HomeDashboard({ user, accounts, posts, openStudio, openConnect, openPla
     </section>
 
     <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-      <MetricCard icon={Flame} label="Publishing streak" value={`${streak} day${streak === 1 ? "" : "s"}`} detail={streak ? "You’re building a steady rhythm" : "Your next post starts the streak"} accent="metric-violet" footnote={streak ? "Consecutive days with a published post." : "Small, consistent steps make a difference."} />
-      <MetricCard icon={Target} label="Weekly posting goal" value={`${Math.min(weekPosts, weeklyGoal)} / ${weeklyGoal}`} detail="posts this week" accent="metric-blue" progress={(weekPosts / weeklyGoal) * 100} footnote={`${Math.max(weeklyGoal - weekPosts, 0)} more to reach this week’s goal`} />
-      <MetricCard icon={Heart} label="Engagement & comments" value={engagement.toLocaleString()} detail={`${comments.toLocaleString()} comments across published posts`} accent="metric-pink" footnote={completedPosts.length ? `Based on ${completedPosts.length} published post${completedPosts.length === 1 ? "" : "s"}` : "Metrics appear as published posts return analytics"} />
+      <MetricCard icon={Flame} label="Publishing streak" value={`${streak} day${streak === 1 ? "" : "s"}`} detail={streak ? "You’re building a steady rhythm" : "Your next confirmed post starts the streak"} accent="metric-violet" footnote={streak ? "Consecutive days with a provider-confirmed post." : "Only posts with a provider post id count."} />
+      <MetricCard icon={Target} label="Weekly posting goal" value={`${Math.min(weekPosts, weeklyGoal)} / ${weeklyGoal}`} detail="confirmed posts this week" accent="metric-blue" progress={(weekPosts / weeklyGoal) * 100} footnote={`${Math.max(weeklyGoal - weekPosts, 0)} more confirmed posts to reach this week’s goal${failedPosts.length ? ` · ${failedPosts.length} failed` : ""}`} />
+      <MetricCard icon={Heart} label="Engagement & comments" value={analyticsPosts.length ? engagement.toLocaleString() : "—"} detail={analyticsPosts.length ? `${comments.toLocaleString()} comments on posts with provider analytics` : "No provider analytics yet"} accent="metric-pink" footnote={analyticsPosts.length ? `Based on ${analyticsPosts.length} confirmed post${analyticsPosts.length === 1 ? "" : "s"}` : confirmedPosts.length ? `${confirmedPosts.length} confirmed publish${confirmedPosts.length === 1 ? "" : "es"} and no provider metrics` : "Metrics appear only after a provider confirms the post"} />
     </section>
+    {failedPosts.length > 0 && <section className="rounded-2xl border border-rose-200 bg-rose-50/80 p-4 text-xs text-rose-800 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-100"><b>{failedPosts.length} post{failedPosts.length === 1 ? "" : "s"} failed after a provider attempt.</b><ul className="mt-2 space-y-1">{failedPosts.slice(0, 3).map((post) => <li key={post.id}>{post.last_error_message || post.last_error_code || "The provider did not accept this post."}{post.latest_execution_outcome ? ` · log ${post.latest_execution_outcome}` : ""}</li>)}</ul></section>}
 
     <section><div className="mb-3 flex items-end justify-between gap-3"><div><span className="eyebrow">A GREAT PLACE TO START</span><h2 className="mt-1 font-display text-lg font-extrabold tracking-tight">First steps</h2></div><span className="text-[10px] font-semibold text-slate-400">{stepsDone} of 3 complete</span></div><div className="grid gap-3 md:grid-cols-3">
       <button onClick={() => openConnect(activeChannels.length ? CHANNELS.find((channel) => !activeChannels.some((account) => account.platform === channel.id)) || CHANNELS[0] : CHANNELS[0])} className="first-step-card text-left"><span className="first-step-icon bg-indigo-50 text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-300"><Globe2 size={18} /></span><span className="first-step-body"><b>{activeChannels.length ? "Connect another channel" : "Connect a channel"}</b><small>{activeChannels.length ? `${activeChannels.length} active · Add another account` : "Bring your socials into one workspace"}</small></span><span className="step-state"><span className={activeChannels.length ? "step-complete" : "step-number"}>{activeChannels.length ? <Check size={13} /> : "01"}</span><ChevronRight size={15} /></span></button>
@@ -643,7 +701,7 @@ function App() {
     setIsLoggedIn(true);
     setActiveTab("home");
     setLoadError("");
-    persistSession(accessToken, nextUser, remember);
+    persistSession(accessToken, result.refresh_token, nextUser, remember);
     notify({ title: "You’re signed in", message: "Your workspace is ready when you are.", kind: "success" });
   }
 
@@ -714,22 +772,13 @@ function App() {
         scheduled_at: scheduledAt,
         metadata,
       };
-      const now = new Date().toISOString();
-      const isLocalDraft = editingDraftId.startsWith("local-");
-      const draftId = isLocalDraft ? editingDraftId : `local-${globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
-      const savedDraft = {
-        id: draftId,
-        content: payload.content,
-        media_urls: payload.media_urls,
-        post_format: payload.post_format,
-        scheduled_at: scheduledAt,
-        status: "draft",
-        metadata_json: metadata,
-        created_at: isLocalDraft ? localDrafts.find((item) => item.id === draftId)?.created_at || now : now,
-        updated_at: now,
-        local_only: true,
-      };
-      setLocalDrafts((current) => [savedDraft, ...current.filter((item) => item.id !== draftId)]);
+      const draftKey = String(editingDraftId || "");
+      if (draftKey.startsWith("local-")) removeLocalDraft(draftKey);
+      if (draftKey && !draftKey.startsWith("local-")) {
+        await authenticatedFetch(`/publish/drafts/${draftKey}`, { method: "PATCH", body: JSON.stringify(payload) });
+      } else {
+        await authenticatedFetch("/publish/drafts", { method: "POST", body: JSON.stringify(payload) });
+      }
       setEditingDraftId("");
       setFiles([]);
       setChannelFiles({});
@@ -740,7 +789,7 @@ function App() {
       setDate(dateInZone(new Date(Date.now() + 60 * 60 * 1000), localZone));
       setTime(new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(Date.now() + 60 * 60 * 1000)));
       setTimeZone(localZone);
-      notify({ title: "Draft saved successfully", message: "It’s available in Publish → Drafts. You can start a fresh post now.", kind: "success" });
+      notify({ title: "Draft saved", message: "It’s stored in your workspace under Publish → Drafts.", kind: "success" });
     } catch (error) {
       notify({ title: "Couldn’t save draft", message: error.message || "Please try again." });
     } finally {
@@ -750,7 +799,9 @@ function App() {
   }
 
   function openSavedDraft(draft) {
-    const metadata = draft?.metadata_json && typeof draft.metadata_json === "object" ? draft.metadata_json : {};
+    const metadata = draft?.metadata_json && typeof draft.metadata_json === "object" && !Array.isArray(draft.metadata_json)
+      ? draft.metadata_json
+      : (draft?.metadata && typeof draft.metadata === "object" && !Array.isArray(draft.metadata) ? draft.metadata : {});
     const activeAccountIds = new Set(accounts.filter((account) => account.is_active).map((account) => account.id));
     const nextSelectedIds = Array.isArray(metadata.selectedIds) ? metadata.selectedIds.filter((id) => activeAccountIds.has(id)) : [];
     const nextSharedUrls = Array.isArray(metadata.sharedMediaUrls) ? metadata.sharedMediaUrls : (draft.media_urls || []);
@@ -834,14 +885,33 @@ function App() {
     finally { setUploadBusy(false); setSaving(false); }
   }
 
-  async function connectAccount(platform, fields) {
+  async function connectAccount(platform) {
+    if (!OAUTH_PLATFORMS.has(platform)) {
+      setConnectError("Publishing is available for X, LinkedIn, and Instagram.");
+      return;
+    }
     setConnectBusy(true); setConnectError("");
     try {
-      await authenticatedFetch("/accounts", { method: "POST", body: JSON.stringify({ ...fields, platform, scopes: [] }) });
-      await loadWorkspace(token); setConnectChannel(null);
-      notify({ title: "Channel connected", message: "Your account is ready to use.", kind: "success" });
-    } catch (error) { setConnectError(error.message); }
-    finally { setConnectBusy(false); }
+      const result = await authenticatedFetch(`/accounts/${platform}/connect`);
+      if (!result?.authorization_url) throw new Error("The server did not return an authorization URL.");
+      window.location.assign(result.authorization_url);
+    } catch (error) { setConnectError(error.message); setConnectBusy(false); }
+  }
+
+  async function retryQueuedPost(postId) {
+    try {
+      await authenticatedFetch(`/posts/${postId}/retry`, { method: "POST" });
+      await loadWorkspace(token);
+      notify({ title: "Retry queued", message: "The post will publish again after the provider accepts it.", kind: "success" });
+    } catch (error) { notify({ title: "Couldn’t retry", message: error.message }); }
+  }
+
+  async function archiveQueuedPost(postId) {
+    try {
+      await authenticatedFetch(`/posts/${postId}/archive`, { method: "POST" });
+      await loadWorkspace(token);
+      notify({ title: "Post archived", message: "Its history is kept with status archived.", kind: "success" });
+    } catch (error) { notify({ title: "Couldn’t archive", message: error.message }); }
   }
 
   function useLibraryAsset(asset) {
@@ -850,6 +920,21 @@ function App() {
     goToTab("studio");
     notify({ title: "Added to composer", message: `${asset.filename} is ready to attach to your post.`, kind: "success" });
   }
+
+  useEffect(() => { sessionRefreshHandler = (next) => setToken(next); return () => { if (sessionRefreshHandler) sessionRefreshHandler = null; }; }, []);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const connected = params.get("connected");
+    const connectError = params.get("connect_error");
+    if (!connected && !connectError) return;
+    if (connected) notify({ title: "Channel connected", message: `${connected} is ready to schedule. The token stays encrypted on the server.`, kind: "success" });
+    if (connectError) notify({ title: "Couldn’t connect the channel", message: connectError });
+    const url = new URL(window.location.href);
+    url.searchParams.delete("connected");
+    url.searchParams.delete("connect_error");
+    window.history.replaceState({}, "", url.pathname + url.search + url.hash);
+    if (token) void loadWorkspace(token);
+  }, [token, loadWorkspace, notify]);
 
   if (!isLoggedIn || !token) return <><AuthScreen onAuthenticated={handleAuthenticated} dark={dark} toggleTheme={() => setDark((value) => !value)} remember={remember} setRemember={setRemember} /><Toast toast={toast} onClose={() => setToast(null)} /></>;
 
@@ -861,8 +946,16 @@ function App() {
     { id: "community", label: "Community", icon: MessagesSquare },
     { id: "insights", label: "Insights", icon: BarChart3 },
   ];
-  const queuedPosts = posts.filter((post) => ["scheduled", "queued", "publishing"].includes(post.status));
-  const connect = (channel) => { setConnectError(""); setConnectChannel(channel); };
+  const queuedPosts = posts.filter((post) => ["scheduled", "queued", "publishing", "failed"].includes(post.status));
+  const connect = (channel) => {
+    if (!channel) return;
+    if (!OAUTH_PLATFORMS.has(channel.id)) {
+      notify({ title: `${channel.label} isn’t available`, message: "Connect X, LinkedIn, or Instagram. Other networks can’t be scheduled because publishing would fail." });
+      return;
+    }
+    setConnectError("");
+    setConnectChannel(channel);
+  };
   const openStudio = () => goToTab("studio");
 
   return <div className="app-shell min-h-screen transition-colors duration-300">
@@ -900,7 +993,7 @@ function App() {
                 <div className="border-t border-slate-100 pt-4 dark:border-slate-800"><div className="flex flex-wrap gap-2"><button type="button" onClick={() => void saveAsDraft()} disabled={saving || uploadBusy || loadingAccounts} className="secondary-button flex flex-1 items-center justify-center gap-2 !py-3.5">{saving && !uploadBusy ? <LoaderCircle size={16} className="animate-spin" /> : <FileText size={15} />}Save as draft</button><button type="submit" disabled={saving || uploadBusy || loadingAccounts} className="primary-button flex flex-[1.4] items-center justify-center gap-2.5 !py-3.5">{saving || uploadBusy ? <LoaderCircle size={17} className="animate-spin" /> : scheduleMode === "now" ? <Send size={16} /> : <CalendarDays size={16} />}{saving || uploadBusy ? "Preparing your post…" : scheduleMode === "now" ? "Post now" : "Schedule post"}<ArrowRight size={16} className="ml-1" /></button></div><p className="mt-2 text-center text-[9px] text-slate-400">Posts are created separately for each selected account.</p></div>
               </form>
               <aside className="studio-scroll-panel relative z-0 min-w-0 space-y-4 self-start lg:col-span-12 xl:sticky xl:top-20 xl:col-span-5 xl:max-h-[calc(100vh-6rem)] xl:overflow-y-auto xl:overscroll-auto"><RenderErrorBoundary scope="Live preview" compact><LivePreview channelInfo={{ account: previewAccount, platform: previewChannel }} accounts={selectedAccounts} previewId={previewId} setPreviewId={setPreviewId} caption={previewCaption} uploadedMedia={previewFiles} mediaUrls={previewMediaUrls} posts={posts} title={title} format={formatForAccount(previewAccount)} formatsByAccount={formatsByAccount} platformSettingsByAccount={platformSettingsByAccount} destinationUrl={platformSettingsByAccount[previewAccount?.id]?.destination_url || ""} destinationBoard={platformSettingsByAccount[previewAccount?.id]?.board || "Brand inspiration"} device={device} setDevice={setDevice} /></RenderErrorBoundary>
-                <section className="surface-card"><button type="button" onClick={() => setShowQueue((value) => !value)} className="flex w-full items-center justify-between p-4 text-left sm:px-5"><span><span className="eyebrow">YOUR CONTENT</span><span className="mt-1 flex items-center gap-2 font-display text-base font-extrabold">Publishing queue <span className="queue-count">{queuedPosts.length}</span></span></span><ChevronDown size={17} className={`text-slate-400 transition-transform ${showQueue ? "rotate-180" : ""}`} /></button>{showQueue && <div className="max-h-72 space-y-2 overflow-y-auto border-t border-slate-100 p-3 dark:border-slate-800">{queuedPosts.length ? queuedPosts.map((post) => { const account = accounts.find((item) => item.id === post.connected_account_id); return <article key={post.id} className="queue-item"><div className="min-w-0 flex-1"><p className="line-clamp-2 text-xs font-semibold">{post.content}</p><p className="mt-1 text-[10px] text-slate-400">{account?.account_name || account?.platform || "Account"} · {new Date(post.scheduled_at).toLocaleString()}</p></div><span className="status-chip">{post.status}</span></article>; }) : <p className="py-5 text-center text-xs text-slate-400">Your queue is clear. Time for a new idea.</p>}</div>}</section>
+                <section className="surface-card"><button type="button" onClick={() => setShowQueue((value) => !value)} className="flex w-full items-center justify-between p-4 text-left sm:px-5"><span><span className="eyebrow">YOUR CONTENT</span><span className="mt-1 flex items-center gap-2 font-display text-base font-extrabold">Publishing queue <span className="queue-count">{queuedPosts.length}</span></span></span><ChevronDown size={17} className={`text-slate-400 transition-transform ${showQueue ? "rotate-180" : ""}`} /></button>{showQueue && <div className="max-h-72 space-y-2 overflow-y-auto border-t border-slate-100 p-3 dark:border-slate-800">{queuedPosts.length ? queuedPosts.map((post) => { const account = accounts.find((item) => item.id === post.connected_account_id); return <article key={post.id} className="queue-item"><div className="min-w-0 flex-1"><p className="line-clamp-2 text-xs font-semibold">{post.content}</p><p className="mt-1 text-[10px] text-slate-400">{account?.account_name || account?.platform || "Account"} · {new Date(post.scheduled_at).toLocaleString()}{post.provider_post_id ? " · provider confirmed" : ""}{post.last_error_message ? ` · ${post.last_error_message}` : ""}</p></div><span className="status-chip" title={post.latest_execution_outcome ? `Last log: ${post.latest_execution_outcome}` : post.status}>{post.status === "published" && post.provider_post_id ? "published" : post.status === "published" ? "unconfirmed" : post.status}</span>{post.status === "failed" && <button type="button" className="text-[10px] font-bold text-indigo-600" onClick={() => void retryQueuedPost(post.id)}>Retry</button>}{["failed", "cancelled"].includes(post.status) && <button type="button" className="text-[10px] font-bold text-slate-500" onClick={() => void archiveQueuedPost(post.id)}>Archive</button>}</article>; }) : <p className="py-5 text-center text-xs text-slate-400">Your queue is clear. Time for a new idea.</p>}</div>}</section>
                 <div className="security-note"><span className="security-lock">⌑</span><span>Workspace is private and secure <span className="mx-1">·</span> Your credentials stay encrypted</span></div>
               </aside>
             </div>

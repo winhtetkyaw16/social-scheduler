@@ -216,14 +216,14 @@ def _media_for_account(metadata: dict, account_id: UUID, fallback: list[str]) ->
     return chosen or [str(url) for url in (fallback or [])]
 
 
-def schedule_posts_for_approved_item(db: Session, user_id: UUID, item: PublishItem) -> list[ScheduledPost]:
-    """Create one scheduled post per account stored on an approved draft."""
+def _resolve_draft_accounts(db: Session, user_id: UUID, item: PublishItem) -> list[ConnectedAccount]:
+    """Resolve active connected accounts stored on a draft publish item."""
     metadata = dict(item.metadata_json or {})
     raw_ids = metadata.get("selectedIds") or metadata.get("selected_ids") or []
     if not isinstance(raw_ids, list) or not raw_ids:
         raise HTTPException(
             status_code=422,
-            detail="This draft has no connected accounts. Open it, select X, LinkedIn, or Instagram, and submit it again.",
+            detail="This draft has no connected accounts. Open it in the composer, select channels, and save again.",
         )
     account_ids: list[UUID] = []
     for raw in raw_ids:
@@ -240,36 +240,69 @@ def schedule_posts_for_approved_item(db: Session, user_id: UUID, item: PublishIt
             )
         ).all()
     )
-    found = {account.id for account in accounts}
-    if any(account_id not in found for account_id in account_ids):
+    by_id = {account.id: account for account in accounts}
+    ordered = [by_id[account_id] for account_id in account_ids if account_id in by_id]
+    if len(ordered) != len(account_ids):
         raise HTTPException(
             status_code=422,
-            detail="One or more selected accounts are not active. Reconnect them before approving.",
+            detail="One or more selected accounts are not active. Reconnect them before scheduling.",
         )
-    unsupported = sorted({account.platform for account in accounts if account.platform not in supported_platform_names()})
+    unsupported = sorted({account.platform for account in ordered if account.platform not in supported_platform_names()})
     if unsupported:
         raise HTTPException(status_code=422, detail=f"Unsupported platform in this draft: {', '.join(unsupported)}")
+    return ordered
 
+
+def materialize_draft_posts(
+    db: Session,
+    user_id: UUID,
+    item: PublishItem,
+    *,
+    when_by_account: dict[UUID, datetime] | None = None,
+    default_when: datetime | None = None,
+    source: str = "draft",
+    idempotency_prefix: str | None = None,
+) -> list[ScheduledPost]:
+    """Create one scheduled post per draft account using shared caption/media metadata."""
+    metadata = dict(item.metadata_json or {})
+    accounts = _resolve_draft_accounts(db, user_id, item)
     now = datetime.now(timezone.utc)
-    scheduled_at = item.scheduled_at
-    if scheduled_at is not None and scheduled_at.tzinfo is None:
-        scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
-    publish_now = metadata.get("scheduleMode") == "now" or scheduled_at is None or scheduled_at <= now
-    when = now if publish_now else scheduled_at
+    prefix = idempotency_prefix or f"{source}:{item.id}"
     created: list[ScheduledPost] = []
     for account in accounts:
-        key = f"approval:{item.id}:{account.id}"
+        when = None
+        if when_by_account and account.id in when_by_account:
+            when = when_by_account[account.id]
+        elif default_when is not None:
+            when = default_when
+        if when is None:
+            raise HTTPException(status_code=422, detail=f"Missing schedule time for {account.account_name}")
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=timezone.utc)
+        if when <= now and source != "approval":
+            # Allow near-now for "post now" style; clamp a few seconds ahead for dispatcher.
+            when = now
+        key = f"{prefix}:{account.id}"
         existing = db.scalar(select(ScheduledPost).where(ScheduledPost.idempotency_key == key))
         if existing is not None:
             created.append(existing)
             continue
         content = _caption_for_account(metadata, account.id, item.content).strip()
         if not content:
-            raise HTTPException(status_code=422, detail=f"Add a caption for {account.account_name} before approving.")
+            raise HTTPException(status_code=422, detail=f"Add a caption for {account.account_name} before scheduling.")
         if len(content) > 10000:
             raise HTTPException(status_code=422, detail=f"The caption for {account.account_name} is too long.")
         formats = metadata.get("formatsByAccount") if isinstance(metadata.get("formatsByAccount"), dict) else {}
         settings = metadata.get("platformSettingsByAccount") if isinstance(metadata.get("platformSettingsByAccount"), dict) else {}
+        account_settings = settings.get(str(account.id)) or {}
+        post_metadata = {
+            "format": formats.get(str(account.id)) or item.post_format,
+            "settings": account_settings,
+            "source": source,
+            "publish_item_id": str(item.id),
+        }
+        if account.platform == "pinterest" and isinstance(account_settings, dict) and account_settings.get("destination_url"):
+            post_metadata["destination_url"] = account_settings["destination_url"]
         post = ScheduledPost(
             user_id=user_id,
             connected_account_id=account.id,
@@ -278,14 +311,101 @@ def schedule_posts_for_approved_item(db: Session, user_id: UUID, item: PublishIt
             scheduled_at=when,
             status="scheduled",
             idempotency_key=key,
-            post_metadata={
-                "format": formats.get(str(account.id)) or item.post_format,
-                "settings": settings.get(str(account.id)) or {},
-                "source": "approval",
-                "publish_item_id": str(item.id),
-            },
+            post_metadata=post_metadata,
         )
         db.add(post)
         created.append(post)
     db.flush()
     return created
+
+
+def schedule_posts_for_approved_item(db: Session, user_id: UUID, item: PublishItem) -> list[ScheduledPost]:
+    """Create one scheduled post per account stored on an approved draft."""
+    metadata = dict(item.metadata_json or {})
+    now = datetime.now(timezone.utc)
+    scheduled_at = item.scheduled_at
+    if scheduled_at is not None and scheduled_at.tzinfo is None:
+        scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
+    publish_now = metadata.get("scheduleMode") == "now" or scheduled_at is None or scheduled_at <= now
+    when = now if publish_now else scheduled_at
+    return materialize_draft_posts(
+        db,
+        user_id,
+        item,
+        default_when=when,
+        source="approval",
+        idempotency_prefix=f"approval:{item.id}",
+    )
+
+
+def schedule_draft_at(
+    db: Session,
+    user_id: UUID,
+    item: PublishItem,
+    scheduled_at: datetime,
+) -> list[ScheduledPost]:
+    """Turn a saved draft into scheduled posts at one exact time."""
+    if item.status not in {"draft", "changes_requested"}:
+        raise HTTPException(status_code=409, detail="Only drafts can be scheduled")
+    if scheduled_at.tzinfo is None:
+        raise HTTPException(status_code=422, detail="scheduled_at must include a timezone")
+    now = datetime.now(timezone.utc)
+    if scheduled_at <= now:
+        raise HTTPException(status_code=422, detail="Choose a future time to schedule this draft")
+    posts = materialize_draft_posts(
+        db,
+        user_id,
+        item,
+        default_when=scheduled_at,
+        source="draft_schedule",
+        idempotency_prefix=f"draft-schedule:{item.id}",
+    )
+    item.scheduled_at = scheduled_at
+    item.status = "scheduled"
+    meta = dict(item.metadata_json or {})
+    meta["scheduleMode"] = "schedule"
+    item.metadata_json = meta
+    db.commit()
+    for post in posts:
+        db.refresh(post)
+    return _attach_execution_summaries(db, posts)
+
+
+def queue_draft(
+    db: Session,
+    user_id: UUID,
+    item: PublishItem,
+    timezone_fallback: str = "UTC",
+) -> list[ScheduledPost]:
+    """Place a draft into the next free queue slot for each selected account."""
+    if item.status not in {"draft", "changes_requested"}:
+        raise HTTPException(status_code=409, detail="Only drafts can be added to the queue")
+    from app.services import queue_slots as queue_slot_service
+
+    accounts = _resolve_draft_accounts(db, user_id, item)
+    allocation = queue_slot_service.allocate_slots(
+        db,
+        user_id,
+        [account.id for account in accounts],
+        timezone_fallback=timezone_fallback or "UTC",
+    )
+    when_by_account = {row.connected_account_id: row.scheduled_at for row in allocation.allocations}
+    posts = materialize_draft_posts(
+        db,
+        user_id,
+        item,
+        when_by_account=when_by_account,
+        source="draft_queue",
+        idempotency_prefix=f"draft-queue:{item.id}",
+    )
+    # Store the earliest slot on the item for list display.
+    times = [row.scheduled_at for row in allocation.allocations]
+    item.scheduled_at = min(times) if times else item.scheduled_at
+    item.status = "scheduled"
+    meta = dict(item.metadata_json or {})
+    meta["scheduleMode"] = "queue"
+    item.metadata_json = meta
+    db.commit()
+    for post in posts:
+        db.refresh(post)
+    return _attach_execution_summaries(db, posts)

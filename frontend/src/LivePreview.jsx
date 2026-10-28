@@ -3,6 +3,7 @@ import {
   Bookmark, CheckCircle2, ChevronLeft, ChevronRight, Heart, Link2, MessageCircle,
   MoreHorizontal, Play, Send, Share2, ThumbsUp,
 } from "lucide-react";
+import { AccountAvatar } from "./ManageAccounts.jsx";
 import InstagramGridPlanner from "./InstagramGridPlanner.jsx";
 import facebookPng from "./assets/facebook.png";
 import instagramPng from "./assets/instagram.png";
@@ -38,8 +39,39 @@ function useMediaUrls(files) {
   return urls;
 }
 
-function Avatar({ name, size = "h-10 w-10" }) {
-  return <span className={`grid ${size} shrink-0 place-items-center rounded-full bg-gradient-to-br from-indigo-600 via-purple-600 to-blue-600 text-xs font-extrabold text-white`}>{(name || "S").trim().slice(0, 1).toUpperCase()}</span>;
+function PreviewChannelBrandImage({ channelId, size = 24 }) {
+  const logo = platformStyles[channelId]?.logo || facebookPng;
+  const pad = size <= 16 ? 1 : size <= 20 ? 1.5 : 3;
+  return (
+    <div
+      className="flex shrink-0 items-center justify-center overflow-hidden rounded-full aspect-square bg-white"
+      style={{ width: size, height: size, padding: pad, backgroundColor: "#fff" }}
+    >
+      <img src={logo} alt="" aria-hidden="true" className="block h-full w-full object-contain" />
+    </div>
+  );
+}
+
+function Avatar({ account, name, size = "h-10 w-10" }) {
+  const resolved =
+    account && typeof account === "object"
+      ? account
+      : { account_name: name || "S", platform: "" };
+  const sizeParts = String(size || "").split(/\s+/).filter(Boolean);
+  const heightToken = sizeParts.find((part) => /^h-\d+$/.test(part));
+  const px = heightToken ? Number(heightToken.slice(2)) * 4 : 40;
+  const extraClass = sizeParts.filter((part) => !/^h-\d+$/.test(part) && !/^w-\d+$/.test(part)).join(" ");
+  return (
+    <span className={`inline-flex shrink-0 ${extraClass}`.trim()}>
+      <AccountAvatar
+        account={resolved}
+        ChannelBrandImage={PreviewChannelBrandImage}
+        size={px}
+        badgeScale={0.45}
+        showBadge
+      />
+    </span>
+  );
 }
 
 function Media({ url, isVideo, className = "", playOverlay = false }) {
@@ -90,7 +122,7 @@ function PhotoCarousel({ items = [], className = "", dotsClassName = "bottom-3",
 function FacebookPreview({ account, caption, mediaItems, mediaLayout }) {
   const name = account?.account_name || "Your Page";
   return <article className="w-full max-w-[320px] overflow-hidden rounded-2xl border border-slate-200 bg-white text-slate-900 shadow-lg">
-    <header className="flex items-center gap-3 p-4"><Avatar name={name} size="h-10 w-10" /><div className="min-w-0 flex-1"><p className="truncate text-sm font-bold">{name}</p><p className="text-xs text-slate-500">Just now · <span aria-label="Public">🌐</span></p></div><MoreHorizontal size={20} className="text-slate-500" /></header>
+    <header className="flex items-center gap-3 p-4"><Avatar account={account} name={name} size="h-10 w-10" /><div className="min-w-0 flex-1"><p className="truncate text-sm font-bold">{name}</p><p className="text-xs text-slate-500">Just now · <span aria-label="Public">🌐</span></p></div><MoreHorizontal size={20} className="text-slate-500" /></header>
     {caption && <p className="whitespace-pre-wrap px-4 pb-3 text-sm leading-6">{caption}</p>}
     <MediaGallery items={mediaItems} layout={mediaLayout} className="aspect-[4/3] w-full" singleClassName="aspect-[4/3] w-full" />
     <div className="flex items-center gap-6 border-t border-slate-100 px-4 py-3 text-xs font-semibold text-slate-500"><span className="flex items-center gap-2"><ThumbsUp size={16} />Like</span><span className="flex items-center gap-2"><MessageCircle size={16} />Comment</span><span className="flex items-center gap-2"><Share2 size={16} />Share</span></div>
@@ -103,7 +135,7 @@ function YouTubePreview({ account, caption, title, mediaItems, format }) {
   return <article className="w-full max-w-[320px] overflow-hidden rounded-2xl border border-slate-200 bg-white text-slate-900 shadow-lg">
     <Media url={videoItem?.url || ""} isVideo={videoItem?.isVideo} playOverlay className="aspect-video w-full" />
     <div className="p-4"><h3 className="line-clamp-2 text-base font-extrabold">{title || (format === "Short" ? "Your Short title" : "Your video title")}</h3><p className="mt-1 text-xs text-slate-500">1.2K views · Just now</p>
-      <div className="mt-4 flex items-center gap-3"><Avatar name={name} size="h-10 w-10" /><div className="min-w-0 flex-1"><p className="flex items-center gap-1 text-xs font-bold">{name}<CheckCircle2 size={13} className="text-slate-500" /></p><p className="text-[10px] text-slate-500">12.4K subscribers</p></div><button type="button" className="rounded-full bg-slate-950 px-4 py-2 text-[10px] font-extrabold text-white">Subscribe</button></div>
+      <div className="mt-4 flex items-center gap-3"><Avatar account={account} name={name} size="h-10 w-10" /><div className="min-w-0 flex-1"><p className="flex items-center gap-1 text-xs font-bold">{name}<CheckCircle2 size={13} className="text-slate-500" /></p><p className="text-[10px] text-slate-500">12.4K subscribers</p></div><button type="button" className="rounded-full bg-slate-950 px-4 py-2 text-[10px] font-extrabold text-white">Subscribe</button></div>
       <p className="mt-4 line-clamp-3 whitespace-pre-wrap rounded-xl bg-slate-100 p-3 text-xs leading-5 text-slate-700">{caption || "Your description will appear here."}</p>
     </div>
   </article>;
@@ -113,7 +145,7 @@ function YouTubeCommunityPreview({ account, caption, mediaItems }) {
   const name = account?.account_name || "Your channel";
   const photos = mediaItems.filter((item) => !item.isVideo);
   return <article className="w-full max-w-[320px] rounded-2xl border border-slate-200 bg-white p-4 text-slate-900 shadow-lg">
-    <header className="flex items-start gap-3"><Avatar name={name} size="h-10 w-10" /><div className="min-w-0 flex-1"><p className="truncate text-xs font-extrabold">{name}</p><p className="text-[10px] text-slate-500">@{name.toLowerCase().replace(/[^a-z0-9]+/g, "")} · Just now</p></div><MoreHorizontal size={18} className="text-slate-500" /></header>
+    <header className="flex items-start gap-3"><Avatar account={account} name={name} size="h-10 w-10" /><div className="min-w-0 flex-1"><p className="truncate text-xs font-extrabold">{name}</p><p className="text-[10px] text-slate-500">@{name.toLowerCase().replace(/[^a-z0-9]+/g, "")} · Just now</p></div><MoreHorizontal size={18} className="text-slate-500" /></header>
     <p className="my-3 whitespace-pre-wrap text-sm leading-6">{caption || "Your community post will appear here."}</p>
     {photos.length > 1 ? <MediaGallery items={photos} layout="Grid" className="aspect-square w-full rounded-xl" singleClassName="aspect-square w-full rounded-xl" /> : photos.length === 1 ? <img src={photos[0].url} alt="Community post attachment" className="aspect-square w-full rounded-xl object-cover" /> : <MediaGallery items={[]} className="aspect-square w-full rounded-xl" singleClassName="aspect-square w-full rounded-xl" />}
     <div className="mt-3 flex items-center gap-5 border-t border-slate-100 pt-3 text-xs font-semibold text-slate-500"><span className="inline-flex items-center gap-1.5"><ThumbsUp size={15} />Like</span><span className="inline-flex items-center gap-1.5"><MessageCircle size={15} />Comment</span><span className="inline-flex items-center gap-1.5"><Share2 size={15} />Share</span></div>
@@ -124,7 +156,7 @@ function XPreview({ account, caption, mediaItems, mediaLayout }) {
   const name = account?.account_name || "Your brand";
   const handle = `@${name.toLowerCase().replace(/[^a-z0-9]+/g, "").slice(0, 15) || "yourbrand"}`;
   return <article className="w-full max-w-[320px] rounded-2xl border border-slate-200 bg-white p-4 text-slate-900 shadow-lg">
-    <div className="flex gap-3"><Avatar name={name} size="h-11 w-11" /><div className="min-w-0 flex-1"><div className="flex items-center gap-1 text-sm"><span className="truncate font-extrabold">{name}</span><CheckCircle2 size={13} className="shrink-0 text-sky-500" /><span className="truncate text-slate-500">{handle} · 1m</span><MoreHorizontal size={17} className="ml-auto shrink-0 text-slate-500" /></div><p className="mt-2 whitespace-pre-wrap text-sm leading-6">{caption || "Your post text will appear here."}</p>
+    <div className="flex gap-3"><Avatar account={account} name={name} size="h-11 w-11" /><div className="min-w-0 flex-1"><div className="flex items-center gap-1 text-sm"><span className="truncate font-extrabold">{name}</span><CheckCircle2 size={13} className="shrink-0 text-sky-500" /><span className="truncate text-slate-500">{handle} · 1m</span><MoreHorizontal size={17} className="ml-auto shrink-0 text-slate-500" /></div><p className="mt-2 whitespace-pre-wrap text-sm leading-6">{caption || "Your post text will appear here."}</p>
       {mediaItems.length > 0 && <MediaGallery items={mediaItems} layout={mediaLayout} className="mt-3 aspect-[16/10] w-full" singleClassName="mt-3 aspect-[16/10] w-full" rounded="rounded-2xl" />}
       <div className="mt-4 flex max-w-sm items-center justify-between text-slate-500"><MessageCircle size={16} /><span className="text-[10px]">24</span><Share2 size={16} /><span className="text-[10px]">18</span><Heart size={16} /><span className="text-[10px]">186</span><Bookmark size={16} /></div>
     </div></div>
@@ -134,7 +166,7 @@ function XPreview({ account, caption, mediaItems, mediaLayout }) {
 function InstagramPreview({ account, caption, mediaItems, mediaLayout }) {
   const name = account?.account_name || "yourbrand";
   return <article className="w-full max-w-[320px] overflow-hidden rounded-2xl border border-slate-200 bg-white text-slate-900 shadow-lg">
-    <header className="flex items-center gap-3 p-3"><Avatar name={name} size="h-9 w-9" /><span className="min-w-0 flex-1 truncate text-xs font-extrabold">{name.toLowerCase().replaceAll(" ", ".")}</span><MoreHorizontal size={18} /></header>
+    <header className="flex items-center gap-3 p-3"><Avatar account={account} name={name} size="h-9 w-9" /><span className="min-w-0 flex-1 truncate text-xs font-extrabold">{name.toLowerCase().replaceAll(" ", ".")}</span><MoreHorizontal size={18} /></header>
     <MediaGallery items={mediaItems} layout={mediaLayout} className="aspect-square w-full" singleClassName="aspect-square w-full" />
     <div className="p-3"><div className="flex items-center gap-4"><Heart size={22} /><MessageCircle size={22} /><Send size={21} /><Bookmark size={21} className="ml-auto" /></div><p className="mt-3 text-xs font-extrabold">1,284 likes</p><p className="mt-1 whitespace-pre-wrap text-xs leading-5"><b>{name.toLowerCase().replaceAll(" ", ".")}</b>{" "}{caption || "Your caption will appear here."}</p><p className="mt-2 text-[10px] uppercase text-slate-400">View all 28 comments</p></div>
   </article>;
@@ -143,7 +175,7 @@ function InstagramPreview({ account, caption, mediaItems, mediaLayout }) {
 function LinkedInPreview({ account, caption, mediaItems, mediaLayout }) {
   const name = account?.account_name || "Your company";
   return <article className="w-full max-w-[320px] overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 text-slate-900 shadow-lg">
-    <header className="flex items-start gap-3"><Avatar name={name} size="h-12 w-12 rounded-lg" /><div className="min-w-0 flex-1"><p className="truncate text-sm font-bold">{name}</p><p className="text-[11px] text-slate-500">Company page · 1m · 🌐</p><p className="text-[10px] text-slate-500">12,450 followers</p></div><MoreHorizontal size={18} /></header>
+    <header className="flex items-start gap-3"><Avatar account={account} name={name} size="h-12 w-12 rounded-lg" /><div className="min-w-0 flex-1"><p className="truncate text-sm font-bold">{name}</p><p className="text-[11px] text-slate-500">Company page · 1m · 🌐</p><p className="text-[10px] text-slate-500">12,450 followers</p></div><MoreHorizontal size={18} /></header>
     <p className="my-3 whitespace-pre-wrap text-sm leading-6">{caption || "Your professional update will appear here."}</p>
     {mediaItems.length > 0 && <MediaGallery items={mediaItems} layout={mediaLayout} className="aspect-video w-full" singleClassName="aspect-video w-full" rounded="rounded-lg" />}
     <div className="mt-3 flex items-center justify-around border-t border-slate-200 pt-3 text-xs font-semibold text-slate-600"><span className="flex items-center gap-2"><ThumbsUp size={17} />Like</span><span className="flex items-center gap-2"><MessageCircle size={17} />Comment</span><span className="flex items-center gap-2"><Share2 size={17} />Repost</span><span className="flex items-center gap-2"><Send size={17} />Send</span></div>
@@ -156,7 +188,7 @@ function TikTokPreview({ account, caption, title, mediaItems }) {
   return <article className="relative aspect-[9/16] w-full max-w-[270px] overflow-hidden rounded-[30px] border-[5px] border-slate-950 bg-slate-950 text-white shadow-xl">
     <Media url={videoItem?.url || ""} isVideo={videoItem?.isVideo} playOverlay className="absolute inset-0 h-full w-full opacity-90" />
     <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/35 to-transparent p-4 pt-20"><p className="text-sm font-extrabold">@{name.toLowerCase().replace(/[^a-z0-9]+/g, "")}</p><p className="mt-2 line-clamp-3 whitespace-pre-wrap text-xs leading-5">{caption || title || "Your TikTok caption appears here."}</p><p className="mt-2 text-[10px]">♫ Original sound · {name}</p></div>
-    <div className="absolute bottom-24 right-3 flex flex-col items-center gap-4"><Avatar name={name} size="h-10 w-10 border-2 border-white" /><div className="grid justify-items-center gap-1"><Heart size={23} fill="white" /><span className="text-[10px]">8.2K</span></div><div className="grid justify-items-center gap-1"><MessageCircle size={22} /><span className="text-[10px]">184</span></div><Share2 size={22} /></div>
+    <div className="absolute bottom-24 right-3 flex flex-col items-center gap-4"><Avatar account={account} name={name} size="h-10 w-10 border-2 border-white" /><div className="grid justify-items-center gap-1"><Heart size={23} fill="white" /><span className="text-[10px]">8.2K</span></div><div className="grid justify-items-center gap-1"><MessageCircle size={22} /><span className="text-[10px]">184</span></div><Share2 size={22} /></div>
     <span className="absolute left-4 top-4 rounded-full bg-black/35 px-3 py-1 text-[10px] font-bold backdrop-blur">For you</span>
   </article>;
 }
@@ -167,7 +199,7 @@ function TikTokPhotoPreview({ account, caption, mediaItems }) {
   return <article className="relative aspect-[9/16] w-full max-w-[270px] overflow-hidden rounded-[30px] border-[5px] border-slate-950 bg-slate-950 text-white shadow-xl">
     <PhotoCarousel items={photos} className="absolute inset-0 h-full w-full" dotsClassName="bottom-28" controlPlacement="tiktok" />
     <header className="absolute inset-x-0 top-0 flex items-center justify-center gap-5 bg-gradient-to-b from-black/65 to-transparent pb-8 pt-5 text-[11px] font-bold"><span className="text-white/70">Following</span><span className="border-b-2 border-white pb-1">For You</span></header>
-    <div className="absolute bottom-28 right-2.5 flex flex-col items-center gap-3.5"><div className="relative mb-1"><Avatar name={name} size="h-10 w-10 border-2 border-white" /><span className="absolute -bottom-1 left-1/2 grid h-4 w-4 -translate-x-1/2 place-items-center rounded-full bg-rose-500 text-[11px] font-extrabold">+</span></div><div className="grid justify-items-center gap-0.5"><Heart size={22} fill="white" /><span className="text-[9px]">8.2K</span></div><div className="grid justify-items-center gap-0.5"><MessageCircle size={21} /><span className="text-[9px]">184</span></div><Bookmark size={19} fill="white" /><Share2 size={20} /></div>
+    <div className="absolute bottom-28 right-2.5 flex flex-col items-center gap-3.5"><div className="relative mb-1"><Avatar account={account} name={name} size="h-10 w-10 border-2 border-white" /><span className="absolute -bottom-1 left-1/2 grid h-4 w-4 -translate-x-1/2 place-items-center rounded-full bg-rose-500 text-[11px] font-extrabold">+</span></div><div className="grid justify-items-center gap-0.5"><Heart size={22} fill="white" /><span className="text-[9px]">8.2K</span></div><div className="grid justify-items-center gap-0.5"><MessageCircle size={21} /><span className="text-[9px]">184</span></div><Bookmark size={19} fill="white" /><Share2 size={20} /></div>
     <footer className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/55 to-transparent px-3 pb-4 pt-14"><span className="inline-flex rounded-full bg-white/20 px-2 py-1 text-[9px] font-extrabold backdrop-blur">▧ Photo</span><p className="mt-2 text-xs font-extrabold">@{name.toLowerCase().replace(/[^a-z0-9]+/g, "")}</p><p className="mt-1 line-clamp-3 whitespace-pre-wrap pr-12 text-[10px] leading-4">{caption || "Your photo post caption appears here."}</p><p className="mt-2 text-[9px]">♫ Original sound · {name}</p></footer>
   </article>;
 }
@@ -181,7 +213,7 @@ function VerticalVideoPreview({ account, caption, title, mediaItems, platformId,
     <div className="absolute inset-x-0 top-0 flex items-center justify-between bg-gradient-to-b from-black/65 to-transparent px-4 pb-8 pt-4"><span className="text-xs font-extrabold">{format === "Story" ? "Story" : isInstagram ? "Reels" : platformId === "youtube" ? "Shorts" : platformId === "tiktok" ? "For You" : "Video"}</span><MoreHorizontal size={18} /></div>
     {format === "Story" && <div className="absolute inset-x-4 top-10 flex gap-1">{[0, 1, 2].map((item) => <span key={item} className="h-0.5 flex-1 rounded-full bg-white/60" />)}</div>}
     <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/35 to-transparent px-4 pb-5 pt-24"><p className="text-xs font-extrabold">{name}</p><p className="mt-2 line-clamp-4 whitespace-pre-wrap text-xs leading-5">{caption || title || "Your video caption appears here."}</p><p className="mt-2 text-[10px]">♫ Original audio · {name}</p></div>
-    <div className="absolute bottom-24 right-3 flex flex-col items-center gap-4"><Avatar name={name} size="h-10 w-10 border-2 border-white" /><div className="grid justify-items-center gap-1"><Heart size={22} fill="white" /><span className="text-[9px]">8.2K</span></div><div className="grid justify-items-center gap-1"><MessageCircle size={21} /><span className="text-[9px]">184</span></div><Share2 size={20} /><Bookmark size={19} /></div>
+    <div className="absolute bottom-24 right-3 flex flex-col items-center gap-4"><Avatar account={account} name={name} size="h-10 w-10 border-2 border-white" /><div className="grid justify-items-center gap-1"><Heart size={22} fill="white" /><span className="text-[9px]">8.2K</span></div><div className="grid justify-items-center gap-1"><MessageCircle size={21} /><span className="text-[9px]">184</span></div><Share2 size={20} /><Bookmark size={19} /></div>
     {mediaItems.length > 1 && <span className="absolute right-3 top-14 rounded-full bg-black/55 px-2 py-1 text-[9px] font-bold">1 / {mediaItems.length}</span>}
   </article>;
 }

@@ -8,9 +8,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.api.deps import get_current_user, get_db
-from app.models import ApprovalWorkflow, MediaAsset, PostInternalComment, PublishItem, ScheduledPost, User
+from app.models import ApprovalWorkflow, ConnectedAccount, MediaAsset, PostInternalComment, PublishItem, ScheduledPost, User
 from app.schemas.publish import (
     ApprovalDecision,
+    DraftActionResult,
+    DraftQueueRequest,
+    DraftScheduleRequest,
     InternalCommentCreate,
     InternalCommentRead,
     MediaAssetRead,
@@ -18,6 +21,16 @@ from app.schemas.publish import (
     PublishItemRead,
     PublishItemUpdate,
 )
+from app.services import posts as posts_service
+from app.schemas.queue import (
+    QueueAllocateRequest,
+    QueueAllocateResponse,
+    QueueNextRead,
+    QueueSlotRead,
+    QueueSlotsReplace,
+    QueueUpcomingItem,
+)
+from app.services import queue_slots as queue_slot_service
 
 router = APIRouter()
 
@@ -77,6 +90,44 @@ def delete_draft(item_id: UUID, db: Session = Depends(get_db), user: User = Depe
         raise HTTPException(status_code=409, detail="This item cannot be deleted in its current state")
     db.delete(item)
     db.commit()
+
+
+
+@router.post("/drafts/{item_id}/schedule", response_model=DraftActionResult)
+def schedule_draft(
+    item_id: UUID,
+    payload: DraftScheduleRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Create scheduled posts from a durable draft at one exact datetime."""
+    item = _owned_item(db, item_id, user.id)
+    posts = posts_service.schedule_draft_at(db, user.id, item, payload.scheduled_at)
+    return DraftActionResult(
+        draft_id=item.id,
+        status=item.status,
+        scheduled_post_ids=[post.id for post in posts],
+        scheduled_at=item.scheduled_at,
+    )
+
+
+@router.post("/drafts/{item_id}/queue", response_model=DraftActionResult)
+def queue_draft(
+    item_id: UUID,
+    payload: DraftQueueRequest | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Place a durable draft into the next free queue slot per selected account."""
+    item = _owned_item(db, item_id, user.id)
+    body = payload or DraftQueueRequest()
+    posts = posts_service.queue_draft(db, user.id, item, timezone_fallback=body.timezone or "UTC")
+    return DraftActionResult(
+        draft_id=item.id,
+        status=item.status,
+        scheduled_post_ids=[post.id for post in posts],
+        scheduled_at=item.scheduled_at,
+    )
 
 
 @router.post("/drafts/{item_id}/submit", response_model=PublishItemRead)
@@ -189,3 +240,69 @@ def add_post_comment(
         "id": comment.id, "post_id": comment.post_id, "user_id": comment.user_id,
         "author_name": user.full_name or user.email, "body": comment.body, "created_at": comment.created_at,
     }
+
+
+@router.get("/queue-slots", response_model=list[QueueSlotRead])
+def get_queue_slots(
+    platform: str | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """List saved weekly posting slots (Buffer-style) for this workspace."""
+    return queue_slot_service.list_slots(db, user.id, platform.strip().lower() if platform else None)
+
+
+@router.put("/queue-slots", response_model=list[QueueSlotRead])
+def put_queue_slots(
+    payload: QueueSlotsReplace,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Replace all weekly slots for one platform."""
+    return queue_slot_service.replace_platform_slots(db, user.id, payload)
+
+
+@router.get("/queue/upcoming", response_model=list[QueueUpcomingItem])
+def get_queue_upcoming(
+    days: int = 14,
+    timezone: str = "UTC",
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Upcoming slot timeline with filled/empty assignments for active accounts."""
+    return queue_slot_service.upcoming_queue(db, user.id, days=days, timezone_fallback=timezone or "UTC")
+
+
+@router.get("/queue/next", response_model=QueueNextRead)
+def get_queue_next(
+    connected_account_id: UUID,
+    timezone: str = "UTC",
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Return the next free queue slot for one connected account."""
+    account = db.scalar(
+        select(ConnectedAccount).where(
+            ConnectedAccount.id == connected_account_id,
+            ConnectedAccount.user_id == user.id,
+            ConnectedAccount.is_active.is_(True),
+        )
+    )
+    if account is None:
+        raise HTTPException(status_code=404, detail="Active connected account not found")
+    return queue_slot_service.next_slot_for_account(
+        db, user.id, account, timezone_fallback=timezone or "UTC"
+    )
+
+
+@router.post("/queue/allocate", response_model=QueueAllocateResponse)
+def post_queue_allocate(
+    payload: QueueAllocateRequest,
+    timezone: str = "UTC",
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Allocate next free slots for several accounts without creating posts yet."""
+    return queue_slot_service.allocate_slots(
+        db, user.id, payload.connected_account_ids, timezone_fallback=timezone or "UTC"
+    )

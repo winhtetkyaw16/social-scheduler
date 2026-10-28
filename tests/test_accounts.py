@@ -21,6 +21,7 @@ def test_create_account_encrypts_and_hides_tokens(client, auth_headers):
             "platform": "x",
             "platform_account_id": "acct-1",
             "account_name": "Brand",
+            "account_type": "user",
             "access_token": secret,
             "refresh_token": refresh,
             "token_expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
@@ -30,6 +31,7 @@ def test_create_account_encrypts_and_hides_tokens(client, auth_headers):
     assert created.status_code == 201, created.text
     body = created.json()
     assert body["platform"] == "x"
+    assert body["account_type"] == "user"
     assert "access_token" not in body
     assert "refresh_token" not in body
     assert "ciphertext" not in created.text
@@ -58,7 +60,7 @@ def test_unsupported_platform_is_rejected(client, auth_headers):
         "/api/v1/accounts",
         headers=headers,
         json={
-            "platform": "facebook",
+            "platform": "myspace",
             "platform_account_id": "page-1",
             "account_name": "Page",
             "access_token": "should-not-be-stored",
@@ -71,3 +73,12 @@ def test_unsupported_platform_is_rejected(client, auth_headers):
     missing = client.get("/api/v1/accounts/x/connect", headers=headers)
     assert missing.status_code == 503
     assert "X_CLIENT_ID" in missing.text
+
+    facebook_missing = client.get("/api/v1/accounts/facebook/connect", headers=headers)
+    assert facebook_missing.status_code == 503
+    assert "FACEBOOK_CLIENT_ID" in facebook_missing.text
+
+    catalog = client.get("/api/v1/accounts/catalog", headers=headers)
+    assert catalog.status_code == 200
+    ids = {row["id"] for row in catalog.json()}
+    assert {"x", "facebook", "threads", "youtube"}.issubset(ids)

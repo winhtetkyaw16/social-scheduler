@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ChevronDown, Expand, Facebook, Globe2, GripVertical, Hash, Instagram, Link2, Linkedin, MapPin, MessageCircle, Pencil, Settings2, Shrink, Smile, Sparkles, Video, X, Youtube } from "lucide-react";
 import EmojiPicker from "./EmojiPicker.jsx";
+import { AccountAvatar } from "./ManageAccounts.jsx";
 import facebookPng from "./assets/facebook.png";
 import instagramPng from "./assets/instagram.png";
 import linkedinPng from "./assets/linkedin.png";
@@ -42,6 +43,20 @@ function BrandIcon({ platform }) {
         aria-hidden="true"
         className="absolute h-[100%] w-[100%] max-w-none scale-100 object-cover"
       />
+    </div>
+  );
+}
+
+/** Brand logo thumb for AccountAvatar badge (Buffer: profile + platform mark). */
+function LocalChannelBrandImage({ channelId, size = 24 }) {
+  const logo = BRAND_PNGS[channelId] || facebookPng;
+  const pad = size <= 16 ? 1 : size <= 20 ? 1.5 : 3;
+  return (
+    <div
+      className="flex shrink-0 items-center justify-center overflow-hidden rounded-full aspect-square bg-white"
+      style={{ width: size, height: size, padding: pad, backgroundColor: "#fff" }}
+    >
+      <img src={logo} alt="" aria-hidden="true" className="block h-full w-full object-contain" />
     </div>
   );
 }
@@ -246,7 +261,7 @@ export default function ComposerChannelEditor({
         const channel = CHANNEL_UI[account.platform] || { label: account.platform || "Channel" };
         const active = account.id === activeAccountId;
         return <button key={account.id} type="button" onClick={() => chooseAccount(account.id)} aria-pressed={active} className={`inline-flex min-w-0 shrink-0 items-center gap-2 rounded-xl border px-3 py-2 text-left transition ${active ? "border-indigo-300 bg-indigo-50 text-indigo-800 shadow-sm ring-2 ring-indigo-500/10 dark:border-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-200" : "border-slate-200 bg-white text-slate-600 hover:border-indigo-200 dark:border-slate-800 dark:bg-slate-950/50 dark:text-slate-300"}`}>
-          <BrandIcon platform={account.platform} />
+          <AccountAvatar account={account} ChannelBrandImage={LocalChannelBrandImage} size={28} badgeScale={0.48} />
           <span className="min-w-0"><span className="block text-[10px] font-extrabold">{channel.label}</span><span className="block max-w-32 truncate text-[9px] opacity-70">{account.account_name || account.platform_account_id || "Connected account"}</span></span>
         </button>;
       })}
@@ -270,7 +285,7 @@ export default function ComposerChannelEditor({
       const inheritsSharedMedia = safeSharedMediaChoices[account.id] !== false;
       const messages = safeWarnings.filter((warning) => warning.account.id === account.id).map((warning) => warning.message);
       return <article key={account.id} className="rounded-2xl border border-slate-200 bg-white p-3 transition dark:border-slate-800 dark:bg-slate-950/30 sm:p-4">
-        <header className="mb-3 flex flex-wrap items-center gap-2.5"><span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-white shadow-sm dark:bg-slate-800"><BrandIcon platform={account.platform} /></span><div className="min-w-0 flex-1"><p className="text-xs font-extrabold">{channel.label}</p><p className="truncate text-[10px] text-slate-500">{account.account_name || account.platform_account_id || "Connected account"}</p></div><span className="text-[10px] font-semibold text-slate-400">{value.length.toLocaleString()}</span><ChannelFormatSelector account={account} format={formatsByAccount[account.id] || "Post"} automatic={!formatOverridesByAccount[account.id]} onSelect={(nextFormat) => setAccountFormat?.(account.id, nextFormat)} /></header>
+        <header className="mb-3 flex flex-wrap items-center gap-2.5"><AccountAvatar account={account} ChannelBrandImage={LocalChannelBrandImage} size={32} badgeScale={0.48} /><div className="min-w-0 flex-1"><p className="text-xs font-extrabold">{channel.label}</p><p className="truncate text-[10px] text-slate-500">{account.account_name || account.platform_account_id || "Connected account"}</p></div><span className="text-[10px] font-semibold text-slate-400">{value.length.toLocaleString()}</span><ChannelFormatSelector account={account} format={formatsByAccount[account.id] || "Post"} automatic={!formatOverridesByAccount[account.id]} onSelect={(nextFormat) => setAccountFormat?.(account.id, nextFormat)} /></header>
         <div className="mb-2 flex items-center justify-between gap-3 rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 py-2 dark:border-slate-800 dark:bg-slate-900/50">
           <div><p className="text-[10px] font-semibold text-slate-700 dark:text-slate-200">Use universal caption</p><p className="mt-0.5 text-[9px] text-slate-400">{inheritsUniversalCaption ? "This account follows your shared caption." : "Write a unique caption for this account."}</p></div>
           <label className="relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center" title="Use universal caption">

@@ -75,3 +75,25 @@ class InternalCommentRead(BaseModel):
     author_name: str
     body: str
     created_at: datetime
+
+
+class DraftScheduleRequest(BaseModel):
+    """Exact datetime for turning a durable draft into scheduled posts."""
+
+    scheduled_at: datetime
+
+
+class DraftQueueRequest(BaseModel):
+    """Optional timezone hint when placing a draft into queue slots."""
+
+    timezone: str = Field(default="UTC", min_length=1, max_length=64)
+
+
+class DraftActionResult(BaseModel):
+    """Draft conversion summary plus the created scheduled posts count."""
+
+    draft_id: UUID
+    status: str
+    scheduled_post_ids: list[UUID]
+    scheduled_at: datetime | None = None
+

@@ -7,7 +7,7 @@ import mimetypes
 import httpx
 
 from app.core.exceptions import ProviderConfigurationError
-from app.integrations.base import ProviderHTTPError, ProviderPublishResult, SocialPlatform
+from app.integrations.base import ProviderHTTPError, ProviderPublishResult, SocialPlatform, provider_delete
 from app.integrations.media_urls import guess_media_kind, local_upload_path, public_media_url
 
 
@@ -15,6 +15,7 @@ class YouTubePlatform(SocialPlatform):
     """Upload one video to the authenticated channel via resumable upload."""
 
     platform = "youtube"
+    supports_remote_delete = True
 
     def publish(self, access_token: str, account_id: str, content: str, media_urls: list[str]) -> ProviderPublishResult:
         if not account_id or not str(account_id).strip():
@@ -92,6 +93,19 @@ class YouTubePlatform(SocialPlatform):
         if not video_id:
             raise RuntimeError("YouTube accepted the upload without returning a video id")
         return ProviderPublishResult(post_id=str(video_id), status_code=uploaded.status_code)
+
+
+    def delete(self, access_token: str, provider_post_id: str) -> None:
+        """Delete a YouTube video by id."""
+        from urllib.parse import quote
+
+        video_id = (provider_post_id or "").strip()
+        if not video_id:
+            raise ProviderConfigurationError("YouTube delete needs a video id.")
+        provider_delete(
+            f"https://www.googleapis.com/youtube/v3/videos?id={quote(video_id, safe='')}",
+            access_token=access_token,
+        )
 
 
 def _title_and_description(content: str) -> tuple[str, str]:

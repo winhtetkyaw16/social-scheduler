@@ -7,7 +7,9 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.security import decrypt_token
 from app.integrations.registry import supported_platform_names
+from app.services.publishing import PublishingError, delete_remote
 from app.models import ConnectedAccount, ExecutionLog, PublishItem, ScheduledPost
 from app.schemas.post import PostCreate, PostUpdate
 
@@ -92,9 +94,20 @@ def list_posts(db: Session, user_id: UUID) -> list[ScheduledPost]:
 
     # Unknown legacy statuses are failed, not published. A due scheduled post
     # stays scheduled until the dispatcher and provider confirm it.
+    # Also repair rows that already have a provider id but lagged on status
+    # (e.g. Graph succeeded while a twin race left status as scheduled).
     changed = False
     valid_statuses = {"draft", "scheduled", "queued", "publishing", "published", "failed", "cancelled", "archived"}
     for post in posts:
+        provider_id = (post.provider_post_id or "").strip()
+        if provider_id and post.status in {"scheduled", "queued", "publishing", "failed"}:
+            post.status = "published"
+            if post.published_at is None:
+                post.published_at = datetime.now(timezone.utc)
+            post.last_error_code = None
+            post.last_error_message = None
+            changed = True
+            continue
         if post.status not in valid_statuses:
             post.status = "failed"
             post.last_error_code = post.last_error_code or "invalid_status"
@@ -148,9 +161,40 @@ def update_post(db: Session, post: ScheduledPost, payload: PostUpdate) -> Schedu
 
 
 def delete_post(db: Session, post: ScheduledPost) -> None:
-    """Delete an owned post unless a provider attempt is in progress."""
+    """Delete an owned post. Remote delete first when the post was published to a network."""
     if post.status == "publishing":
         raise HTTPException(status_code=409, detail="A post cannot be deleted while it is publishing")
+
+    provider_post_id = (post.provider_post_id or "").strip()
+    # Only attempt remote delete when we have a real provider id (not drafts / never-sent).
+    if provider_post_id and not provider_post_id.startswith("inbox:"):
+        account = post.connected_account
+        if account is None:
+            raise HTTPException(
+                status_code=409,
+                detail="Connected account is missing; cannot delete from the social network. The local post was kept.",
+            )
+        try:
+            access_token = decrypt_token(account.access_token_ciphertext)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=409,
+                detail="Could not read the account token. Reconnect the account, then try delete again. The local post was kept.",
+            ) from exc
+        if not access_token:
+            raise HTTPException(
+                status_code=409,
+                detail="This account has no access token. Reconnect it before deleting from the network. The local post was kept.",
+            )
+        try:
+            delete_remote(account.platform, access_token, provider_post_id)
+        except PublishingError as exc:
+            # Fail closed: do not remove the local row when remote delete fails.
+            status = 502 if exc.status_code and exc.status_code >= 500 else 409
+            if exc.code == "remote_delete_unsupported":
+                status = 409
+            raise HTTPException(status_code=status, detail=str(exc)) from exc
+
     db.delete(post)
     db.commit()
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from app.core.exceptions import ProviderConfigurationError
-from app.integrations.base import ProviderPublishResult, SocialPlatform, provider_request
+from app.integrations.base import ProviderPublishResult, SocialPlatform, provider_delete, provider_request
 from app.integrations.media_urls import guess_media_kind, public_media_url
 
 
@@ -11,6 +11,7 @@ class PinterestPlatform(SocialPlatform):
     """Create a Pin on a connected Board from a public image URL."""
 
     platform = "pinterest"
+    supports_remote_delete = True
 
     def publish(self, access_token: str, account_id: str, content: str, media_urls: list[str]) -> ProviderPublishResult:
         board_id = (account_id or "").strip()
@@ -46,3 +47,16 @@ class PinterestPlatform(SocialPlatform):
         if not pin_id:
             raise RuntimeError("Pinterest accepted the request without returning a Pin identifier")
         return ProviderPublishResult(post_id=str(pin_id), status_code=response.status_code)
+
+
+    def delete(self, access_token: str, provider_post_id: str) -> None:
+        """Delete a Pin."""
+        from urllib.parse import quote
+
+        pin_id = (provider_post_id or "").strip()
+        if not pin_id:
+            raise ProviderConfigurationError("Pinterest delete needs a Pin id.")
+        provider_delete(
+            f"https://api.pinterest.com/v5/pins/{quote(pin_id, safe='')}",
+            access_token=access_token,
+        )

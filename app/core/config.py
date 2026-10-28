@@ -1,8 +1,10 @@
 ﻿import os
+from pathlib import Path
 
 from dotenv import load_dotenv
 
-load_dotenv()
+_ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
+load_dotenv(_ENV_FILE, override=False)  # process env (tests, Docker) wins over .env
 
 APP_NAME = os.getenv("APP_NAME", "social-scheduler")
 APP_ENV = os.getenv("APP_ENV", "development").lower()

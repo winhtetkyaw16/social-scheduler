@@ -75,19 +75,24 @@ def save_destinations(db: Session, user_id: UUID, session_id: UUID, destination_
     for dest_id in destination_ids:
         item = by_id[dest_id]
         token_for_dest = item.get("access_token") or access_token
+        dest_platform = str(item.get("platform") or session.platform).strip().lower()
         account = upsert_oauth_account(
             db,
             user_id,
-            platform=session.platform,
+            platform=dest_platform,
             platform_account_id=item["id"],
             account_name=item["name"],
-            account_type=item.get("account_type") or default_account_type(session.platform),
-            parent_account_id=parent_id,
+            account_type=item.get("account_type") or default_account_type(dest_platform),
+            parent_account_id=parent_id if dest_platform == session.platform else None,
             access_token=token_for_dest,
             refresh_token=refresh,
             token_expires_at=session.token_expires_at,
             scopes=list(session.scopes or []),
-            extra_metadata={key: value for key, value in item.items() if key not in {"id", "name", "account_type", "access_token"}},
+            extra_metadata={
+                key: value
+                for key, value in item.items()
+                if key not in {"id", "name", "account_type", "access_token", "platform"}
+            },
         )
         saved.append(account)
     delete_pick_session(db, session)
@@ -96,7 +101,7 @@ def save_destinations(db: Session, user_id: UUID, session_id: UUID, destination_
 
 def _notes_for(platform: str) -> str:
     if platform == "facebook":
-        return "Personal Facebook profiles are not publishable. Choose Pages (and Groups only when Meta returns them for posting)."
+        return "Personal Facebook profiles are not publishable. Choose Pages, Groups (when Meta returns them), and linked Instagram Business accounts."
     if platform == "linkedin":
         return "Choose your personal profile and/or Company/Organization Pages you administer."
     if platform == "youtube":
@@ -112,7 +117,10 @@ def _facebook_destinations(access_token: str) -> list[dict]:
     try:
         pages = httpx.get(
             f"https://graph.facebook.com/{version}/me/accounts",
-            params={"fields": "id,name,access_token,category,tasks,picture.type(large)", "limit": 100},
+            params={
+                "fields": "id,name,access_token,category,tasks,picture.type(large),instagram_business_account{id,username,name,profile_picture_url}",
+                "limit": 100,
+            },
             headers={"Authorization": f"Bearer {access_token}"},
             timeout=30.0,
         )
@@ -120,6 +128,7 @@ def _facebook_destinations(access_token: str) -> list[dict]:
         raise HTTPException(status_code=502, detail="Could not reach Facebook to list Pages.") from exc
     if pages.is_error:
         raise HTTPException(status_code=502, detail="Facebook refused to list Pages for this login.")
+    seen_ig: set[str] = set()
     for page in pages.json().get("data") or []:
         if not isinstance(page, dict) or not page.get("id"):
             continue
@@ -127,6 +136,7 @@ def _facebook_destinations(access_token: str) -> list[dict]:
             "id": str(page["id"]),
             "name": str(page.get("name") or "Facebook Page")[:255],
             "account_type": "page",
+            "platform": "facebook",
             "access_token": page.get("access_token"),
             "category": page.get("category"),
         }
@@ -137,6 +147,26 @@ def _facebook_destinations(access_token: str) -> list[dict]:
             if isinstance(url, str) and url.startswith(("http://", "https://")):
                 item["avatar_url"] = url
         destinations.append(item)
+
+        ig = page.get("instagram_business_account")
+        if isinstance(ig, dict) and ig.get("id"):
+            ig_id = str(ig["id"])
+            if ig_id not in seen_ig:
+                seen_ig.add(ig_id)
+                ig_name = str(ig.get("name") or ig.get("username") or "Instagram")[:255]
+                ig_item = {
+                    "id": ig_id,
+                    "name": ig_name if not ig.get("username") else f"{ig_name} (@{ig.get('username')})"[:255],
+                    "account_type": "business",
+                    "platform": "instagram",
+                    "access_token": page.get("access_token") or access_token,
+                    "linked_facebook_page_id": str(page["id"]),
+                }
+                avatar = ig.get("profile_picture_url")
+                if isinstance(avatar, str) and avatar.startswith(("http://", "https://")):
+                    ig_item["avatar_url"] = avatar
+                destinations.append(ig_item)
+
     # Groups: only include when the Groups API returns manageable groups (often empty without extra app review).
     try:
         groups = httpx.get(
@@ -156,14 +186,15 @@ def _facebook_destinations(access_token: str) -> list[dict]:
                         "id": str(group["id"]),
                         "name": str(group.get("name") or "Facebook Group")[:255],
                         "account_type": "group",
+                        "platform": "facebook",
                     }
                 )
     except httpx.HTTPError:
         pass
     if not destinations:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="No Facebook Pages (or admin Groups) were returned. Personal profiles cannot be used as destinations.",
+            status_code=404,
+            detail="No Facebook Pages (or linked Instagram Business accounts) were returned for this login. Personal profiles are not publishable.",
         )
     return destinations
 
@@ -173,6 +204,7 @@ def _linkedin_destinations(access_token: str, identity: dict) -> list[dict]:
         "id": str(identity.get("id")),
         "name": str(identity.get("name") or "LinkedIn personal profile")[:255],
         "account_type": "personal",
+        "platform": "linkedin",
     }
     if identity.get("avatar_url"):
         personal["avatar_url"] = identity["avatar_url"]
@@ -214,7 +246,7 @@ def _linkedin_destinations(access_token: str, identity: dict) -> list[dict]:
         org_id = str(org).split(":")[-1]
         urn = org if str(org).startswith("urn:") else f"urn:li:organization:{org_id}"
         name = _linkedin_org_name(access_token, urn, headers) or f"LinkedIn organization {org_id}"
-        destinations.append({"id": urn, "name": name[:255], "account_type": "organization"})
+        destinations.append({"id": urn, "name": name[:255], "account_type": "organization", "platform": "linkedin"})
     return destinations
 
 
@@ -258,6 +290,7 @@ def _youtube_destinations(access_token: str) -> list[dict]:
             "id": str(item["id"]),
             "name": str(snippet.get("title") or "YouTube channel")[:255],
             "account_type": "brand_channel" if is_brand else "channel",
+            "platform": "youtube",
             "custom_url": snippet.get("customUrl"),
         }
         thumbs = snippet.get("thumbnails") if isinstance(snippet.get("thumbnails"), dict) else {}
@@ -294,6 +327,7 @@ def _pinterest_destinations(access_token: str, identity: dict) -> list[dict]:
                 "id": str(board["id"]),
                 "name": str(board.get("name") or "Pinterest board")[:255],
                 "account_type": "board",
+                "platform": "pinterest",
                 "parent_user": identity.get("id"),
                 "description": board.get("description"),
             }

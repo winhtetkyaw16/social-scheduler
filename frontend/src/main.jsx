@@ -23,6 +23,9 @@ import tiktokPng from "./assets/tiktok.png";
 import xPng from "./assets/x.png";
 import youtubePng from "./assets/youtube.png";
 import threadsPng from "./assets/threads.png";
+import brandLogoSvg from "./assets/brand/logo.svg";
+import brandWordmarkDark from "./assets/brand/wordmark-dark.png";
+import brandWordmarkLight from "./assets/brand/wordmark-light.png";
 import "./styles.css";
 
 const API_BASE = (import.meta.env.VITE_API_BASE || `${window.location.origin}/api/v1`).replace(/\/$/, "");
@@ -31,12 +34,30 @@ const TOKEN_KEY = "social_studio_access_token";
 const REFRESH_KEY = "social_studio_refresh_token";
 const OAUTH_RETURN_TAB_KEY = "social_studio_oauth_return_tab";
 const OAUTH_PLATFORMS = new Set(["x", "linkedin", "instagram", "facebook", "youtube", "tiktok", "pinterest", "threads"]);
-const PUBLISHABLE_PLATFORMS = new Set(["x", "linkedin", "instagram"]);
+const PUBLISHABLE_PLATFORMS = new Set(["x", "linkedin", "instagram", "facebook", "youtube", "tiktok", "pinterest", "threads"]);
 let sessionAccessToken = "";
 let sessionRefreshHandler = null;
 let refreshInFlight = null;
 const THEME_KEY = "social_studio_theme";
 const MAX_CHARS = 10000;
+
+
+function BrandMark({ size = 28, className = "" }) {
+  return <img src={brandLogoSvg} alt="" width={size} height={size} className={`brand-logo-mark ${className}`.trim()} />;
+}
+
+function BrandWordmark({ variant = "dark", className = "" }) {
+  const src = variant === "light" ? brandWordmarkLight : brandWordmarkDark;
+  void src; return <span role="img" aria-label="SocialStudio" className={`brand-wordmark brand-wordmark-text brand-wordmark-${variant} ${className}`.trim()}><span className="bw-social">social</span><span className="bw-studio">studio</span></span>;
+}
+
+function SidebarBrandLockup({ collapsed, dark }) {
+  if (collapsed) {
+    return <span className="brand-mark brand-mark-image" title="SocialStudio"><BrandMark size={26} /></span>;
+  }
+  return <span className="sidebar-lockup"><span className="brand-mark brand-mark-image"><BrandMark size={26} /></span><BrandWordmark variant={dark ? "light" : "dark"} className="sidebar-wordmark" /></span>;
+}
+
 
 const CHANNELS = [
   { id: "x", label: "X", icon: "𝕏", brand: "#111827", limit: 280 },
@@ -303,7 +324,7 @@ function AuthScreen({ onAuthenticated, dark, toggleTheme, remember, setRemember 
   const shell = dark ? "bg-[#0b1020] text-slate-100" : "bg-[#f6f7fb] text-slate-900";
   return <main className={`min-h-screen ${shell} grid lg:grid-cols-[minmax(0,1.02fr)_minmax(480px,.98fr)]`}>
     <section className="auth-hero relative hidden overflow-hidden px-12 py-10 text-white lg:flex lg:flex-col lg:justify-between xl:px-20">
-      <div className="relative z-10 flex items-center gap-3"><div className="grid h-10 w-10 place-items-center rounded-xl border border-white/15 bg-white/10"><Sparkles size={19} /></div><span className="font-display text-lg font-extrabold tracking-tight">social<span className="text-indigo-300">studio</span></span></div>
+      <div className="relative z-10 flex items-center gap-3"><span className="brand-mark brand-mark-image brand-mark-on-dark"><BrandMark size={30} /></span><BrandWordmark variant="light" className="auth-hero-wordmark" /></div>
       <div className="relative z-10 max-w-xl"><span className="rounded-full border border-indigo-300/20 bg-indigo-300/10 px-3 py-1.5 text-[11px] font-bold uppercase tracking-[.18em] text-indigo-200">Your creative command center</span><h1 className="mt-7 font-display text-5xl font-extrabold leading-[1.08] tracking-[-.055em] xl:text-6xl">Make every post<br /><span className="text-gradient">count.</span></h1><p className="mt-6 max-w-md text-base leading-7 text-slate-300">Create with clarity. Plan with confidence. Bring every channel together in one beautiful workspace.</p>
         <div className="mt-10 space-y-4 text-sm text-slate-200"><div className="flex items-center gap-3"><CheckCircle2 className="text-indigo-300" size={18} />One focused workspace for every channel</div><div className="flex items-center gap-3"><CheckCircle2 className="text-indigo-300" size={18} />A live preview that keeps your content in context</div><div className="flex items-center gap-3"><CheckCircle2 className="text-indigo-300" size={18} />Private, encrypted account credentials</div></div>
       </div>
@@ -311,7 +332,7 @@ function AuthScreen({ onAuthenticated, dark, toggleTheme, remember, setRemember 
     </section>
     <section className="flex min-h-screen flex-col justify-center px-5 py-8 sm:px-10 lg:px-16 xl:px-24">
       <div className="mx-auto w-full max-w-md">
-        <div className="mb-9 flex items-center justify-between lg:justify-end"><div className="flex items-center gap-2 font-display font-extrabold lg:hidden"><Sparkles size={18} className="text-indigo-600" />socialstudio</div><button type="button" onClick={toggleTheme} className="icon-button" aria-label={`Switch to ${dark ? "light" : "dark"} theme`}>{dark ? <Sun size={17} /> : <Moon size={17} />}</button></div>
+        <div className="mb-9 flex items-center justify-between lg:justify-end"><div className="flex items-center gap-2 lg:hidden"><BrandWordmark variant={dark ? "light" : "dark"} className="auth-mobile-wordmark" /></div><button type="button" onClick={toggleTheme} className="icon-button" aria-label={`Switch to ${dark ? "light" : "dark"} theme`}>{dark ? <Sun size={17} /> : <Moon size={17} />}</button></div>
         <span className="text-[11px] font-extrabold uppercase tracking-[.18em] text-indigo-600">Welcome to SocialStudio</span><h2 className="mt-3 font-display text-3xl font-extrabold tracking-[-.045em]">{mode === "login" ? "Welcome back" : "Create your workspace"}</h2><p className="mt-2 text-sm text-slate-500">{mode === "login" ? "Sign in to pick up where your ideas left off." : "A better rhythm for your social starts here."}</p>
         <div className="mt-7 grid grid-cols-2 rounded-xl bg-slate-100 p-1 dark:bg-slate-800"><button onClick={() => { setMode("login"); setError(""); }} className={`rounded-lg py-2.5 text-sm font-bold ${mode === "login" ? "bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white" : "text-slate-500"}`}>Sign in</button><button onClick={() => { setMode("signup"); setError(""); }} className={`rounded-lg py-2.5 text-sm font-bold ${mode === "signup" ? "bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white" : "text-slate-500"}`}>Create account</button></div>
         <form onSubmit={submit} className="mt-6 space-y-4">
@@ -688,37 +709,125 @@ function ConnectDialog({ channel, onClose, onConnect, busy, error }) {
   const supported = OAUTH_PLATFORMS.has(channel.id);
   const canPublish = PUBLISHABLE_PLATFORMS.has(channel.id);
   const typeHints = {
-    facebook: "Facebook Pages are the publishable destinations. Personal profiles are not postable via the Pages API. Groups appear only when Meta returns them.",
-    instagram: "Instagram Business/Creator accounts (not personal profiles).",
+    facebook: "Facebook Pages are the publishable destinations. Personal profiles are not postable via the Pages API. Groups appear only when Meta returns them. Linked Instagram Business accounts appear in the same picker when Meta returns them.",
+    instagram: "Instagram Business/Creator accounts via Instagram Login (not personal profiles).",
     x: "Your X user account.",
     linkedin: "Personal profile and Company/Organization Pages after authorization.",
-    youtube: "YouTube Channel / Brand channel destinations after Google authorization.",
-    tiktok: "TikTok Creator/Business for the Content Posting API.",
-    pinterest: "Pinterest user plus Boards as pin destinations.",
-    threads: "Threads profile via the Meta Threads API. Publishing is available once connected with a valid token.",
+    youtube: "YouTube channels available to the Google account (pick Channel / Brand channel).",
+    tiktok: "TikTok Creator/Business account for the Content Posting API.",
+    pinterest: "Pinterest boards you can pin to (user login is kept as parent).",
+    threads: "Your Threads profile via the Meta Threads API.",
   };
   return <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}><div className="modal-card max-w-md" role="dialog" aria-modal="true" aria-labelledby="connect-title"><div className="flex items-start justify-between"><div><span className="eyebrow">CONNECT SOCIAL ACCOUNT</span><h2 id="connect-title" className="mt-1 font-display text-xl font-extrabold">Connect {channel.label}</h2></div><button type="button" onClick={onClose} className="icon-button"><XIcon size={17} /></button></div>{supported ? <><p className="mt-2 text-xs leading-5 text-slate-500">You'll continue to {channel.label} to authorize SocialStudio. Tokens are encrypted on the server and never returned to the browser.</p><p className="mt-2 text-xs leading-5 text-slate-500">{typeHints[channel.id] || ""}</p><p className="mt-2 text-[11px] font-semibold text-slate-500">{canPublish ? "Scheduling/publishing is available for this network." : "Connect works; publishing needs a publish-ready destination (e.g. Facebook Page) and valid tokens."}</p></> : <p className="mt-2 text-xs leading-5 text-slate-500">{channel.label} is not a connectable network in SocialStudio yet.</p>}{error && <p role="alert" className="mt-3 rounded-xl bg-rose-50 p-3 text-xs text-rose-700">{error}</p>}<div className="mt-5 flex justify-end gap-2"><button type="button" className="secondary-button" onClick={onClose}>Cancel</button>{supported && <button type="button" disabled={busy} onClick={() => onConnect(channel.id)} className="primary-button !px-5 !py-2.5">{busy ? "Redirecting…" : `Continue with ${channel.label}`}</button>}</div></div></div>;
 }
 
-function MetricCard({ icon: Icon, label, value, detail, accent, progress, footnote }) {
+function ConnectChannelPicker({ open, onClose, onPick, onRequestChannel }) {
+  if (!open) return null;
+  const hints = {
+    x: "Profile",
+    facebook: "Page",
+    instagram: "Business or Creator",
+    youtube: "Channel",
+    tiktok: "Business or Personal",
+    linkedin: "Profile or Page",
+    pinterest: "Business or Profile",
+    threads: "Profile",
+  };
+  return (
+    <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal-card max-w-2xl p-5 sm:p-6" role="dialog" aria-modal="true" aria-labelledby="connect-picker-title">
+        <div className="flex items-start justify-between gap-3">
+          <h2 id="connect-picker-title" className="font-display text-xl font-extrabold tracking-tight">Connect a channel</h2>
+          <button type="button" onClick={onClose} className="icon-button" aria-label="Close"><XIcon size={17} /></button>
+        </div>
+        <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3">
+          {CHANNELS.map((channel) => (
+            <button
+              type="button"
+              key={channel.id}
+              onClick={() => onPick(channel)}
+              className="connect-channel-tile"
+            >
+              <ChannelBrandImage channelId={channel.id} size={36} />
+              <span className="mt-3 block text-sm font-bold text-slate-900 dark:text-slate-100">{channel.label}</span>
+              <span className="mt-0.5 block text-[11px] text-slate-500">{hints[channel.id] || "Profile"}</span>
+            </button>
+          ))}
+          <button type="button" onClick={onRequestChannel} className="connect-channel-tile">
+            <span className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300">
+              <Plus size={18} />
+            </span>
+            <span className="mt-3 block text-sm font-bold text-slate-900 dark:text-slate-100">Can&apos;t find it?</span>
+            <span className="mt-0.5 block text-[11px] text-slate-500">Request a channel</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MetricCard({ icon: Icon, label, value, detail, accent, progress, footnote, valueNode, trailing }) {
   return <article className="dashboard-metric group relative overflow-hidden rounded-3xl border border-slate-200/80 bg-white/75 p-5 shadow-[0_12px_36px_rgba(21,32,66,.045)] backdrop-blur-xl transition duration-300 hover:-translate-y-1 hover:shadow-[0_18px_48px_rgba(62,53,160,.10)] dark:border-slate-800 dark:bg-slate-900/75 sm:p-6">
     <div className={`metric-orb ${accent}`} />
-    <div className="relative flex items-start justify-between"><div><p className="text-xs font-semibold text-slate-500 dark:text-slate-400">{label}</p><p className="mt-3 font-display text-3xl font-extrabold tracking-[-.06em] text-slate-900 dark:text-white">{value}</p><p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">{detail}</p></div><span className={`metric-icon ${accent}`}><Icon size={18} /></span></div>
+    <div className="relative flex items-start justify-between"><div><p className="text-xs font-semibold text-slate-500 dark:text-slate-400">{label}</p><p className="mt-3 flex flex-wrap items-center gap-2 font-display text-3xl font-extrabold tracking-[-.06em] text-slate-900 dark:text-white">{valueNode ?? value}{trailing}</p><p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">{detail}</p></div><span className={`metric-icon ${accent}`}><Icon size={18} /></span></div>
     {progress !== undefined && <div className="relative mt-5"><div className="h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800"><div className="h-full rounded-full bg-gradient-to-r from-indigo-600 via-purple-600 to-blue-600 transition-all" style={{ width: `${Math.min(progress, 100)}%` }} /></div><p className="mt-2 text-[10px] font-semibold text-slate-400">{footnote}</p></div>}
     {progress === undefined && <p className="relative mt-5 text-[10px] font-semibold text-slate-400">{footnote}</p>}
   </article>;
 }
 
-function HomeDashboard({ user, accounts, posts, openStudio, openConnect, openPlaceholder, openApiDocs }) {
+function readWeeklyGoal() {
+  try {
+    const raw = Number(localStorage.getItem("social_studio_weekly_goal"));
+    if (Number.isFinite(raw) && raw >= 1 && raw <= 30) return Math.round(raw);
+  } catch { /* Keep default. */ }
+  return 5;
+}
+
+function accountTokenBadge(account) {
+  const raw = account?.token_expires_at || account?.expires_at;
+  if (!raw) return null;
+  const expires = new Date(raw);
+  if (Number.isNaN(expires.getTime())) return null;
+  const msLeft = expires.getTime() - Date.now();
+  if (msLeft <= 0) return { label: "Expired", tone: "expired" };
+  if (msLeft < 7 * 24 * 60 * 60 * 1000) return { label: "Expiring", tone: "expiring" };
+  return null;
+}
+
+function HomeDashboard({ user, accounts, posts, openStudio, openConnect, openPlaceholder, openApiDocs, goToTab, localDrafts = [], onOpenDraft, onRetryPost, request }) {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => { const timer = window.setInterval(() => setNow(new Date()), 60000); return () => window.clearInterval(timer); }, []);
+  const [weeklyGoal, setWeeklyGoal] = useState(readWeeklyGoal);
+  const [editingGoal, setEditingGoal] = useState(false);
+  const [goalDraft, setGoalDraft] = useState(() => String(readWeeklyGoal()));
+  const [publishOpened, setPublishOpened] = useState(() => {
+    try { return localStorage.getItem("social_studio_opened_publish") === "1"; } catch { return false; }
+  });
+  const [hideFirstSteps, setHideFirstSteps] = useState(() => {
+    try { return localStorage.getItem("social_studio_hide_first_steps") === "1"; } catch { return false; }
+  });
+  const [serverDrafts, setServerDrafts] = useState([]);
+
+  useEffect(() => {
+    if (typeof request !== "function") return undefined;
+    let cancelled = false;
+    (async () => {
+      try {
+        const result = await request("/publish/drafts");
+        if (!cancelled) setServerDrafts(Array.isArray(result) ? result.filter(Boolean) : []);
+      } catch {
+        if (!cancelled) setServerDrafts([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [request]);
+
   const firstName = user.full_name?.trim().split(/\s+/)[0] || "there";
   const hour = now.getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
   const weekStart = new Date(now); weekStart.setHours(0, 0, 0, 0); weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7));
   const confirmedPosts = posts.filter((post) => post.status === "published" && post.provider_post_id);
   const weekPosts = confirmedPosts.filter((post) => { const date = new Date(post.published_at || post.scheduled_at); return date >= weekStart && date <= now; }).length;
-  const weeklyGoal = 5;
   const analyticsPosts = confirmedPosts.flatMap((post) => {
     const analytics = post.post_metadata?.analytics;
     if (!analytics || analytics.source === "simulated") return [];
@@ -730,37 +839,308 @@ function HomeDashboard({ user, accounts, posts, openStudio, openConnect, openPla
   const comments = analyticsPosts.reduce((sum, item) => sum + item.comments, 0);
   const failedPosts = posts.filter((post) => post.status === "failed");
   const activeChannels = accounts.filter((account) => account.is_active);
-  const upcoming = posts.filter((post) => ["scheduled", "queued", "publishing"].includes(post.status) && new Date(post.scheduled_at) > now).sort((a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at)).slice(0, 4);
-  const stepsDone = [activeChannels.length > 0, posts.length > 0, false].filter(Boolean).length;
+  const upcoming = posts.filter((post) => ["scheduled", "queued", "publishing"].includes(post.status) && new Date(post.scheduled_at) > now).sort((a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at)).slice(0, 5);
+  const hasScheduledOrQueued = posts.some((post) => ["scheduled", "queued", "publishing"].includes(post.status));
+  const recentDrafts = [...(Array.isArray(localDrafts) ? localDrafts : []), ...serverDrafts]
+    .filter(Boolean)
+    .sort((a, b) => new Date(b.updated_at || b.created_at || 0) - new Date(a.updated_at || a.created_at || 0))
+    .slice(0, 3);
+  const step1Done = activeChannels.length > 0;
+  const step2Done = posts.length > 0 || recentDrafts.length > 0 || (Array.isArray(localDrafts) && localDrafts.length > 0) || serverDrafts.length > 0;
+  const step3Done = publishOpened || hasScheduledOrQueued;
+  const stepsDone = [step1Done, step2Done, step3Done].filter(Boolean).length;
   const postedDayKeys = new Set(confirmedPosts.map((post) => new Date(post.published_at || post.created_at).toDateString()));
   let streak = 0;
   const streakCursor = new Date(now); streakCursor.setHours(0, 0, 0, 0);
   if (!postedDayKeys.has(streakCursor.toDateString())) streakCursor.setDate(streakCursor.getDate() - 1);
   while (postedDayKeys.has(streakCursor.toDateString()) && streak < 365) { streak += 1; streakCursor.setDate(streakCursor.getDate() - 1); }
+
+  function openPublish() {
+    try { localStorage.setItem("social_studio_opened_publish", "1"); } catch { /* Session flag still works. */ }
+    setPublishOpened(true);
+    if (typeof goToTab === "function") goToTab("publish");
+    else openPlaceholder("Publish calendar");
+  }
+
+  function commitWeeklyGoal(raw) {
+    const next = Math.min(30, Math.max(1, Math.round(Number(raw))));
+    const safe = Number.isFinite(next) ? next : 5;
+    setWeeklyGoal(safe);
+    setGoalDraft(String(safe));
+    setEditingGoal(false);
+    try { localStorage.setItem("social_studio_weekly_goal", String(safe)); } catch { /* Goal still applies this session. */ }
+  }
+
+  function openDraftPeek(draft) {
+    if (typeof onOpenDraft === "function") onOpenDraft(draft);
+    else openPublish();
+  }
+
+  function handleChannelClick(account) {
+    const badge = accountTokenBadge(account);
+    const channel = CHANNELS.find((item) => item.id === account.platform);
+    if (badge?.tone === "expired" && channel && typeof openConnect === "function") {
+      openConnect(channel);
+      return;
+    }
+    if (typeof goToTab === "function") goToTab("accounts");
+    else if (channel) openConnect(channel);
+  }
+
   return <div className="animate-fade-up space-y-6 pb-12">
     <section className="dashboard-hero relative overflow-hidden rounded-[30px] border border-white/70 px-6 py-7 shadow-[0_22px_70px_rgba(41,39,112,.12)] backdrop-blur-xl dark:border-slate-700/70 sm:px-8 sm:py-9">
-      <div className="hero-grid" /><div className="relative z-10 flex flex-wrap items-end justify-between gap-5"><div className="max-w-2xl"><span className="inline-flex items-center gap-2 rounded-full border border-white/25 bg-white/10 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[.16em] text-indigo-100 backdrop-blur-md"><Sparkles size={13} />Your creative command center</span><h1 className="mt-5 font-display text-3xl font-extrabold leading-tight tracking-[-.055em] text-white sm:text-[40px]">{greeting}, {firstName}<span className="text-indigo-300">.</span></h1><p className="mt-2 max-w-lg text-sm leading-6 text-slate-300">Your ideas are ready to meet the world. Here’s what’s happening in your workspace.</p><div className="mt-5 flex flex-wrap gap-2"><button onClick={openStudio} className="primary-button inline-flex items-center gap-2 !border-white/20 !bg-gradient-to-r !from-indigo-500 !via-purple-500 !to-blue-500 !px-4 !py-2.5 !shadow-[0_8px_28px_rgba(99,102,241,.35)]"><Plus size={15} />Create a post</button><button onClick={() => openPlaceholder("Calendar")} className="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-[11px] font-bold text-white backdrop-blur-md transition hover:bg-white/15"><CalendarDays size={14} />View calendar</button></div></div><div className="date-badge"><CalendarDays size={15} /><span>{new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric" }).format(now)}</span></div></div>
+      <div className="hero-grid" /><div className="relative z-10 flex flex-wrap items-end justify-between gap-5"><div className="max-w-2xl"><span className="inline-flex items-center gap-2 rounded-full border border-white/25 bg-white/10 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[.16em] text-indigo-100 backdrop-blur-md"><Sparkles size={13} />Your creative command center</span><h1 className="mt-5 font-display text-3xl font-extrabold leading-tight tracking-[-.055em] text-white sm:text-[40px]">{greeting}, {firstName}<span className="text-indigo-300">.</span></h1><p className="mt-2 max-w-lg text-sm leading-6 text-slate-300">Your ideas are ready to meet the world. Here’s what’s happening in your workspace.</p><div className="mt-5 flex flex-wrap gap-2"><button type="button" onClick={openStudio} className="primary-button inline-flex items-center gap-2 !border-white/20 !bg-gradient-to-r !from-indigo-500 !via-purple-500 !to-blue-500 !px-4 !py-2.5 !shadow-[0_8px_28px_rgba(99,102,241,.35)]"><Plus size={15} />Create a post</button><button type="button" onClick={openPublish} className="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-[11px] font-bold text-white backdrop-blur-md transition hover:bg-white/15"><CalendarDays size={14} />View calendar</button></div></div><div className="date-badge"><CalendarDays size={15} /><span>{new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric" }).format(now)}</span></div></div>
       <div className="hero-glow hero-glow-one" /><div className="hero-glow hero-glow-two" />
+    </section>
+
+    <section className="dashboard-panel px-4 py-3.5 sm:px-5">
+      <div className="mb-2.5 flex items-center justify-between gap-3">
+        <div><span className="eyebrow">CONNECTED CHANNELS</span><p className="mt-0.5 text-[10px] text-slate-400">{activeChannels.length ? `${activeChannels.length} active account${activeChannels.length === 1 ? "" : "s"}` : "No accounts connected yet"}</p></div>
+        <button type="button" onClick={() => (activeChannels.length && typeof goToTab === "function" ? goToTab("accounts") : openConnect())} className="text-[10px] font-bold text-indigo-600 hover:text-indigo-700">{activeChannels.length ? "Manage" : "Connect"}</button>
+      </div>
+      {activeChannels.length ? (
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {activeChannels.map((account) => {
+            const platform = CHANNELS.find((item) => item.id === account.platform);
+            const badge = accountTokenBadge(account);
+            return (
+              <button key={account.id} type="button" onClick={() => handleChannelClick(account)} className="inline-flex min-w-[148px] items-center gap-2.5 rounded-2xl border border-slate-200/90 bg-white/80 px-2.5 py-2 text-left transition hover:border-indigo-300 hover:shadow-sm dark:border-slate-700 dark:bg-slate-950/60">
+                <AccountAvatar account={account} ChannelBrandImage={ChannelBrandImage} size={34} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[11px] font-bold text-slate-800 dark:text-slate-100">{account.account_name || platform?.label || "Account"}</span>
+                  <span className="mt-0.5 flex items-center gap-1.5 text-[9px] font-semibold text-slate-400">
+                    <span className="inline-flex items-center gap-1"><ChannelBrandImage channelId={account.platform} size={12} />{platform?.label || account.platform}</span>
+                    {badge && <span className={`rounded-full px-1.5 py-0.5 text-[8px] font-extrabold uppercase tracking-wide ${badge.tone === "expired" ? "bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:text-rose-200" : "bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-200"}`}>{badge.label}</span>}
+                  </span>
+                </span>
+              </button>
+            );
+          })}
+          <button type="button" onClick={() => openConnect()} className="inline-flex min-w-[120px] items-center justify-center gap-1.5 rounded-2xl border border-dashed border-slate-300 px-3 py-2 text-[10px] font-bold text-slate-500 transition hover:border-indigo-300 hover:text-indigo-600 dark:border-slate-600"><Plus size={13} />Add</button>
+        </div>
+      ) : (
+        <button type="button" onClick={() => openConnect()} className="flex w-full items-center justify-between rounded-2xl border border-dashed border-slate-300 bg-slate-50/70 px-4 py-3 text-left dark:border-slate-600 dark:bg-slate-900/40">
+          <span><b className="text-xs text-slate-700 dark:text-slate-200">Connect your first channel</b><span className="mt-0.5 block text-[10px] text-slate-400">Bring social accounts into one workspace</span></span>
+          <ChevronRight size={15} className="text-slate-400" />
+        </button>
+      )}
     </section>
 
     <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
       <MetricCard icon={Flame} label="Publishing streak" value={`${streak} day${streak === 1 ? "" : "s"}`} detail={streak ? "You’re building a steady rhythm" : "Your next confirmed post starts the streak"} accent="metric-violet" footnote={streak ? "Consecutive days with a provider-confirmed post." : "Only posts with a provider post id count."} />
-      <MetricCard icon={Target} label="Weekly posting goal" value={`${Math.min(weekPosts, weeklyGoal)} / ${weeklyGoal}`} detail="confirmed posts this week" accent="metric-blue" progress={(weekPosts / weeklyGoal) * 100} footnote={`${Math.max(weeklyGoal - weekPosts, 0)} more confirmed posts to reach this week’s goal${failedPosts.length ? ` · ${failedPosts.length} failed` : ""}`} />
+      <MetricCard
+        icon={Target}
+        label="Weekly posting goal"
+        value={`${Math.min(weekPosts, weeklyGoal)} / ${weeklyGoal}`}
+        valueNode={editingGoal ? (
+          <input
+            type="number"
+            min={1}
+            max={30}
+            autoFocus
+            value={goalDraft}
+            onChange={(event) => setGoalDraft(event.target.value)}
+            onBlur={() => commitWeeklyGoal(goalDraft)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") commitWeeklyGoal(goalDraft);
+              if (event.key === "Escape") { setEditingGoal(false); setGoalDraft(String(weeklyGoal)); }
+            }}
+            className="w-[4.5rem] rounded-xl border border-indigo-300 bg-white px-2 py-1 text-2xl font-extrabold outline-none dark:border-indigo-700 dark:bg-slate-950"
+            aria-label="Weekly posting goal"
+          />
+        ) : (
+          <button type="button" onClick={() => { setGoalDraft(String(weeklyGoal)); setEditingGoal(true); }} className="text-left transition hover:text-indigo-600" title="Edit weekly goal">
+            {`${Math.min(weekPosts, weeklyGoal)} / ${weeklyGoal}`}
+          </button>
+        )}
+        trailing={!editingGoal ? (
+          <button type="button" onClick={() => { setGoalDraft(String(weeklyGoal)); setEditingGoal(true); }} className="inline-flex rounded-lg p-1 text-slate-400 opacity-70 transition hover:bg-slate-100 hover:text-indigo-600 hover:opacity-100 dark:hover:bg-slate-800" aria-label="Edit weekly goal">
+            <Pencil size={14} />
+          </button>
+        ) : null}
+        detail="confirmed posts this week · click to edit goal"
+        accent="metric-blue"
+        progress={(weekPosts / Math.max(weeklyGoal, 1)) * 100}
+        footnote={`${Math.max(weeklyGoal - weekPosts, 0)} more confirmed posts to reach this week’s goal${failedPosts.length ? ` · ${failedPosts.length} failed` : ""}`}
+      />
       <MetricCard icon={Heart} label="Engagement & comments" value={analyticsPosts.length ? engagement.toLocaleString() : "—"} detail={analyticsPosts.length ? `${comments.toLocaleString()} comments on posts with provider analytics` : "No provider analytics yet"} accent="metric-pink" footnote={analyticsPosts.length ? `Based on ${analyticsPosts.length} confirmed post${analyticsPosts.length === 1 ? "" : "s"}` : confirmedPosts.length ? `${confirmedPosts.length} confirmed publish${confirmedPosts.length === 1 ? "" : "es"} and no provider metrics` : "Metrics appear only after a provider confirms the post"} />
     </section>
-    {failedPosts.length > 0 && <section className="rounded-2xl border border-rose-200 bg-rose-50/80 p-4 text-xs text-rose-800 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-100"><b>{failedPosts.length} post{failedPosts.length === 1 ? "" : "s"} failed after a provider attempt.</b><ul className="mt-2 space-y-1">{failedPosts.slice(0, 3).map((post) => <li key={post.id}>{post.last_error_message || post.last_error_code || "The provider did not accept this post."}{post.latest_execution_outcome ? ` · log ${post.latest_execution_outcome}` : ""}</li>)}</ul></section>}
 
-    <section><div className="mb-3 flex items-end justify-between gap-3"><div><span className="eyebrow">A GREAT PLACE TO START</span><h2 className="mt-1 font-display text-lg font-extrabold tracking-tight">First steps</h2></div><span className="text-[10px] font-semibold text-slate-400">{stepsDone} of 3 complete</span></div><div className="grid gap-3 md:grid-cols-3">
-      <button onClick={() => openConnect(activeChannels.length ? CHANNELS.find((channel) => !activeChannels.some((account) => account.platform === channel.id)) || CHANNELS[0] : CHANNELS[0])} className="first-step-card text-left"><span className="first-step-icon bg-indigo-50 text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-300"><Globe2 size={18} /></span><span className="first-step-body"><b>{activeChannels.length ? "Connect another channel" : "Connect a channel"}</b><small>{activeChannels.length ? `${activeChannels.length} active · Add another account` : "Bring your socials into one workspace"}</small></span><span className="step-state"><span className={activeChannels.length ? "step-complete" : "step-number"}>{activeChannels.length ? <Check size={13} /> : "01"}</span><ChevronRight size={15} /></span></button>
-      <button onClick={openStudio} className="first-step-card text-left"><span className="first-step-icon bg-purple-50 text-purple-600 dark:bg-purple-950/50 dark:text-purple-300"><Sparkles size={18} /></span><span className="first-step-body"><b>Create your first post</b><small>Draft once, preview across channels</small></span><span className="step-state"><span className="step-number">02</span><ChevronRight size={15} /></span></button>
-      <button onClick={openApiDocs} className="first-step-card text-left"><span className="first-step-icon bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-300"><Code2 size={18} /></span><span className="first-step-body"><b>Explore API & automations</b><small>Open the API docs and integration endpoints</small></span><span className="step-state"><span className="step-number">03</span><ChevronRight size={15} /></span></button>
-    </div></section>
+    {failedPosts.length > 0 && (
+      <section className="rounded-2xl border border-rose-200 bg-rose-50/80 p-4 text-xs text-rose-800 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-100">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <b>{failedPosts.length} post{failedPosts.length === 1 ? "" : "s"} failed after a provider attempt.</b>
+          <button type="button" onClick={openPublish} className="text-[10px] font-bold text-rose-700 underline dark:text-rose-200">Open in Publish</button>
+        </div>
+        <ul className="mt-2 space-y-2">
+          {failedPosts.slice(0, 3).map((post) => {
+            const account = accounts.find((item) => item.id === post.connected_account_id);
+            return (
+              <li key={post.id} className="flex flex-wrap items-start justify-between gap-2 rounded-xl bg-white/50 px-3 py-2 dark:bg-rose-950/30">
+                <span className="min-w-0 flex-1">
+                  <span className="line-clamp-1 font-semibold">{post.content || "Untitled post"}</span>
+                  <span className="mt-0.5 block text-[10px] opacity-80">{account?.account_name || account?.platform || "Account"} · {post.last_error_message || post.last_error_code || "The provider did not accept this post."}{post.latest_execution_outcome ? ` · log ${post.latest_execution_outcome}` : ""}</span>
+                </span>
+                <span className="flex shrink-0 items-center gap-2">
+                  {typeof onRetryPost === "function" && <button type="button" onClick={() => void onRetryPost(post.id)} className="rounded-lg bg-rose-600 px-2.5 py-1 text-[10px] font-bold text-white">Retry</button>}
+                  <button type="button" onClick={openPublish} className="rounded-lg border border-rose-300 px-2.5 py-1 text-[10px] font-bold">View</button>
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      </section>
+    )}
+
+    {hideFirstSteps ? (
+      <p className="text-[10px] text-slate-400">
+        <button
+          type="button"
+          onClick={() => {
+            try { localStorage.removeItem("social_studio_hide_first_steps"); } catch { /* Session flag still works. */ }
+            setHideFirstSteps(false);
+          }}
+          className="font-semibold text-indigo-600 hover:underline"
+        >
+          Show setup
+        </button>
+      </p>
+    ) : (
+      <section className="dashboard-panel px-4 py-4 sm:px-5">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <span className="eyebrow">GETTING STARTED</span>
+            <h2 className="mt-0.5 font-display text-base font-extrabold tracking-tight">First steps</h2>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-[10px] font-semibold tabular-nums text-slate-500">{stepsDone} of 3</span>
+            <button
+              type="button"
+              onClick={() => {
+                try { localStorage.setItem("social_studio_hide_first_steps", "1"); } catch { /* Session flag still works. */ }
+                setHideFirstSteps(true);
+              }}
+              className="text-[10px] font-bold text-slate-400 transition hover:text-slate-600 dark:hover:text-slate-200"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+        <div className="mt-2.5 h-1 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800" role="progressbar" aria-valuenow={stepsDone} aria-valuemin={0} aria-valuemax={3} aria-label="First steps progress">
+          <div className="h-full rounded-full bg-gradient-to-r from-indigo-500 via-purple-500 to-blue-500 transition-all duration-300" style={{ width: `${(stepsDone / 3) * 100}%` }} />
+        </div>
+        <div className="mt-3.5 grid gap-3 sm:grid-cols-3">
+          <div className="first-step-tile">
+            {step1Done ? (
+              <span className="first-step-check" aria-hidden="true"><Check size={12} /></span>
+            ) : null}
+            <p className="pr-7 text-[13px] font-bold tracking-tight text-slate-900 dark:text-slate-50">1. Connect a channel</p>
+            <p className="mt-1.5 flex-1 text-[11px] leading-snug text-slate-500 dark:text-slate-400">Add a social account so you can publish from SocialStudio.</p>
+            <button
+              type="button"
+              onClick={() => openConnect()}
+              className="first-step-cta"
+            >
+              <Plus size={14} /> Connect channel
+            </button>
+          </div>
+          <div className="first-step-tile">
+            {step2Done ? (
+              <span className="first-step-check" aria-hidden="true"><Check size={12} /></span>
+            ) : null}
+            <p className="pr-7 text-[13px] font-bold tracking-tight text-slate-900 dark:text-slate-50">2. Create a post</p>
+            <p className="mt-1.5 flex-1 text-[11px] leading-snug text-slate-500 dark:text-slate-400">Open the studio and draft your first post for any channel.</p>
+            <button type="button" onClick={openStudio} className="first-step-cta">
+              <Plus size={14} /> Create a post
+            </button>
+          </div>
+          <div className="first-step-tile">
+            {step3Done ? (
+              <span className="first-step-check" aria-hidden="true"><Check size={12} /></span>
+            ) : null}
+            <p className="pr-7 text-[13px] font-bold tracking-tight text-slate-900 dark:text-slate-50">3. Open calendar</p>
+            <p className="mt-1.5 flex-1 text-[11px] leading-snug text-slate-500 dark:text-slate-400">Check your queue, schedule, and publishing calendar.</p>
+            <button type="button" onClick={openPublish} className="first-step-cta">
+              Open calendar
+            </button>
+          </div>
+        </div>
+      </section>
+    )}
 
     <section className="grid items-start gap-4 xl:grid-cols-[1.08fr_.92fr]">
-      <article className="dashboard-panel"><div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800"><div><span className="eyebrow">YOUR PUBLISHING PLAN</span><h2 className="mt-1 font-display text-base font-extrabold">Up next</h2></div><button onClick={() => openPlaceholder("Publish calendar")} className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-600 hover:text-indigo-700">View calendar<ArrowRight size={13} /></button></div>
-        {upcoming.length ? <div className="divide-y divide-slate-100 dark:divide-slate-800">{upcoming.map((post) => { const account = accounts.find((item) => item.id === post.connected_account_id); const platform = CHANNELS.find((item) => item.id === account?.platform); return <div key={post.id} className="flex items-center gap-3 px-5 py-3.5"><span className="up-next-icon" style={{ color: platform?.brand || "#6366f1" }}>{platform ? <ChannelBrandImage channelId={platform.id} /> : <CalendarDays size={15} />}</span><div className="min-w-0 flex-1"><p className="line-clamp-1 text-xs font-semibold">{post.content}</p><p className="mt-1 text-[10px] text-slate-400">{account?.account_name || account?.platform || "Connected account"} · {new Date(post.scheduled_at).toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</p></div><span className="status-chip">{post.status}</span></div>; })}</div> : <div className="empty-dashboard-state"><span className="empty-dashboard-icon"><ListTodo size={19} /></span><b>Nothing on the schedule yet</b><p>Your upcoming posts will show up here.</p><button onClick={openStudio} className="mt-2 inline-flex items-center gap-1 text-[10px] font-bold text-indigo-600">Create a post<ArrowRight size={12} /></button></div>}
+      <article className="dashboard-panel">
+        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800">
+          <div><span className="eyebrow">YOUR PUBLISHING PLAN</span><h2 className="mt-1 font-display text-base font-extrabold">Up next</h2></div>
+          <button type="button" onClick={openPublish} className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-600 hover:text-indigo-700">See all<ArrowRight size={13} /></button>
+        </div>
+        {upcoming.length ? (
+          <div className="divide-y divide-slate-100 dark:divide-slate-800">
+            {upcoming.map((post) => {
+              const account = accounts.find((item) => item.id === post.connected_account_id);
+              const platform = CHANNELS.find((item) => item.id === account?.platform);
+              return (
+                <div key={post.id} className="flex items-center gap-3 px-5 py-3.5">
+                  <span className="up-next-icon" style={{ color: platform?.brand || "#6366f1" }}>{platform ? <ChannelBrandImage channelId={platform.id} /> : <CalendarDays size={15} />}</span>
+                  <div className="min-w-0 flex-1">
+                    <p className="line-clamp-1 text-xs font-semibold">{post.content}</p>
+                    <p className="mt-1 text-[10px] text-slate-400">{account?.account_name || account?.platform || "Connected account"} · {new Date(post.scheduled_at).toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</p>
+                  </div>
+                  <span className="status-chip">{post.status}</span>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="empty-dashboard-state">
+            <span className="empty-dashboard-icon"><ListTodo size={19} /></span>
+            <b>Nothing on the schedule yet</b>
+            <p>Your upcoming posts will show up here.</p>
+            <button type="button" onClick={openStudio} className="mt-2 inline-flex items-center gap-1 text-[10px] font-bold text-indigo-600">Create a post<ArrowRight size={12} /></button>
+          </div>
+        )}
       </article>
-      <article className="dashboard-panel"><div className="border-b border-slate-100 px-5 py-4 dark:border-slate-800"><span className="eyebrow">THE CONVERSATION</span><h2 className="mt-1 font-display text-base font-extrabold">Recent comments</h2></div><div className="empty-dashboard-state min-h-[222px]"><span className="empty-dashboard-icon"><MessagesSquare size={19} /></span><b>Your community, all in one place</b><p>Recent comments will appear here when community inbox integrations are available.</p><button onClick={() => openPlaceholder("Community")} className="mt-2 inline-flex items-center gap-1 text-[10px] font-bold text-indigo-600">Explore community<ArrowRight size={12} /></button></div></article>
+
+      <div className="space-y-4">
+        <article className="dashboard-panel">
+          <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800">
+            <div><span className="eyebrow">WORK IN PROGRESS</span><h2 className="mt-1 font-display text-base font-extrabold">Recent drafts</h2></div>
+            <button type="button" onClick={openPublish} className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-600 hover:text-indigo-700">All drafts<ArrowRight size={13} /></button>
+          </div>
+          {recentDrafts.length ? (
+            <div className="divide-y divide-slate-100 dark:divide-slate-800">
+              {recentDrafts.map((draft) => (
+                <button key={draft.id} type="button" onClick={() => openDraftPeek(draft)} className="flex w-full items-center gap-3 px-5 py-3.5 text-left transition hover:bg-slate-50/80 dark:hover:bg-slate-900/50">
+                  <span className="up-next-icon text-indigo-500"><FileText size={15} /></span>
+                  <span className="min-w-0 flex-1">
+                    <span className="line-clamp-1 block text-xs font-semibold">{draft.content || draft.title || draft.metadata?.title || "Untitled draft"}</span>
+                    <span className="mt-1 block text-[10px] text-slate-400">{draft.updated_at || draft.created_at ? new Date(draft.updated_at || draft.created_at).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "Draft"}</span>
+                  </span>
+                  <ChevronRight size={14} className="text-slate-300" />
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="px-5 py-8 text-center">
+              <p className="text-[11px] font-semibold text-slate-500">No drafts yet</p>
+              <p className="mt-1 text-[10px] text-slate-400">Save from the studio to continue later.</p>
+              <button type="button" onClick={openStudio} className="mt-3 inline-flex items-center gap-1 text-[10px] font-bold text-indigo-600">Start a draft<ArrowRight size={12} /></button>
+            </div>
+          )}
+        </article>
+
+        <article className="dashboard-panel border-dashed opacity-80">
+          <div className="flex items-center gap-3 px-5 py-4">
+            <span className="empty-dashboard-icon !h-9 !w-9"><MessagesSquare size={16} /></span>
+            <div className="min-w-0 flex-1">
+              <span className="eyebrow">THE CONVERSATION</span>
+              <h2 className="mt-0.5 font-display text-sm font-extrabold text-slate-600 dark:text-slate-300">Community inbox — coming soon</h2>
+              <p className="mt-1 text-[10px] leading-4 text-slate-400">Comments and replies will land here when Community is ready. Nothing is missing from your workspace.</p>
+            </div>
+            <span className="rounded-full bg-slate-100 px-2 py-1 text-[8px] font-extrabold uppercase tracking-wide text-slate-500 dark:bg-slate-800 dark:text-slate-400">Soon</span>
+          </div>
+        </article>
+      </div>
     </section>
   </div>;
 }
@@ -800,6 +1180,7 @@ function App() {
   const [quickTool, setQuickTool] = useState(null);
   const [quickFile, setQuickFile] = useState(null);
   const [connectChannel, setConnectChannel] = useState(null);
+  const [showChannelPicker, setShowChannelPicker] = useState(false);
   const [connectBusy, setConnectBusy] = useState(false);
   const [connectError, setConnectError] = useState("");
   const [pickSession, setPickSession] = useState(null);
@@ -926,7 +1307,15 @@ function App() {
   }
 
   function openPlaceholder(name) { notify({ title: `${name} is coming soon`, message: "This workspace view will be available as the product grows." }); }
-  function goToTab(tab) { if (["home", "studio", "accounts", "publish", "biolink"].includes(tab)) { setActiveTab(tab); window.scrollTo({ top: 0, behavior: "smooth" }); } else openPlaceholder(tab); }
+  function goToTab(tab) {
+    if (["home", "studio", "accounts", "publish", "biolink"].includes(tab)) {
+      if (tab === "publish") {
+        try { localStorage.setItem("social_studio_opened_publish", "1"); } catch { /* Session flag still works. */ }
+      }
+      setActiveTab(tab);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } else openPlaceholder(tab);
+  }
   function openApiDocs() { window.open(`${API_ORIGIN}/docs`, "_blank", "noopener,noreferrer"); }
 
   function handleAuthenticated(result, submitted) {
@@ -1091,7 +1480,7 @@ function App() {
     let scheduledAt = null;
     let queueByAccount = {};
     if (scheduleMode !== "queue") {
-      try { scheduledAt = scheduleMode === "now" ? new Date(Date.now() + 5000).toISOString() : zonedDateTimeToISO(date, time, timeZone); }
+      try { scheduledAt = scheduleMode === "now" ? new Date().toISOString() : zonedDateTimeToISO(date, time, timeZone); }
       catch { notify({ title: "Check the schedule", message: "The selected date, time, or timezone is not valid." }); return; }
       if (!scheduledAt || (scheduleMode === "schedule" && new Date(scheduledAt) <= new Date())) { notify({ title: "Choose a future time", message: "Scheduled publishing needs a time later than now." }); return; }
     }
@@ -1121,19 +1510,39 @@ function App() {
         const when = scheduleMode === "queue" ? queueByAccount[account.id] : scheduledAt;
         return authenticatedFetch("/posts", {
           method: "POST",
-          body: JSON.stringify({ connected_account_id: account.id, content: captionForAccount(account).trim(), media_urls: mediaUrls, scheduled_at: when, idempotency_key: makeIdempotencyKey(), post_metadata: { format: formatForAccount(account), settings: platformSettingsByAccount[account.id] || {}, ...(account.platform === "pinterest" && platformSettingsByAccount[account.id]?.destination_url ? { destination_url: platformSettingsByAccount[account.id].destination_url } : {}) } }),
+          body: JSON.stringify({ connected_account_id: account.id, content: captionForAccount(account).trim(), media_urls: mediaUrls, scheduled_at: when, idempotency_key: makeIdempotencyKey(), post_metadata: { format: formatForAccount(account), settings: platformSettingsByAccount[account.id] || {}, scheduleMode, ...(account.platform === "pinterest" && platformSettingsByAccount[account.id]?.destination_url ? { destination_url: platformSettingsByAccount[account.id].destination_url } : {}) } }),
         });
       }));
       const successCount = results.filter((result) => result.status === "fulfilled").length;
       const failureMessages = results.filter((result) => result.status === "rejected").map((result) => result.reason?.message);
       if (successCount) {
-        const [accountData, postData] = await Promise.all([authenticatedFetch("/accounts"), authenticatedFetch("/posts")]);
+        const createdIds = results.filter((result) => result.status === "fulfilled").map((result) => result.value?.id).filter(Boolean);
+        let [accountData, postData] = await Promise.all([authenticatedFetch("/accounts"), authenticatedFetch("/posts")]);
+        // Post now finishes in a background worker; poll briefly so the calendar flips to published.
+        if (scheduleMode === "now" && createdIds.length) {
+          const terminal = new Set(["published", "failed", "cancelled", "archived"]);
+          for (let attempt = 0; attempt < 8; attempt += 1) {
+            const pending = (Array.isArray(postData) ? postData : []).filter((post) => createdIds.includes(post.id) && !terminal.has(post.status));
+            if (!pending.length) break;
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+            try { postData = await authenticatedFetch("/posts"); } catch { break; }
+          }
+        }
         setAccounts(Array.isArray(accountData) ? accountData : []); setPosts(Array.isArray(postData) ? postData : []);
         if (editingDraftId) {
           try { await authenticatedFetch(`/publish/drafts/${editingDraftId}`, { method: "DELETE" }); } catch { /* The published post remains successful if draft cleanup fails. */ }
         }
         setEditingDraftId(""); setFiles([]); setChannelFiles({}); setChannelMediaUrlsByAccount({}); setUseSharedMediaByAccount({}); setLibraryMediaUrls([]); setCaption(""); setCaptionsByAccount({}); setUseUniversalCaptionByAccount({}); setCaptionMode("universal"); setTitle(""); setFormatsByAccount({}); formatOverridesRef.current = {}; setFormatOverridesByAccount({}); setPlatformSettingsByAccount({});
-        notify({ title: scheduleMode === "now" ? "Your post is on its way" : scheduleMode === "queue" ? "Added to queue" : "Post scheduled", message: `${successCount} account${successCount === 1 ? "" : "s"} ${scheduleMode === "now" ? "queued for publishing" : scheduleMode === "queue" ? "placed in the next free queue slot" : "scheduled for a specific time"}.${failureMessages.length ? ` ${failureMessages.length} account${failureMessages.length === 1 ? "" : "s"} could not be scheduled.` : ""}`, kind: failureMessages.length ? "error" : "success" });
+        const refreshedCreated = (Array.isArray(postData) ? postData : []).filter((post) => createdIds.includes(post.id));
+        const publishedCount = refreshedCreated.filter((post) => post.status === "published").length;
+        const failedCount = refreshedCreated.filter((post) => post.status === "failed").length;
+        const nowTitle = publishedCount === createdIds.length ? "Published" : failedCount ? "Publish finished with errors" : "Your post is on its way";
+        const nowMessage = publishedCount === createdIds.length
+          ? `${publishedCount} account${publishedCount === 1 ? "" : "s"} published successfully.`
+          : failedCount
+            ? `${publishedCount} published, ${failedCount} failed.${failureMessages.length ? ` ${failureMessages[0]}` : ""}`
+            : `${successCount} account${successCount === 1 ? "" : "s"} queued for publishing. Refresh if the status is still updating.`;
+        notify({ title: scheduleMode === "now" ? nowTitle : scheduleMode === "queue" ? "Added to queue" : "Post scheduled", message: scheduleMode === "now" ? nowMessage : `${successCount} account${successCount === 1 ? "" : "s"} ${scheduleMode === "queue" ? "placed in the next free queue slot" : "scheduled for a specific time"}.${failureMessages.length ? ` ${failureMessages.length} account${failureMessages.length === 1 ? "" : "s"} could not be scheduled.` : ""}`, kind: (failureMessages.length || failedCount) ? "error" : "success" });
       }
       if (!successCount) notify({ title: "Couldn’t create your post", message: failureMessages[0] || "Please try again." });
     } catch (error) { notify({ title: "Couldn’t create your post", message: error.message || "Please try again." }); }
@@ -1224,7 +1633,10 @@ function App() {
   ];
   const queuedPosts = posts.filter((post) => ["scheduled", "queued", "publishing", "failed"].includes(post.status));
   const connect = (channel) => {
-    if (!channel) return;
+    if (!channel) {
+      setShowChannelPicker(true);
+      return;
+    }
     if (!OAUTH_PLATFORMS.has(channel.id)) {
       notify({ title: `${channel.label} isn’t available`, message: "This network is not connectable yet." });
       return;
@@ -1258,7 +1670,7 @@ function App() {
   return <div className="app-shell min-h-screen transition-colors duration-300">
     <div className="flex min-h-screen">
       <aside className={`sidebar ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
-        <div className="sidebar-brand"><span className="brand-mark"><Sparkles size={17} /></span>{!sidebarCollapsed && <span className="font-display text-[15px] font-extrabold tracking-tight">social<span className="text-indigo-600">studio</span></span>}<button className="sidebar-collapse ml-auto" onClick={() => setSidebarCollapsed((value) => !value)} aria-label={sidebarCollapsed ? "Expand navigation" : "Collapse navigation"}>{sidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}</button></div>
+        <div className="sidebar-brand"><SidebarBrandLockup collapsed={sidebarCollapsed} dark={dark} /><button className="sidebar-collapse ml-auto" onClick={() => setSidebarCollapsed((value) => !value)} aria-label={sidebarCollapsed ? "Expand navigation" : "Collapse navigation"}>{sidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}</button></div>
         <div className="sidebar-workspace"><span className="workspace-avatar">{(user.workspace_name || user.full_name || "S").slice(0, 1).toUpperCase()}</span>{!sidebarCollapsed && <span className="min-w-0 flex-1"><b>{user.workspace_name || "My Workspace"}</b><small>Workspace</small></span>}<ChevronDown size={13} className="text-slate-400" /></div>
         <nav className="sidebar-nav" aria-label="Main navigation">{navigation.map(({ id, label, icon: Icon }) => { const active = activeTab === id; return <button key={id} onClick={() => goToTab(id)} title={sidebarCollapsed ? label : undefined} aria-current={active ? "page" : undefined} className={`sidebar-nav-item ${active ? "sidebar-nav-active" : ""}`}><Icon size={17} /><span>{!sidebarCollapsed && label}</span>{id === "studio" && !sidebarCollapsed && <span className="nav-plus"><Plus size={12} /></span>}</button>; })}</nav>
         {!sidebarCollapsed && <div className="sidebar-section-label">CONNECTED CHANNELS</div>}
@@ -1268,13 +1680,13 @@ function App() {
       </aside>
 
       <div className="min-w-0 flex-1">
-        <header className="topbar"><div className="topbar-inner"><div className="flex min-w-0 items-center gap-3">{activeTab === "studio" ? <button onClick={() => goToTab("home")} className="back-dashboard"><ArrowLeft size={15} /><span>Back to Dashboard</span></button> : <><span className="topbar-mobile-brand"><span className="brand-mark"><Sparkles size={15} /></span>social<span className="text-indigo-600">studio</span></span><span className="hidden text-xs text-slate-400 lg:block">/</span><span className="hidden text-xs font-bold text-slate-600 dark:text-slate-300 lg:block">{activeTab === "publish" ? "Publish workspace" : activeTab === "home" ? "Home dashboard" : activeTab === "biolink" ? "Bio Link" : activeTab === "accounts" ? "Accounts" : activeTab}</span></>}</div><div className="ml-auto flex items-center gap-2"><span className="hidden text-[11px] text-slate-400 sm:inline">{user.full_name || "Workspace member"}</span><button className="icon-button" onClick={() => setDark((value) => !value)} aria-label={`Switch to ${dark ? "light" : "dark"} theme`} title="Switch theme">{dark ? <Sun size={16} /> : <Moon size={16} />}</button><button onClick={logout} className="secondary-button !px-3 !py-2 text-[11px]">Sign out</button></div></div>
+        <header className="topbar"><div className="topbar-inner"><div className="flex min-w-0 items-center gap-3">{activeTab === "studio" ? <button onClick={() => goToTab("home")} className="back-dashboard"><ArrowLeft size={15} /><span>Back to Dashboard</span></button> : <><span className="topbar-mobile-brand"><span className="brand-mark brand-mark-image"><BrandMark size={22} /></span><BrandWordmark variant={dark ? "light" : "dark"} className="topbar-wordmark" /></span><span className="hidden text-xs text-slate-400 lg:block">/</span><span className="hidden text-xs font-bold text-slate-600 dark:text-slate-300 lg:block">{activeTab === "publish" ? "Publish workspace" : activeTab === "home" ? "Home dashboard" : activeTab === "biolink" ? "Bio Link" : activeTab === "accounts" ? "Accounts" : activeTab}</span></>}</div><div className="ml-auto flex items-center gap-2"><span className="hidden text-[11px] text-slate-400 sm:inline">{user.full_name || "Workspace member"}</span><button className="icon-button" onClick={() => setDark((value) => !value)} aria-label={`Switch to ${dark ? "light" : "dark"} theme`} title="Switch theme">{dark ? <Sun size={16} /> : <Moon size={16} />}</button><button onClick={logout} className="secondary-button !px-3 !py-2 text-[11px]">Sign out</button></div></div>
           <nav className="mobile-nav" aria-label="Mobile navigation">{navigation.slice(0, 3).map(({ id, label, icon: Icon }) => <button key={id} onClick={() => goToTab(id)} className={activeTab === id ? "mobile-nav-active" : ""}><Icon size={15} />{label}</button>)}</nav>
         </header>
 
         <main className="mx-auto max-w-[1400px] px-4 pb-14 pt-6 sm:px-6 lg:px-8 lg:pt-8">
           {loadError && <div role="alert" className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700"><span>{loadError}</span><button onClick={() => void loadWorkspace()} className="font-bold underline">Retry</button></div>}
-          {activeTab === "home" ? <HomeDashboard user={user} accounts={accounts} posts={posts} openStudio={openStudio} openConnect={connect} openPlaceholder={(name) => name.toLowerCase().includes("calendar") ? goToTab("publish") : openPlaceholder(name)} openApiDocs={openApiDocs} /> : activeTab === "biolink" ? <RenderErrorBoundary scope="Bio Link dashboard"><BioLinkDashboard user={user} accounts={accounts} posts={posts} /></RenderErrorBoundary> : activeTab === "publish" ? <RenderErrorBoundary scope="Publish workspace"><PublishSection request={authenticatedFetch} posts={posts} accounts={accounts} authorName={user.full_name} localDrafts={localDrafts} onUpdateLocalDraft={updateLocalDraft} onRemoveLocalDraft={removeLocalDraft} onCreatePost={openStudio} onOpenDraft={openSavedDraft} onUseAsset={useLibraryAsset} onRefresh={() => loadWorkspace(token)} /></RenderErrorBoundary> : activeTab === "accounts" ? <section className="animate-fade-up space-y-4">
+          {activeTab === "home" ? <HomeDashboard user={user} accounts={accounts} posts={posts} openStudio={openStudio} openConnect={connect} openPlaceholder={(name) => name.toLowerCase().includes("calendar") ? goToTab("publish") : openPlaceholder(name)} openApiDocs={openApiDocs} goToTab={goToTab} localDrafts={localDrafts} onOpenDraft={openSavedDraft} onRetryPost={retryQueuedPost} request={authenticatedFetch} /> : activeTab === "biolink" ? <RenderErrorBoundary scope="Bio Link dashboard"><BioLinkDashboard user={user} accounts={accounts} posts={posts} /></RenderErrorBoundary> : activeTab === "publish" ? <RenderErrorBoundary scope="Publish workspace"><PublishSection request={authenticatedFetch} posts={posts} accounts={accounts} authorName={user.full_name} localDrafts={localDrafts} onUpdateLocalDraft={updateLocalDraft} onRemoveLocalDraft={removeLocalDraft} onCreatePost={openStudio} onOpenDraft={openSavedDraft} onUseAsset={useLibraryAsset} onRefresh={() => loadWorkspace(token)} /></RenderErrorBoundary> : activeTab === "accounts" ? <section className="animate-fade-up space-y-4">
             <div><div className="eyebrow">ACCOUNT MANAGEMENT</div><h1 className="mt-2 font-display text-[27px] font-extrabold leading-tight tracking-[-.05em] sm:text-3xl">Manage your <span className="text-gradient">connected accounts.</span></h1><p className="mt-1.5 text-xs text-slate-500 sm:text-sm">Connect, disconnect, or re-auth social destinations. Create Post still picks which accounts receive a draft.</p></div>
             <ManageAccounts accounts={accounts} channels={CHANNELS} request={authenticatedFetch} onConnect={connect} onChanged={() => loadWorkspace(token)} ChannelBrandImage={ChannelBrandImage} publishablePlatforms={PUBLISHABLE_PLATFORMS} />
           </section> : <section className="animate-fade-up space-y-4">
@@ -1303,6 +1715,12 @@ function App() {
     </div>
     <QuickStudioDialog tool={quickTool} files={files} selectedFile={quickFile} onClose={() => { setQuickTool(null); setQuickFile(null); }} onToast={notify} />
     {pickSession && <DestinationPicker platform={pickSession.platform} sessionId={pickSession.sessionId} request={authenticatedFetch} channelMeta={CHANNELS.find((item) => item.id === pickSession.platform)} ChannelBrandImage={ChannelBrandImage} onClose={() => setPickSession(null)} onSaved={async (platform) => { setPickSession(null); await loadWorkspace(token); notify({ title: "Destinations saved", message: `${platform} destinations are connected.`, kind: "success" }); }} />}
+    <ConnectChannelPicker
+      open={showChannelPicker}
+      onClose={() => setShowChannelPicker(false)}
+      onPick={(channel) => { setShowChannelPicker(false); connect(channel); }}
+      onRequestChannel={() => { setShowChannelPicker(false); notify({ title: "Thanks", message: "Channel requests help us prioritize what to add next.", kind: "success" }); }}
+    />
     <ConnectDialog channel={connectChannel} onClose={() => setConnectChannel(null)} onConnect={connectAccount} busy={connectBusy} error={connectError} />
     <Toast toast={toast} onClose={() => setToast(null)} />
   </div>;

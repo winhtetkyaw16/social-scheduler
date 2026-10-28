@@ -189,6 +189,7 @@ function MonthCalendar({ posts, accounts = [], onCreatePost, onSelectPost, reque
   const [draggingId, setDraggingId] = useState("");
   const [busyId, setBusyId] = useState("");
   const [error, setError] = useState("");
+  const [dayDetail, setDayDetail] = useState(null);
   const dates = useMemo(() => {
     const first = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
     const start = new Date(first);
@@ -274,9 +275,18 @@ function MonthCalendar({ posts, accounts = [], onCreatePost, onSelectPost, reque
     onCreatePost?.(date instanceof Date ? date : undefined);
   }
 
+  useEffect(() => {
+    if (!(dayDetail instanceof Date)) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    function onKeyDown(event) { if (event.key === "Escape" && !busyId) setDayDetail(null); }
+    window.addEventListener("keydown", onKeyDown);
+    return () => { document.body.style.overflow = previousOverflow; window.removeEventListener("keydown", onKeyDown); };
+  }, [dayDetail, busyId]);
+
   return <section className={`${card} overflow-hidden`}>
     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 p-4 dark:border-slate-800 sm:p-5">
-      <div><span className="text-[10px] font-extrabold uppercase tracking-[.16em] text-indigo-500">Publishing plan</span><h2 className="mt-1 font-display text-lg font-extrabold">{label}</h2><p className="mt-1 text-[10px] text-slate-400">Click a day to compose · drag scheduled posts to reschedule · click a post to edit</p></div>
+      <div><span className="text-[10px] font-extrabold uppercase tracking-[.16em] text-indigo-500">Publishing plan</span><h2 className="mt-1 font-display text-lg font-extrabold">{label}</h2><p className="mt-1 text-[10px] text-slate-400">Click a day to compose · +N more opens every post that day · drag to reschedule · click a post to edit</p></div>
       <div className="flex items-center gap-2"><div className="flex rounded-xl bg-slate-100 p-1 dark:bg-slate-800">{["week", "month"].map((item) => <button key={item} type="button" onClick={() => setView(item)} className={`rounded-lg px-3 py-1.5 text-[11px] font-bold capitalize ${view === item ? "bg-white text-indigo-700 shadow-sm dark:bg-slate-700 dark:text-white" : "text-slate-500"}`}>{item}</button>)}</div><button type="button" className={button} onClick={() => step(-1)} aria-label="Previous period"><ArrowLeft size={14} /></button><button type="button" className={button} onClick={() => step(1)} aria-label="Next period"><ArrowRight size={14} /></button><button type="button" className={primary} onClick={() => openComposerForDay()}><Plus size={14} />Create</button></div>
     </div>
     {error && <p role="alert" className="mx-4 mt-3 rounded-xl bg-rose-50 p-3 text-xs text-rose-700 dark:mx-5 dark:bg-rose-950/40 dark:text-rose-200 sm:mx-5">{error}</p>}
@@ -345,10 +355,71 @@ function MonthCalendar({ posts, accounts = [], onCreatePost, onSelectPost, reque
               </div>
             </button>;
           })}
-          {dayPosts.length > postLimit && <p className="px-1 text-[10px] font-semibold text-slate-500">+{dayPosts.length - postLimit} more</p>}
+          {dayPosts.length > postLimit && <button type="button" onClick={(event) => { event.stopPropagation(); setDayDetail(date); }} className="w-full rounded-md px-1 py-0.5 text-left text-[10px] font-semibold text-indigo-600 transition hover:bg-indigo-50 hover:text-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-indigo-300 dark:hover:bg-indigo-950/50">+{dayPosts.length - postLimit} more</button>}
         </div>
       </div>;
     })}</div>
+    {dayDetail instanceof Date && (() => {
+      const detailKey = dateKey(dayDetail);
+      const detailPosts = (grouped.get(detailKey) || []).slice().sort((a, b) => new Date(postPlacementAt(a) || 0) - new Date(postPlacementAt(b) || 0));
+      const detailLabel = new Intl.DateTimeFormat(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" }).format(dayDetail);
+      function closeDayDetail() { setDayDetail(null); }
+      return createPortal(<div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/25 p-0 backdrop-blur-[2px] sm:items-center sm:p-4" onMouseDown={(event) => { if (event.target === event.currentTarget && !busyId) closeDayDetail(); }} role="presentation">
+        <section role="dialog" aria-modal="true" aria-labelledby="day-detail-title" className="flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-t-[28px] border border-white/70 bg-white text-slate-900 shadow-[0_32px_100px_rgba(15,23,42,.20)] dark:border-slate-700 dark:bg-slate-900 dark:text-white sm:rounded-[28px]">
+          <header className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-4 dark:border-slate-800 sm:px-6">
+            <div className="min-w-0">
+              <span className="text-[10px] font-extrabold uppercase tracking-[.16em] text-indigo-500">Day schedule</span>
+              <h2 id="day-detail-title" className="mt-1 font-display text-lg font-extrabold">{detailLabel}</h2>
+              <p className="mt-1 text-xs text-slate-500">{detailPosts.length} post{detailPosts.length === 1 ? "" : "s"} · click one to open</p>
+            </div>
+            <button type="button" onClick={closeDayDetail} aria-label="Close day schedule" className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-white"><X size={18} /></button>
+          </header>
+          <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
+            {detailPosts.length ? <ul className="space-y-2">
+              {detailPosts.map((post) => {
+                const account = accountById.get(post.connected_account_id);
+                const when = postPlacementAt(post);
+                const failed = post.status === "failed";
+                const draggable = canDragPost(post);
+                const isBusy = busyId === String(post.id);
+                return <li key={post.id}>
+                  <button
+                    type="button"
+                    draggable={draggable && !busyId}
+                    onDragStart={(event) => {
+                      if (!draggable) { event.preventDefault(); return; }
+                      setDraggingId(String(post.id));
+                      setError("");
+                      event.dataTransfer.effectAllowed = "move";
+                      event.dataTransfer.setData("application/x-socialstudio-post", JSON.stringify({ id: post.id }));
+                      event.dataTransfer.setData("text/plain", String(post.id));
+                    }}
+                    onDragEnd={() => { setDraggingId(""); setDragOverKey(""); }}
+                    onClick={() => { closeDayDetail(); onSelectPost?.(post); }}
+                    className={`flex w-full gap-3 rounded-2xl border p-3 text-left transition focus:outline-none focus:ring-2 focus:ring-indigo-500 ${failed ? "border-rose-300 bg-rose-50/90 dark:border-rose-800 dark:bg-rose-950/40" : "border-slate-200 bg-white hover:border-indigo-300 dark:border-slate-700 dark:bg-slate-950 dark:hover:border-indigo-700"} ${isBusy ? "opacity-70" : ""} ${draggable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"}`}
+                  >
+                    {post.media_urls?.[0] ? <img src={post.media_urls[0]} alt="" className="h-14 w-14 shrink-0 rounded-xl object-cover" loading="lazy" /> : <span className="grid h-14 w-14 shrink-0 place-items-center rounded-xl bg-slate-100 text-slate-500 dark:bg-slate-800"><FileText size={18} /></span>}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="inline-flex items-center gap-1 text-[11px] font-bold"><Clock3 size={11} />{when ? new Date(when).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "—"}</span>
+                        <span className="truncate text-[11px] font-semibold capitalize text-slate-500">{account?.account_name || account?.platform || "Account"}</span>
+                        <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${statusChipClass(post.status)}`}>{post.status === "published" && post.provider_post_id ? "published" : post.status === "published" ? "unconfirmed" : post.status}</span>
+                      </div>
+                      <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-800 dark:text-slate-100">{post.content || "Untitled post"}</p>
+                      {failed && post.last_error_message && <p className="mt-1 line-clamp-2 text-[10px] font-semibold text-rose-700 dark:text-rose-300">{post.last_error_message}</p>}
+                    </div>
+                  </button>
+                </li>;
+              })}
+            </ul> : <p className="py-10 text-center text-xs text-slate-400">No posts on this day.</p>}
+          </div>
+          <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 px-5 py-3 dark:border-slate-800 sm:px-6">
+            <button type="button" className={button} onClick={closeDayDetail}>Close</button>
+            <button type="button" className={primary} onClick={() => { const date = dayDetail; closeDayDetail(); openComposerForDay(date); }}><Plus size={14} />Create on this day</button>
+          </footer>
+        </section>
+      </div>, document.body);
+    })()}
   </section>;
 }
 
@@ -800,6 +871,25 @@ export function toLocalInputValue(value) {
   return local.toISOString().slice(0, 16);
 }
 
+/** Display scheduled times in the browser/local (Asia/Bangkok) zone with an explicit label. */
+export function formatScheduledLocal(value) {
+  if (!value) return "—";
+  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Bangkok";
+  try {
+    return `${new Date(value).toLocaleString(undefined, {
+      timeZone: zone,
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      timeZoneName: "short",
+    })}`;
+  } catch {
+    return new Date(value).toLocaleString();
+  }
+}
+
 function NativePostPreview({ platform, accountName, authorName, content, mediaUrl, title, timestamp, format, account }) {
   const key = String(platform || "facebook").toLowerCase();
   const normalized = key === "twitter" ? "x" : key;
@@ -876,6 +966,20 @@ function ScheduledPostModal({ post, accounts, authorName, request, onRefresh, on
   const displayAuthor = activePost.author_name || authorName || "Workspace member";
   const canEdit = ["draft", "scheduled"].includes(activePost.status);
   const canDelete = activePost.status !== "publishing";
+  const PLATFORM_DELETE_LABELS = {
+    facebook: "Facebook",
+    instagram: "Instagram",
+    linkedin: "LinkedIn",
+    x: "X",
+    twitter: "X",
+    threads: "Threads",
+    youtube: "YouTube",
+    pinterest: "Pinterest",
+    tiktok: "TikTok",
+  };
+  const willRemoteDelete = Boolean(activePost.provider_post_id) && !String(activePost.provider_post_id).startsWith("inbox:");
+  const remoteDeletePlatformLabel = PLATFORM_DELETE_LABELS[activeChannelOption?.platform] || (activeChannelOption?.label || "the social network");
+  const siblingChannels = channelOptions.filter((channel) => channel.key !== (activeChannelOption?.key) && channel.post?.id !== activePost.id);
   const characterLimit = Math.min(({ x: 280, instagram: 2200, linkedin: 3000, pinterest: 500, youtube: 5000 })[activeChannelOption?.platform] || 63206, 10000);
 
   useEffect(() => {
@@ -899,10 +1003,14 @@ function ScheduledPostModal({ post, accounts, authorName, request, onRefresh, on
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    function onKeyDown(event) { if (event.key === "Escape" && !busy) onClose(); }
+    function onKeyDown(event) {
+      if (event.key !== "Escape" || busy) return;
+      if (confirmDelete) { setConfirmDelete(false); return; }
+      onClose();
+    }
     window.addEventListener("keydown", onKeyDown);
     return () => { document.body.style.overflow = previousOverflow; window.removeEventListener("keydown", onKeyDown); };
-  }, [busy, onClose]);
+  }, [busy, confirmDelete, onClose]);
 
   useEffect(() => {
     if (tab !== "comments") return undefined;
@@ -953,6 +1061,26 @@ function ScheduledPostModal({ post, accounts, authorName, request, onRefresh, on
     finally { setBusy(false); }
   }
 
+  function discardEdits() {
+    setContent(activePost.content || "");
+    setScheduledAt(toLocalInputValue(activePost.scheduled_at));
+    setHashtags(Array.isArray(activeMetadata.hashtags) ? activeMetadata.hashtags.join(" ") : "");
+    setTag(activeMetadata.tags?.[0] || "");
+    setPrivacy(activeMetadata.privacy || "Public");
+    setEditing(false);
+  }
+
+  async function publishNow() {
+    setBusy(true); setError("");
+    try {
+      const updated = await request(`/posts/${activePost.id}/publish-now`, { method: "POST" });
+      setChannelPosts((current) => current.map((item) => item.id === activePost.id ? { ...item, ...updated } : item));
+      setEditing(false);
+      await onRefresh?.();
+    } catch (e) { setError(e.message); }
+    finally { setBusy(false); }
+  }
+
   async function addComment(event) {
     event.preventDefault();
     const body = commentText.trim();
@@ -967,11 +1095,11 @@ function ScheduledPostModal({ post, accounts, authorName, request, onRefresh, on
     finally { setCommentBusy(false); }
   }
 
-  return createPortal(<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/20 p-4 backdrop-blur-[2px]" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy && !commentBusy) onClose(); }}>
+  return createPortal(<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/20 p-4 backdrop-blur-[2px]" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy && !commentBusy && !confirmDelete) onClose(); }}>
     <section role="dialog" aria-modal="true" aria-labelledby="scheduled-post-title" className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-[28px] border border-white/70 bg-white text-slate-900 shadow-[0_32px_100px_rgba(15,23,42,.20)] dark:border-slate-700 dark:bg-slate-900 dark:text-white">
       <header className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800 sm:px-6"><div className="flex min-w-0 items-center gap-3"><AccountAvatar account={activeChannelOption.account || { account_name: activeChannelOption.accountName, platform: activeChannelOption.platform }} size={40} showBadge={false} /><div className="min-w-0"><div className="flex items-center gap-2"><h2 id="scheduled-post-title" className="font-display text-base font-extrabold">Post details</h2><span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[9px] font-bold capitalize text-indigo-700 dark:bg-indigo-950/70 dark:text-indigo-200">{activePost.status}</span></div><p className="truncate text-xs text-slate-500 dark:text-slate-400">{activeChannelOption.accountName} · {displayAuthor}</p></div></div><button type="button" onClick={onClose} aria-label="Close post preview" className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-white"><X size={18} /></button></header>
 
-      <div className="flex flex-wrap justify-end gap-2 border-b border-slate-100 px-5 py-3 dark:border-slate-800 sm:px-6">{activePost.status === "failed" && <button type="button" disabled={busy} className={button} onClick={() => void retryPost()}><RotateCcw size={13} />Retry</button>}{["published", "failed", "cancelled"].includes(activePost.status) && <button type="button" disabled={busy} className={button} onClick={() => void archivePost()}><Archive size={13} />Archive</button>}<button type="button" disabled={!canEdit} title={canEdit ? "Edit this account’s post" : "Only draft and scheduled posts can be edited"} className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-indigo-600 via-purple-600 to-blue-600 px-3 py-2 text-[11px] font-bold text-white shadow-md shadow-indigo-500/20 disabled:cursor-not-allowed disabled:opacity-40" onClick={() => { if (editing) { setContent(activePost.content || ""); setScheduledAt(toLocalInputValue(activePost.scheduled_at)); } setEditing((value) => !value); setTab("details"); }}><Pencil size={13} />{editing ? "Cancel edit" : "Edit"}</button><button type="button" disabled={busy || !canDelete} className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-[11px] font-bold transition disabled:cursor-not-allowed disabled:opacity-40 ${confirmDelete ? "bg-rose-600 text-white" : "border border-rose-200 text-rose-600 hover:bg-rose-50 dark:border-rose-900 dark:text-rose-300 dark:hover:bg-rose-950/40"}`} onClick={() => confirmDelete ? void deletePost() : setConfirmDelete(true)}>{busy && confirmDelete ? <LoaderCircle size={13} className="animate-spin" /> : <Trash2 size={13} />}{confirmDelete ? "Confirm delete" : "Delete"}</button></div>
+      <div className="flex flex-wrap justify-end gap-2 border-b border-slate-100 px-5 py-3 dark:border-slate-800 sm:px-6">{activePost.status === "failed" && <button type="button" disabled={busy} className={button} onClick={() => void retryPost()}><RotateCcw size={13} />Retry</button>}{["published", "failed", "cancelled"].includes(activePost.status) && <button type="button" disabled={busy} className={button} onClick={() => void archivePost()}><Archive size={13} />Archive</button>}{canEdit && !editing && <button type="button" disabled={busy} title="Publish this post immediately" className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-[11px] font-bold text-indigo-700 transition hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-indigo-900 dark:bg-indigo-950/50 dark:text-indigo-200" onClick={() => void publishNow()}>{busy ? <LoaderCircle size={13} className="animate-spin" /> : <Send size={13} />}Post now</button>}{editing ? <><button type="button" disabled={busy} className={button} onClick={() => discardEdits()}><X size={13} />Cancel edit</button><button type="button" disabled={busy || !scheduledAt || content.length > characterLimit} className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-indigo-600 via-purple-600 to-blue-600 px-3 py-2 text-[11px] font-bold text-white shadow-md shadow-indigo-500/20 disabled:cursor-not-allowed disabled:opacity-40" onClick={() => void saveChanges()}>{busy ? <LoaderCircle size={13} className="animate-spin" /> : <Check size={13} />}Save changes</button></> : <button type="button" disabled={!canEdit} title={canEdit ? "Edit this account’s post" : "Only draft and scheduled posts can be edited"} className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-indigo-600 via-purple-600 to-blue-600 px-3 py-2 text-[11px] font-bold text-white shadow-md shadow-indigo-500/20 disabled:cursor-not-allowed disabled:opacity-40" onClick={() => { setEditing(true); setTab("details"); }}><Pencil size={13} />Edit</button>}<button type="button" disabled={busy || !canDelete} className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 px-3 py-2 text-[11px] font-bold text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-rose-900 dark:text-rose-300 dark:hover:bg-rose-950/40" onClick={() => setConfirmDelete(true)}><Trash2 size={13} />Delete</button></div>
 
       <div role="tablist" aria-label="Select post account" className="w-full max-w-full min-h-[54px] touch-pan-x overflow-x-auto overflow-y-hidden border-b border-slate-100 py-2 [scrollbar-width:thin] [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 dark:border-slate-800 dark:[&::-webkit-scrollbar-thumb]:bg-slate-600">
         <div className="flex min-w-max flex-row items-center gap-2 whitespace-nowrap px-5 sm:px-6">{channelOptions.map((channel) => {
@@ -992,15 +1120,56 @@ function ScheduledPostModal({ post, accounts, authorName, request, onRefresh, on
         {tab === "preview" ? <div className="mx-auto max-w-md"><NativePostPreview platform={activeChannelOption.platform} accountName={activeChannelOption.accountName} authorName={displayAuthor} content={activePost.content || ""} mediaUrl={mediaUrl} title={previewTitle} timestamp={previewTimestamp} format={activePost.post_format || activeMetadata.format || "Post"} account={activeChannelOption.account} /></div> : tab === "details" ? <div className="mx-auto max-w-lg space-y-5">
           <div className="flex flex-wrap items-center gap-2"><span className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-[11px] font-bold text-indigo-700 dark:border-indigo-900 dark:bg-indigo-950/60 dark:text-indigo-200">{activeChannelOption.accountName} · {activeChannelOption.label}</span><span className="rounded-full bg-slate-100 px-3 py-1.5 text-[10px] font-bold capitalize text-slate-600 dark:bg-slate-800 dark:text-slate-300">{activePost.status === "published" && activePost.provider_post_id ? "published" : activePost.status === "published" ? "unconfirmed" : activePost.status}</span></div>
           <div className="rounded-xl bg-slate-50 px-3 py-3 text-xs leading-5 dark:bg-slate-800/70"><p>Provider post: {activePost.provider_post_id || "Not confirmed"}</p><p>Attempts: {activePost.attempt_count ?? 0}{activePost.latest_execution_outcome ? ` · last log ${activePost.latest_execution_outcome}` : ""}</p>{activePost.last_error_message && <p className="text-rose-600 dark:text-rose-300">{activePost.last_error_code ? `${activePost.last_error_code}: ` : ""}{activePost.last_error_message}</p>}</div>
-          <label className="block"><span className="mb-2 flex items-center gap-2 text-xs font-bold"><Clock3 size={14} className="text-indigo-500" />Scheduled time</span>{editing ? <input type="datetime-local" value={scheduledAt} onChange={(event) => setScheduledAt(event.target.value)} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-950" /> : <div className="rounded-xl bg-slate-50 px-3 py-3 text-sm dark:bg-slate-800/70">{new Date(activePost.scheduled_at).toLocaleString(undefined, { dateStyle: "full", timeStyle: "short" })}</div>}</label>
+          <label className="block"><span className="mb-2 flex items-center gap-2 text-xs font-bold"><Clock3 size={14} className="text-indigo-500" />Scheduled time</span>{editing ? <input type="datetime-local" value={scheduledAt} onChange={(event) => setScheduledAt(event.target.value)} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-950" /> : <div className="rounded-xl bg-slate-50 px-3 py-3 text-sm dark:bg-slate-800/70">{formatScheduledLocal(activePost.scheduled_at)}</div>}</label>
           <label className="block"><span className="mb-2 flex items-center justify-between gap-2 text-xs font-bold"><span className="flex items-center gap-2"><MessageSquareText size={14} className="text-indigo-500" />Caption for {activeChannelOption.label}</span><span className={`font-medium ${content.length > characterLimit ? "text-rose-500" : "text-slate-400"}`}>{content.length.toLocaleString()} / {characterLimit.toLocaleString()}</span></span>{editing ? <textarea rows={5} maxLength={characterLimit} value={content} onChange={(event) => setContent(event.target.value)} className="w-full resize-y rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm leading-6 outline-none focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-950" /> : <div className="whitespace-pre-wrap rounded-xl bg-slate-50 px-3 py-3 text-sm leading-6 dark:bg-slate-800/70">{activePost.content || "No caption added."}</div>}</label>
           <label className="block"><span className="mb-2 flex items-center gap-2 text-xs font-bold"><Tag size={14} className="text-indigo-500" />Targeted hashtags</span>{editing ? <input value={hashtags} onChange={(event) => setHashtags(event.target.value)} placeholder="#brand #campaign" className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs outline-none focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-950" /> : <div className="rounded-xl bg-slate-50 px-3 py-3 text-xs dark:bg-slate-800/70">{hashtags || "No platform-specific hashtags"}</div>}</label>
           <div className="grid gap-4 sm:grid-cols-2"><label className="block"><span className="mb-2 flex items-center gap-2 text-xs font-bold"><Tag size={14} className="text-indigo-500" />Tags</span><select disabled={!editing} value={tag} onChange={(event) => setTag(event.target.value)} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs outline-none focus:border-indigo-400 disabled:opacity-75 dark:border-slate-700 dark:bg-slate-950"><option value="">No tag</option>{[...new Set([...(Array.isArray(activeMetadata.tags) ? activeMetadata.tags : []), "Campaign", "Evergreen", "Product launch", "Behind the scenes"])].filter(Boolean).map((value) => <option key={value} value={value}>{value}</option>)}</select></label><label className="block"><span className="mb-2 flex items-center gap-2 text-xs font-bold"><ShieldCheck size={14} className="text-indigo-500" />Privacy</span><select disabled={!editing} value={privacy} onChange={(event) => setPrivacy(event.target.value)} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs outline-none focus:border-indigo-400 disabled:opacity-75 dark:border-slate-700 dark:bg-slate-950"><option>Public</option><option>Followers</option><option>Only me</option></select></label></div>
           <p className="text-[10px] text-slate-400">Caption, hashtags, tags, and settings save to this account’s post only. Publishing status is managed by the publishing service.</p>
-          {editing && <div className="flex justify-end gap-2"><button type="button" className={button} onClick={() => { setEditing(false); setContent(activePost.content || ""); setScheduledAt(toLocalInputValue(activePost.scheduled_at)); setHashtags(Array.isArray(activeMetadata.hashtags) ? activeMetadata.hashtags.join(" ") : ""); setTag(activeMetadata.tags?.[0] || ""); setPrivacy(activeMetadata.privacy || "Public"); }}>Cancel</button><button type="button" disabled={busy || !scheduledAt || content.length > characterLimit} className={primary} onClick={() => void saveChanges()}>{busy ? <LoaderCircle size={14} className="animate-spin" /> : <Check size={14} />}Save changes</button></div>}
+          {editing && <div className="sticky bottom-0 z-10 -mx-1 flex justify-end gap-2 border-t border-slate-100 bg-white/95 px-1 py-3 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95"><button type="button" className={button} onClick={() => discardEdits()}>Cancel</button><button type="button" disabled={busy || !scheduledAt || content.length > characterLimit} className={primary} onClick={() => void saveChanges()}>{busy ? <LoaderCircle size={14} className="animate-spin" /> : <Check size={14} />}Save changes</button></div>}
         </div> : <section className="mx-auto max-w-lg"><div className="mb-4"><h3 className="font-display text-sm font-extrabold">Team notes · {activeChannelOption.accountName}</h3><p className="mt-1 text-xs text-slate-500">These internal notes are attached only to this account’s scheduled post.</p></div>{commentsLoading ? <div className="grid min-h-32 place-items-center text-xs text-slate-400"><LoaderCircle className="animate-spin" size={18} /></div> : comments.length ? <div className="mb-5 space-y-4">{comments.map((comment) => { const name = comment.author_name || "Workspace member"; return <article key={comment.id} className="flex gap-3"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-gradient-to-br from-indigo-600 to-purple-600 text-[11px] font-extrabold text-white">{name.slice(0, 1).toUpperCase()}</span><div className="min-w-0 flex-1 rounded-2xl bg-slate-50 px-4 py-3 dark:bg-slate-800/70"><div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1"><p className="text-xs font-extrabold">{name}</p><time className="text-[10px] text-slate-400">{new Date(comment.created_at).toLocaleString()}</time></div><p className="mt-2 whitespace-pre-wrap text-xs leading-5 text-slate-700 dark:text-slate-200">{comment.body}</p></div></article>; })}</div> : <div className="mb-5 rounded-2xl border border-dashed border-slate-200 py-10 text-center dark:border-slate-700"><span className="mx-auto grid h-10 w-10 place-items-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300"><MessageSquareText size={17} /></span><p className="mt-3 text-xs font-bold">No notes for this account yet</p><p className="mt-1 text-[11px] text-slate-400">Leave feedback specific to {activeChannelOption.label}.</p></div>}<form onSubmit={addComment} className="rounded-2xl border border-slate-200 p-3 focus-within:border-indigo-300 dark:border-slate-700 dark:focus-within:border-indigo-700"><textarea value={commentText} onChange={(event) => setCommentText(event.target.value)} rows={3} maxLength={5000} placeholder={`Internal note for ${activeChannelOption.label}…`} className="w-full resize-y bg-transparent px-1 py-1 text-xs leading-5 outline-none placeholder:text-slate-400" /><div className="mt-2 flex items-center justify-between"><span className="text-[10px] text-slate-400">Private workspace note</span><button type="submit" disabled={commentBusy || !commentText.trim()} className={primary}>{commentBusy ? <LoaderCircle size={14} className="animate-spin" /> : <Send size={14} />}Add note</button></div></form></section>}
       </div>
       <footer className="flex items-center justify-between border-t border-slate-100 px-5 py-3 text-[10px] text-slate-400 dark:border-slate-800 sm:px-6"><span>Post ID · {String(activePost.id).slice(0, 8)}</span><span>Workspace content · private</span></footer>
     </section>
+
+    {confirmDelete && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-[1px]" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) setConfirmDelete(false); }} role="presentation">
+      <div role="alertdialog" aria-modal="true" aria-labelledby="delete-post-title" aria-describedby="delete-post-desc" className="w-full max-w-md overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_28px_80px_rgba(15,23,42,.28)] dark:border-slate-700 dark:bg-slate-900">
+        <div className="border-b border-rose-100 bg-rose-50/80 px-5 py-4 dark:border-rose-900/50 dark:bg-rose-950/40">
+          <div className="flex items-start gap-3">
+            <span className="mt-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-rose-600 text-white shadow-md shadow-rose-500/25"><Trash2 size={18} /></span>
+            <div className="min-w-0">
+              <h3 id="delete-post-title" className="font-display text-base font-extrabold text-slate-900 dark:text-white">Delete this post?</h3>
+              <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">{activeChannelOption?.accountName || "This channel"} · {activeChannelOption?.label || "channel"}</p>
+            </div>
+          </div>
+        </div>
+        <div id="delete-post-desc" className="space-y-3 px-5 py-4 text-sm leading-6 text-slate-700 dark:text-slate-200">
+          {willRemoteDelete ? (
+            <>
+              <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-3 text-xs font-semibold text-rose-800 dark:border-rose-900 dark:bg-rose-950/50 dark:text-rose-100">
+                Deleting will also remove this post from <span className="font-extrabold">{remoteDeletePlatformLabel}</span>
+                {remoteDeletePlatformLabel === "Facebook" ? " (your Facebook Page/feed)" : ""}.
+                It will disappear from Social Studio and from {remoteDeletePlatformLabel}.
+              </p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">If {remoteDeletePlatformLabel} rejects the delete, the post stays here so nothing is lost silently.</p>
+            </>
+          ) : (
+            <p className="text-xs text-slate-600 dark:text-slate-300">This permanently removes the post from Social Studio. It was not confirmed on a social network, so nothing is removed elsewhere.</p>
+          )}
+          {siblingChannels.length > 0 && (
+            <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-[11px] text-slate-600 dark:border-slate-700 dark:bg-slate-800/70 dark:text-slate-300">
+              Other channels in this group stay untouched: {siblingChannels.map((c) => c.accountName || c.label).join(", ")}. Delete each channel separately if you also want those network posts removed.
+            </p>
+          )}
+          {error && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200">{error}</p>}
+        </div>
+        <div className="flex justify-end gap-2 border-t border-slate-100 px-5 py-3 dark:border-slate-800">
+          <button type="button" disabled={busy} className={button} onClick={() => setConfirmDelete(false)}>Cancel</button>
+          <button type="button" disabled={busy} className="inline-flex items-center gap-1.5 rounded-xl bg-rose-600 px-3.5 py-2 text-[11px] font-bold text-white shadow-md shadow-rose-500/20 transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50" onClick={() => void deletePost()}>
+            {busy ? <LoaderCircle size={13} className="animate-spin" /> : <Trash2 size={13} />}
+            {willRemoteDelete ? `Delete from app & ${remoteDeletePlatformLabel}` : "Delete permanently"}
+          </button>
+        </div>
+      </div>
+    </div>}
   </div>, document.body);
 }

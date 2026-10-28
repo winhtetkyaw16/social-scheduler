@@ -169,7 +169,7 @@ export function DestinationPicker({
                     <input type="checkbox" checked={checked} onChange={() => toggle(item.id)} className="h-4 w-4 rounded border-slate-300 text-indigo-600" />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-xs font-extrabold text-slate-900 dark:text-slate-100">{item.name}</span>
-                      <span className="block text-[10px] font-semibold uppercase tracking-wide text-slate-400">{item.account_type}{item.category ? ` · ${item.category}` : ""}</span>
+                      <span className="block text-[10px] font-semibold uppercase tracking-wide text-slate-400">{item.platform && item.platform !== platform ? `${item.platform} · ` : ""}{item.account_type}{item.category ? ` · ${item.category}` : ""}</span>
                     </span>
                     {checked && <Check size={14} className="text-indigo-600" />}
                   </label>
@@ -197,7 +197,7 @@ export default function ManageAccounts({
   onConnect,
   onChanged,
   ChannelBrandImage,
-  publishablePlatforms = new Set(["x", "linkedin", "instagram"]),
+  publishablePlatforms = new Set(["x", "linkedin", "instagram", "facebook", "youtube", "tiktok", "pinterest", "threads"]),
 }) {
   const [busyId, setBusyId] = useState("");
   const [error, setError] = useState("");

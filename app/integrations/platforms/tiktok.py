@@ -17,6 +17,7 @@ class TikTokPlatform(SocialPlatform):
     """Publish one video via TikTok Content Posting (direct when allowed, else inbox draft)."""
 
     platform = "tiktok"
+    supports_remote_delete = False
 
     def publish(self, access_token: str, account_id: str, content: str, media_urls: list[str]) -> ProviderPublishResult:
         if not account_id or not str(account_id).strip():
@@ -80,6 +81,14 @@ class TikTokPlatform(SocialPlatform):
         inbox = _tiktok_json_post(access_token, _INBOX_INIT, inbox_body, raise_on_error=True)
         assert inbox is not None
         return _finish_tiktok_publish(access_token, inbox, upload_bytes, mode="inbox")
+
+
+    def delete(self, access_token: str, provider_post_id: str) -> None:
+        """TikTok Content Posting API has no general remote delete for live posts."""
+        raise ProviderConfigurationError(
+            "Remote delete is not supported for TikTok. "
+            "Remove the video in the TikTok app, then delete it here, or leave it in SocialStudio."
+        )
 
 
 def _privacy_level(access_token: str) -> str:

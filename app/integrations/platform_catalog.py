@@ -43,7 +43,7 @@ ACCOUNT_TYPE_CATALOG: dict[str, dict[str, Any]] = {
             },
         },
         "needs_destination_pick": True,
-        "notes": "Connect selects Facebook Pages (and Groups when the API returns them). Personal profiles are not postable destinations.",
+        "notes": "Connect selects Facebook Pages, Groups (when the API returns them), and linked Instagram Business accounts. Personal profiles are not postable destinations.",
     },
     "instagram": {
         "label": "Instagram",

@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-label="SocialStudio">
+  <title>SocialStudio app mark</title>
+  <defs>
+    <linearGradient id="iconGrad" x1="18%" y1="12%" x2="88%" y2="92%">
+      <stop offset="0%" stop-color="#818CF8"/>
+      <stop offset="42%" stop-color="#6366F1"/>
+      <stop offset="100%" stop-color="#1e1b4b"/>
+    </linearGradient>
+    <radialGradient id="hl" cx="32%" cy="28%" r="55%">
+      <stop offset="0%" stop-color="#A5B4FC" stop-opacity="0.32"/>
+      <stop offset="100%" stop-color="#6366F1" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="squircle">
+      <rect x="0" y="0" width="1024" height="1024" rx="225" ry="225"/>
+    </clipPath>
+    <!-- Clean diamond ray pointing up; rotate for other directions -->
+    <path id="ray" d="M0,-282 L52,-107 L10,-23 L-10,-23 L-52,-107 Z"/>
+    <path id="raySec" d="M0,-135 L18,-52 L4,-16 L-4,-16 L-18,-52 Z"/>
+  </defs>
+  <g clip-path="url(#squircle)">
+    <rect width="1024" height="1024" fill="url(#iconGrad)"/>
+    <rect width="1024" height="1024" fill="url(#hl)"/>
+    <rect x="48" y="36" width="928" height="110" rx="55" fill="#ffffff" opacity="0.11"/>
+  </g>
+  <g id="mark" transform="translate(512,512)" fill="#FFFFFF">
+    <use href="#ray"/>
+    <use href="#ray" transform="rotate(90)"/>
+    <use href="#ray" transform="rotate(180)"/>
+    <use href="#ray" transform="rotate(270)"/>
+    <g opacity="0.95">
+      <use href="#raySec" transform="rotate(45)"/>
+      <use href="#raySec" transform="rotate(135)"/>
+      <use href="#raySec" transform="rotate(225)"/>
+      <use href="#raySec" transform="rotate(315)"/>
+    </g>
+    <circle r="46" fill="#FFFFFF"/>
+    <circle r="20" fill="#A5B4FC" opacity="0.85"/>
+    <g fill="#A5B4FC" opacity="0.9">
+      <circle cx="0" cy="-265" r="13"/>
+      <circle cx="265" cy="0" r="13"/>
+      <circle cx="0" cy="265" r="13"/>
+      <circle cx="-265" cy="0" r="13"/>
+    </g>
+  </g>
+</svg>

@@ -312,15 +312,13 @@ export default function LivePreview({ accounts = [], channelInfo, caption, uploa
               className={`preview-tab ${active ? "preview-tab-active" : ""}`}
             >
               <span className="inline-flex items-center gap-2">
-                {/* Fixed square crop keeps each platform logo centered in a circle. */}
-                <div className="relative flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full aspect-square bg-white">
-                  <img
-                    src={data.logo}
-                    alt=""
-                    aria-hidden="true"
-                    className="absolute h-[105%] w-[105%] max-w-none scale-105 object-cover"
-                  />
-                </div>
+                <AccountAvatar
+                  account={item}
+                  ChannelBrandImage={PreviewChannelBrandImage}
+                  size={28}
+                  badgeScale={0.45}
+                  showBadge={true}
+                />
                 <span>{data.label} {formatLabel}</span>
               </span>
             </button>

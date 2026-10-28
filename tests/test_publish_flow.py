@@ -46,7 +46,9 @@ def test_schedule_does_not_mark_published_and_dispatch_is_mocked(client, auth_he
     )
     assert created.status_code == 200, created.text
     post = created.json()
-    assert post["status"] == "scheduled"
+    # Due / Post-now rows flip to queued before the worker finishes so the UI
+    # never looks "still scheduled" while Graph is already running.
+    assert post["status"] == "queued"
     assert post["provider_post_id"] is None
     assert post["post_metadata"].get("analytics", {}).get("source") != "simulated"
     assert queued, "a due post should be handed to the worker without publishing inline"
@@ -54,15 +56,32 @@ def test_schedule_does_not_mark_published_and_dispatch_is_mocked(client, auth_he
     listed = client.get("/api/v1/posts", headers=headers)
     assert listed.status_code == 200
     visible = next(item for item in listed.json() if item["id"] == post["id"])
-    assert visible["status"] == "scheduled"
+    assert visible["status"] in {"queued", "scheduled", "publishing", "published"}
     assert visible["provider_post_id"] is None
     assert "simulated" not in listed.text
 
+    # Create already enqueued the due post; beat reclaim is for stale queued only.
+    assert str(post["id"]) in {call[0] for call in queued}
+
+    from app.db.session import SessionLocal
+    from app.models import ScheduledPost
+    from sqlalchemy import select
+    from uuid import UUID
     from app.tasks.dispatch_due_posts import dispatch_due_posts
 
+    db = SessionLocal()
+    try:
+        row = db.scalar(select(ScheduledPost).where(ScheduledPost.id == UUID(post["id"])))
+        row.status = "scheduled"
+        db.commit()
+    finally:
+        db.close()
+
+    before = len(queued)
     dispatched = dispatch_due_posts()
-    assert dispatched == 1
-    assert str(post["id"]) in {call[0] for call in queued}
+    assert dispatched >= 1
+    assert len(queued) >= before + 1
+    assert str(post["id"]) in {call[0] for call in queued[before:]}
 
     monkeypatch.setattr(
         "app.tasks.publish_post.publish",

@@ -6,7 +6,7 @@ from urllib.parse import urlparse, urlunparse
 
 from app.core.config import PUBLIC_BASE_URL
 from app.core.exceptions import ProviderConfigurationError
-from app.integrations.base import ProviderPublishResult, SocialPlatform, provider_request
+from app.integrations.base import ProviderPublishResult, SocialPlatform, provider_delete, provider_request
 
 _LOCAL_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0", "::1", "host.docker.internal"}
 
@@ -59,6 +59,7 @@ class InstagramPlatform(SocialPlatform):
     """Publish supported image posts through the Instagram API with Instagram Login."""
 
     platform = "instagram"
+    supports_remote_delete = True
 
     def publish(self, access_token: str, account_id: str, content: str, media_urls: list[str]) -> ProviderPublishResult:
         """Create a media container, publish it, and return Instagram's ID."""
@@ -80,3 +81,12 @@ class InstagramPlatform(SocialPlatform):
         if not post_id:
             raise RuntimeError("Instagram did not return a published media identifier")
         return ProviderPublishResult(post_id=str(post_id), status_code=200)
+
+
+    def delete(self, access_token: str, provider_post_id: str) -> None:
+        """Delete published Instagram media."""
+        media_id = (provider_post_id or "").strip()
+        if not media_id:
+            raise ProviderConfigurationError("Instagram delete needs a provider media id.")
+        version = os.getenv("INSTAGRAM_GRAPH_API_VERSION", "v24.0")
+        provider_delete(f"https://graph.instagram.com/{version}/{media_id}", access_token=access_token)

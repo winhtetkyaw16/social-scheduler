@@ -8,7 +8,7 @@ import time
 import httpx
 
 from app.core.exceptions import ProviderConfigurationError
-from app.integrations.base import ProviderPublishResult, SocialPlatform, provider_request
+from app.integrations.base import ProviderPublishResult, SocialPlatform, provider_delete, provider_request
 from app.integrations.media_urls import guess_media_kind, public_media_url
 
 
@@ -16,6 +16,7 @@ class ThreadsPlatform(SocialPlatform):
     """Create a Threads media container, then publish it."""
 
     platform = "threads"
+    supports_remote_delete = True
 
     def publish(self, access_token: str, account_id: str, content: str, media_urls: list[str]) -> ProviderPublishResult:
         if not account_id or not str(account_id).strip():
@@ -94,3 +95,12 @@ def _wait_for_threads_container(access_token: str, version: str, creation_id: st
     raise ProviderConfigurationError(
         "Threads is still processing the media after 90s. Try a smaller file or publish again shortly."
     )
+
+
+    def delete(self, access_token: str, provider_post_id: str) -> None:
+        """Delete a published Threads media object."""
+        media_id = (provider_post_id or "").strip()
+        if not media_id:
+            raise ProviderConfigurationError("Threads delete needs a provider media id.")
+        version = os.getenv("THREADS_API_VERSION", "v1.0")
+        provider_delete(f"https://graph.threads.net/{version}/{media_id}", access_token=access_token)

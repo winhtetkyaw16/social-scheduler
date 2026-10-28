@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 
 from app.core.exceptions import ProviderConfigurationError
-from app.integrations.base import ProviderPublishResult, SocialPlatform, provider_request
+from app.integrations.base import ProviderPublishResult, SocialPlatform, provider_delete, provider_request
 from app.integrations.media_urls import guess_media_kind, public_media_url
 
 
@@ -13,6 +13,7 @@ class FacebookPlatform(SocialPlatform):
     """Publish text and/or one photo to a Facebook Page or Group feed."""
 
     platform = "facebook"
+    supports_remote_delete = True
 
     def publish(self, access_token: str, account_id: str, content: str, media_urls: list[str]) -> ProviderPublishResult:
         if not account_id or not str(account_id).strip():
@@ -53,3 +54,12 @@ class FacebookPlatform(SocialPlatform):
         if not post_id:
             raise RuntimeError("Facebook accepted the request without returning a post identifier")
         return ProviderPublishResult(post_id=str(post_id), status_code=response.status_code)
+
+
+    def delete(self, access_token: str, provider_post_id: str) -> None:
+        """Delete a Page/Group post via Graph API."""
+        post_id = (provider_post_id or "").strip()
+        if not post_id:
+            raise ProviderConfigurationError("Facebook delete needs a provider post id.")
+        version = os.getenv("FACEBOOK_GRAPH_API_VERSION", "v21.0")
+        provider_delete(f"https://graph.facebook.com/{version}/{post_id}", access_token=access_token)

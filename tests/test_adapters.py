@@ -88,3 +88,62 @@ def test_instagram_adapter_publishes_one_public_image(monkeypatch):
     monkeypatch.setenv("PUBLIC_BASE_URL", "https://studio.example.com")
     InstagramPlatform().publish("token", "1789", "Caption", ["/static/uploads/a.jpg"])
     assert calls[0][1]["image_url"] == "https://studio.example.com/static/uploads/a.jpg"
+
+
+def test_facebook_adapter_deletes_post(monkeypatch):
+    from app.integrations.platforms.facebook import FacebookPlatform
+
+    seen = {}
+
+    def fake_request(method, url, **kwargs):
+        seen["method"] = method
+        seen["url"] = url
+        seen["headers"] = kwargs.get("headers")
+        class R:
+            status_code = 200
+            is_error = False
+        return R()
+
+    monkeypatch.setattr(httpx, "request", fake_request)
+    monkeypatch.setenv("FACEBOOK_GRAPH_API_VERSION", "v21.0")
+    FacebookPlatform().delete("token", "123_456")
+    assert seen["method"] == "DELETE"
+    assert seen["url"] == "https://graph.facebook.com/v21.0/123_456"
+    assert seen["headers"]["Authorization"] == "Bearer token"
+
+
+def test_facebook_delete_treats_404_as_success(monkeypatch):
+    from app.integrations.platforms.facebook import FacebookPlatform
+
+    def fake_request(method, url, **kwargs):
+        class R:
+            status_code = 404
+            is_error = True
+        return R()
+
+    monkeypatch.setattr(httpx, "request", fake_request)
+    FacebookPlatform().delete("token", "already-gone")
+
+
+def test_tiktok_remote_delete_unsupported():
+    from app.integrations.platforms.tiktok import TikTokPlatform
+
+    with pytest.raises(ProviderConfigurationError, match="not supported for TikTok"):
+        TikTokPlatform().delete("token", "publish-id-1")
+
+
+def test_x_adapter_deletes_post(monkeypatch):
+    seen = {}
+
+    def fake_request(method, url, **kwargs):
+        seen["method"] = method
+        seen["url"] = url
+        class R:
+            status_code = 200
+            is_error = False
+        return R()
+
+    monkeypatch.setattr(httpx, "request", fake_request)
+    XPlatform().delete("token", "999")
+    assert seen["method"] == "DELETE"
+    assert seen["url"] == "https://api.x.com/2/tweets/999"

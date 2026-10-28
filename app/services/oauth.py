@@ -1,6 +1,8 @@
-"""Authorization-code OAuth for connectable platforms."""
+﻿"""Authorization-code OAuth for connectable platforms."""
 
 from __future__ import annotations
+
+import os
 
 import base64
 import json
@@ -17,6 +19,17 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.core import config
+from dotenv import load_dotenv
+from pathlib import Path
+
+_ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
+
+
+def _reload_dotenv() -> None:
+    # Tests set OAuth env vars to empty before import; do not clobber them from .env.
+    if os.getenv("APP_ENV", "").lower() == "test":
+        return
+    load_dotenv(_ENV_FILE, override=True)
 from app.core.security import decrypt_token, encrypt_token
 from app.integrations.platform_catalog import (
     connectable_platform_names,
@@ -47,19 +60,36 @@ class _ProviderOAuth:
 
 
 def _providers() -> dict[str, _ProviderOAuth]:
+    _reload_dotenv()
+    x_id = os.getenv("X_CLIENT_ID", "") or ""
+    x_secret = os.getenv("X_CLIENT_SECRET", "") or ""
+    linkedin_id = os.getenv("LINKEDIN_CLIENT_ID", "") or ""
+    linkedin_secret = os.getenv("LINKEDIN_CLIENT_SECRET", "") or ""
+    instagram_id = os.getenv("INSTAGRAM_CLIENT_ID", "") or ""
+    instagram_secret = os.getenv("INSTAGRAM_CLIENT_SECRET", "") or ""
+    facebook_id = os.getenv("FACEBOOK_CLIENT_ID", "") or ""
+    facebook_secret = os.getenv("FACEBOOK_CLIENT_SECRET", "") or ""
+    youtube_id = os.getenv("YOUTUBE_CLIENT_ID", "") or ""
+    youtube_secret = os.getenv("YOUTUBE_CLIENT_SECRET", "") or ""
+    tiktok_key = os.getenv("TIKTOK_CLIENT_KEY", "") or ""
+    tiktok_secret = os.getenv("TIKTOK_CLIENT_SECRET", "") or ""
+    pinterest_id = os.getenv("PINTEREST_CLIENT_ID", "") or ""
+    pinterest_secret = os.getenv("PINTEREST_CLIENT_SECRET", "") or ""
+    threads_id = os.getenv("THREADS_CLIENT_ID", "") or ""
+    threads_secret = os.getenv("THREADS_CLIENT_SECRET", "") or ""
     return {
         "x": _ProviderOAuth(
             platform="x",
             authorize_url="https://twitter.com/i/oauth2/authorize",
             token_url="https://api.x.com/2/oauth2/token",
-            client_id=config.X_CLIENT_ID,
-            client_secret=config.X_CLIENT_SECRET,
+            client_id=x_id,
+            client_secret=x_secret,
             redirect_uri=config.X_REDIRECT_URI,
             scopes=("tweet.read", "tweet.write", "users.read", "offline.access"),
             use_pkce=True,
             missing_env=tuple(
                 name
-                for name, value in (("X_CLIENT_ID", config.X_CLIENT_ID), ("X_CLIENT_SECRET", config.X_CLIENT_SECRET))
+                for name, value in (("X_CLIENT_ID", x_id), ("X_CLIENT_SECRET", x_secret))
                 if not value
             ),
             auth_style="basic",
@@ -68,8 +98,8 @@ def _providers() -> dict[str, _ProviderOAuth]:
             platform="linkedin",
             authorize_url="https://www.linkedin.com/oauth/v2/authorization",
             token_url="https://www.linkedin.com/oauth/v2/accessToken",
-            client_id=config.LINKEDIN_CLIENT_ID,
-            client_secret=config.LINKEDIN_CLIENT_SECRET,
+            client_id=linkedin_id,
+            client_secret=linkedin_secret,
             redirect_uri=config.LINKEDIN_REDIRECT_URI,
             # Organization scopes are optional: keep personal connect working without Marketing Developer Platform approval.
             scopes=("openid", "profile", "email", "w_member_social"),
@@ -77,8 +107,8 @@ def _providers() -> dict[str, _ProviderOAuth]:
             missing_env=tuple(
                 name
                 for name, value in (
-                    ("LINKEDIN_CLIENT_ID", config.LINKEDIN_CLIENT_ID),
-                    ("LINKEDIN_CLIENT_SECRET", config.LINKEDIN_CLIENT_SECRET),
+                    ("LINKEDIN_CLIENT_ID", linkedin_id),
+                    ("LINKEDIN_CLIENT_SECRET", linkedin_secret),
                 )
                 if not value
             ),
@@ -87,16 +117,16 @@ def _providers() -> dict[str, _ProviderOAuth]:
             platform="instagram",
             authorize_url="https://www.instagram.com/oauth/authorize",
             token_url="https://api.instagram.com/oauth/access_token",
-            client_id=config.INSTAGRAM_CLIENT_ID,
-            client_secret=config.INSTAGRAM_CLIENT_SECRET,
+            client_id=instagram_id,
+            client_secret=instagram_secret,
             redirect_uri=config.INSTAGRAM_REDIRECT_URI,
             scopes=("instagram_business_basic", "instagram_business_content_publish"),
             use_pkce=False,
             missing_env=tuple(
                 name
                 for name, value in (
-                    ("INSTAGRAM_CLIENT_ID", config.INSTAGRAM_CLIENT_ID),
-                    ("INSTAGRAM_CLIENT_SECRET", config.INSTAGRAM_CLIENT_SECRET),
+                    ("INSTAGRAM_CLIENT_ID", instagram_id),
+                    ("INSTAGRAM_CLIENT_SECRET", instagram_secret),
                 )
                 if not value
             ),
@@ -105,8 +135,8 @@ def _providers() -> dict[str, _ProviderOAuth]:
             platform="facebook",
             authorize_url="https://www.facebook.com/dialog/oauth",
             token_url=f"{_meta_graph(config.FACEBOOK_GRAPH_API_VERSION)}/oauth/access_token",
-            client_id=config.FACEBOOK_CLIENT_ID,
-            client_secret=config.FACEBOOK_CLIENT_SECRET,
+            client_id=facebook_id,
+            client_secret=facebook_secret,
             redirect_uri=config.FACEBOOK_REDIRECT_URI,
             scopes=(
                 "pages_show_list",
@@ -118,8 +148,8 @@ def _providers() -> dict[str, _ProviderOAuth]:
             missing_env=tuple(
                 name
                 for name, value in (
-                    ("FACEBOOK_CLIENT_ID", config.FACEBOOK_CLIENT_ID),
-                    ("FACEBOOK_CLIENT_SECRET", config.FACEBOOK_CLIENT_SECRET),
+                    ("FACEBOOK_CLIENT_ID", facebook_id),
+                    ("FACEBOOK_CLIENT_SECRET", facebook_secret),
                 )
                 if not value
             ),
@@ -128,8 +158,8 @@ def _providers() -> dict[str, _ProviderOAuth]:
             platform="youtube",
             authorize_url="https://accounts.google.com/o/oauth2/v2/auth",
             token_url="https://oauth2.googleapis.com/token",
-            client_id=config.YOUTUBE_CLIENT_ID,
-            client_secret=config.YOUTUBE_CLIENT_SECRET,
+            client_id=youtube_id,
+            client_secret=youtube_secret,
             redirect_uri=config.YOUTUBE_REDIRECT_URI,
             scopes=(
                 "https://www.googleapis.com/auth/youtube.force-ssl",
@@ -140,8 +170,8 @@ def _providers() -> dict[str, _ProviderOAuth]:
             missing_env=tuple(
                 name
                 for name, value in (
-                    ("YOUTUBE_CLIENT_ID", config.YOUTUBE_CLIENT_ID),
-                    ("YOUTUBE_CLIENT_SECRET", config.YOUTUBE_CLIENT_SECRET),
+                    ("YOUTUBE_CLIENT_ID", youtube_id),
+                    ("YOUTUBE_CLIENT_SECRET", youtube_secret),
                 )
                 if not value
             ),
@@ -150,16 +180,16 @@ def _providers() -> dict[str, _ProviderOAuth]:
             platform="tiktok",
             authorize_url="https://www.tiktok.com/v2/auth/authorize/",
             token_url="https://open.tiktokapis.com/v2/oauth/token/",
-            client_id=config.TIKTOK_CLIENT_KEY,
-            client_secret=config.TIKTOK_CLIENT_SECRET,
+            client_id=tiktok_key,
+            client_secret=tiktok_secret,
             redirect_uri=config.TIKTOK_REDIRECT_URI,
             scopes=("user.info.basic", "video.publish", "video.upload"),
             use_pkce=False,
             missing_env=tuple(
                 name
                 for name, value in (
-                    ("TIKTOK_CLIENT_KEY", config.TIKTOK_CLIENT_KEY),
-                    ("TIKTOK_CLIENT_SECRET", config.TIKTOK_CLIENT_SECRET),
+                    ("TIKTOK_CLIENT_KEY", tiktok_key),
+                    ("TIKTOK_CLIENT_SECRET", tiktok_secret),
                 )
                 if not value
             ),
@@ -169,16 +199,16 @@ def _providers() -> dict[str, _ProviderOAuth]:
             platform="pinterest",
             authorize_url="https://www.pinterest.com/oauth/",
             token_url="https://api.pinterest.com/v5/oauth/token",
-            client_id=config.PINTEREST_CLIENT_ID,
-            client_secret=config.PINTEREST_CLIENT_SECRET,
+            client_id=pinterest_id,
+            client_secret=pinterest_secret,
             redirect_uri=config.PINTEREST_REDIRECT_URI,
             scopes=("boards:read", "boards:write", "pins:read", "pins:write", "user_accounts:read"),
             use_pkce=False,
             missing_env=tuple(
                 name
                 for name, value in (
-                    ("PINTEREST_CLIENT_ID", config.PINTEREST_CLIENT_ID),
-                    ("PINTEREST_CLIENT_SECRET", config.PINTEREST_CLIENT_SECRET),
+                    ("PINTEREST_CLIENT_ID", pinterest_id),
+                    ("PINTEREST_CLIENT_SECRET", pinterest_secret),
                 )
                 if not value
             ),
@@ -188,16 +218,16 @@ def _providers() -> dict[str, _ProviderOAuth]:
             platform="threads",
             authorize_url="https://threads.net/oauth/authorize",
             token_url="https://graph.threads.net/oauth/access_token",
-            client_id=config.THREADS_CLIENT_ID,
-            client_secret=config.THREADS_CLIENT_SECRET,
+            client_id=threads_id,
+            client_secret=threads_secret,
             redirect_uri=config.THREADS_REDIRECT_URI,
             scopes=("threads_basic", "threads_content_publish"),
             use_pkce=False,
             missing_env=tuple(
                 name
                 for name, value in (
-                    ("THREADS_CLIENT_ID", config.THREADS_CLIENT_ID),
-                    ("THREADS_CLIENT_SECRET", config.THREADS_CLIENT_SECRET),
+                    ("THREADS_CLIENT_ID", threads_id),
+                    ("THREADS_CLIENT_SECRET", threads_secret),
                 )
                 if not value
             ),

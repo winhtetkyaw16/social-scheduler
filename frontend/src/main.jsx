@@ -23,10 +23,15 @@ import tiktokPng from "./assets/tiktok.png";
 import xPng from "./assets/x.png";
 import youtubePng from "./assets/youtube.png";
 import threadsPng from "./assets/threads.png";
-import brandLogoSvg from "./assets/brand/logo.svg";
-import brandWordmarkDark from "./assets/brand/wordmark-dark.png";
-import brandWordmarkLight from "./assets/brand/wordmark-light.png";
+import lockupLight from "./assets/brand/socialcastly-lockup-light.png";
+import lockupDark from "./assets/brand/socialcastly-lockup-dark.png";
+import "./theme/tokens.css";
 import "./styles.css";
+import "./theme/design-scoped.css";
+import "./sc/sc-shell.css";
+import brandMark from "./assets/brand/socialcastly-mark-256.png";
+import { Dashboard as ScDashboard, Analytics as ScAnalytics, Settings as ScSettings, Team as ScTeam, MediaLibrary as ScMedia, Onboarding as ScOnboarding, States as ScStates } from "./sc/Pages.jsx";
+import { Avatar as ScAvatar, Ch as ScCh } from "./sc/ui.jsx";
 
 const API_BASE = (import.meta.env.VITE_API_BASE || `${window.location.origin}/api/v1`).replace(/\/$/, "");
 const API_ORIGIN = API_BASE.replace(/\/api\/v1\/?$/, "");
@@ -40,23 +45,6 @@ let sessionRefreshHandler = null;
 let refreshInFlight = null;
 const THEME_KEY = "social_studio_theme";
 const MAX_CHARS = 10000;
-
-
-function BrandMark({ size = 28, className = "" }) {
-  return <img src={brandLogoSvg} alt="" width={size} height={size} className={`brand-logo-mark ${className}`.trim()} />;
-}
-
-function BrandWordmark({ variant = "dark", className = "" }) {
-  const src = variant === "light" ? brandWordmarkLight : brandWordmarkDark;
-  void src; return <span role="img" aria-label="SocialStudio" className={`brand-wordmark brand-wordmark-text brand-wordmark-${variant} ${className}`.trim()}><span className="bw-social">social</span><span className="bw-studio">studio</span></span>;
-}
-
-function SidebarBrandLockup({ collapsed, dark }) {
-  if (collapsed) {
-    return <span className="brand-mark brand-mark-image" title="SocialStudio"><BrandMark size={26} /></span>;
-  }
-  return <span className="sidebar-lockup"><span className="brand-mark brand-mark-image"><BrandMark size={26} /></span><BrandWordmark variant={dark ? "light" : "dark"} className="sidebar-wordmark" /></span>;
-}
 
 
 const CHANNELS = [
@@ -251,7 +239,7 @@ async function api(path, { token, _retried = false, ...options } = {}) {
   if (options.body && !(options.body instanceof FormData)) headers.set("Content-Type", "application/json");
   let response;
   try { response = await fetch(`${API_BASE}${path}`, { ...options, headers }); }
-  catch { throw new Error("Could not reach SocialStudio. Check that the API is running and try again."); }
+  catch { throw new Error("Could not reach SocialCastly. Check that the API is running and try again."); }
   if (response.status === 401 && !_retried && !["/auth/refresh", "/auth/login", "/auth/token"].includes(path)) {
     const next = await refreshAccessToken();
     if (next) return api(path, { ...options, token: next, _retried: true });
@@ -321,36 +309,33 @@ function AuthScreen({ onAuthenticated, dark, toggleTheme, remember, setRemember 
     } catch (cause) { setError(cause.message || "Unable to sign in. Please try again."); }
     finally { setBusy(false); }
   }
-  const shell = dark ? "bg-[#0b1020] text-slate-100" : "bg-[#f6f7fb] text-slate-900";
-  return <main className={`min-h-screen ${shell} grid lg:grid-cols-[minmax(0,1.02fr)_minmax(480px,.98fr)]`}>
-    <section className="auth-hero relative hidden overflow-hidden px-12 py-10 text-white lg:flex lg:flex-col lg:justify-between xl:px-20">
-      <div className="relative z-10 flex items-center gap-3"><span className="brand-mark brand-mark-image brand-mark-on-dark"><BrandMark size={30} /></span><BrandWordmark variant="light" className="auth-hero-wordmark" /></div>
-      <div className="relative z-10 max-w-xl"><span className="rounded-full border border-indigo-300/20 bg-indigo-300/10 px-3 py-1.5 text-[11px] font-bold uppercase tracking-[.18em] text-indigo-200">Your creative command center</span><h1 className="mt-7 font-display text-5xl font-extrabold leading-[1.08] tracking-[-.055em] xl:text-6xl">Make every post<br /><span className="text-gradient">count.</span></h1><p className="mt-6 max-w-md text-base leading-7 text-slate-300">Create with clarity. Plan with confidence. Bring every channel together in one beautiful workspace.</p>
-        <div className="mt-10 space-y-4 text-sm text-slate-200"><div className="flex items-center gap-3"><CheckCircle2 className="text-indigo-300" size={18} />One focused workspace for every channel</div><div className="flex items-center gap-3"><CheckCircle2 className="text-indigo-300" size={18} />A live preview that keeps your content in context</div><div className="flex items-center gap-3"><CheckCircle2 className="text-indigo-300" size={18} />Private, encrypted account credentials</div></div>
+  const switchMode = (next) => { setMode(next); setError(""); };
+  return <div className={`scd sc-auth-root ${dark ? "dark" : ""}`}><main className="auth">
+    <section className="art">
+      <img src={lockupDark} style={{ height: 36, alignSelf: "flex-start" }} alt="SocialCastly" />
+      <div><h1 style={{ fontSize: 40, lineHeight: 1.1, maxWidth: 440 }}>Your whole social calendar, in one calm place.</h1><p style={{ opacity: .92, marginTop: 14, maxWidth: 420, fontSize: 16 }}>Write once, tailor per channel, and publish on time — every time.</p>
+        <div className="card" style={{ marginTop: 36, maxWidth: 440, color: "var(--text)", overflow: "hidden" }} aria-hidden="true"><div className="post"><div className="time">11:30<span>AM</span></div><span className="with-ch"><span className="avatar" style={{ background: "#4F46E5", width: 36, height: 36 }}>SC</span><span className="ch ch-linkedin sm">in</span></span><div className="body"><div className="row" style={{ gap: 8, marginBottom: 4 }}><b className="sm">Your brand</b><span className="badge b-primary">Scheduled</span></div><div className="txt">Plan the week in one place, preview every channel, and let SocialCastly publish on time.</div></div></div></div>
       </div>
-      <div className="relative z-10 flex items-center gap-2 text-xs text-slate-400"><Globe2 size={14} />Built for teams with a lot to say.</div>
+      <p style={{ opacity: .9 }} className="sm">Built for teams with a lot to say.</p>
+      <img src={brandMark} style={{ position: "absolute", right: -140, bottom: -140, width: 520, opacity: .14, filter: "brightness(0) invert(1)" }} alt="" />
     </section>
-    <section className="flex min-h-screen flex-col justify-center px-5 py-8 sm:px-10 lg:px-16 xl:px-24">
-      <div className="mx-auto w-full max-w-md">
-        <div className="mb-9 flex items-center justify-between lg:justify-end"><div className="flex items-center gap-2 lg:hidden"><BrandWordmark variant={dark ? "light" : "dark"} className="auth-mobile-wordmark" /></div><button type="button" onClick={toggleTheme} className="icon-button" aria-label={`Switch to ${dark ? "light" : "dark"} theme`}>{dark ? <Sun size={17} /> : <Moon size={17} />}</button></div>
-        <span className="text-[11px] font-extrabold uppercase tracking-[.18em] text-indigo-600">Welcome to SocialStudio</span><h2 className="mt-3 font-display text-3xl font-extrabold tracking-[-.045em]">{mode === "login" ? "Welcome back" : "Create your workspace"}</h2><p className="mt-2 text-sm text-slate-500">{mode === "login" ? "Sign in to pick up where your ideas left off." : "A better rhythm for your social starts here."}</p>
-        <div className="mt-7 grid grid-cols-2 rounded-xl bg-slate-100 p-1 dark:bg-slate-800"><button onClick={() => { setMode("login"); setError(""); }} className={`rounded-lg py-2.5 text-sm font-bold ${mode === "login" ? "bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white" : "text-slate-500"}`}>Sign in</button><button onClick={() => { setMode("signup"); setError(""); }} className={`rounded-lg py-2.5 text-sm font-bold ${mode === "signup" ? "bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white" : "text-slate-500"}`}>Create account</button></div>
-        <form onSubmit={submit} className="mt-6 space-y-4">
-          {mode === "signup" && <><Field label="Full name"><input autoComplete="name" required maxLength={160} value={fields.full_name} onChange={set("full_name")} placeholder="Alex Morgan" /></Field><Field label="Workspace name"><input autoComplete="organization" required maxLength={160} value={fields.workspace_name} onChange={set("workspace_name")} placeholder="My Agency Workspace" /></Field></>}
-          <Field label="Email address"><div className="field-icon"><AtSign size={16} /><input type="email" autoComplete="email" required value={fields.email} onChange={set("email")} placeholder="you@company.com" /></div></Field>
-          <Field label="Password"><div className="password-field"><input type={showPassword ? "text" : "password"} autoComplete={mode === "signup" ? "new-password" : "current-password"} required minLength={mode === "signup" ? 10 : 1} maxLength={128} value={fields.password} onChange={set("password")} placeholder={mode === "signup" ? "At least 10 characters" : "Your password"} /><button type="button" onClick={() => setShowPassword((v) => !v)}>{showPassword ? "Hide" : "Show"}</button></div></Field>
-          {mode === "signup" && <label className="flex items-start gap-2.5 text-xs leading-5 text-slate-500"><input required type="checkbox" className="mt-1 accent-indigo-600" /><span>I agree to the <a href="#terms" className="font-semibold text-indigo-600">Terms of Service</a> and <a href="#privacy" className="font-semibold text-indigo-600">Privacy Policy</a>.</span></label>}
-          {mode === "login" && <div className="flex items-center justify-between text-xs"><label className="flex items-center gap-2 text-slate-500"><input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} className="accent-indigo-600" />Remember me</label><button type="button" className="font-semibold text-indigo-600" onClick={() => setError("Password recovery is not configured yet. Contact your workspace administrator.")}>Forgot password?</button></div>}
-          {error && <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-3 text-xs leading-5 text-rose-700">{error}</div>}
-          <button disabled={busy} className="primary-button flex w-full items-center justify-center gap-2 !py-3.5">{busy ? <LoaderCircle size={17} className="animate-spin" /> : null}{busy ? "Please wait…" : mode === "login" ? "Sign in" : "Create account"}<ArrowRight size={16} /></button>
-          {mode === "signup" && <div className="flex items-start gap-2 rounded-xl bg-slate-50 p-3 text-[11px] leading-5 text-slate-500 dark:bg-slate-800"><CheckCircle2 size={15} className="mt-0.5 shrink-0 text-emerald-500" />Passwords are protected and your workspace is private.</div>}
+    <section className="form">
+      <div style={{ width: "100%", maxWidth: 400 }} className="col">
+        <div className="row between"><span className="sc-auth-mobile-logo"><img className="logo-light" src={lockupLight} alt="SocialCastly" style={{ height: 28 }} /><img className="logo-dark" src={lockupDark} alt="SocialCastly" style={{ height: 28 }} /></span><span className="grow" /><button type="button" onClick={toggleTheme} className="btn btn-ghost btn-icon" aria-label={`Switch to ${dark ? "light" : "dark"} theme`}>{dark ? <Sun size={17} /> : <Moon size={17} />}</button></div>
+        <h1>{mode === "login" ? "Welcome back" : "Create your workspace"}</h1><p className="muted" style={{ marginTop: -6 }}>{mode === "login" ? "Sign in to your SocialCastly workspace." : "A better rhythm for your social starts here."}</p>
+        <form onSubmit={submit} className="col" style={{ marginTop: 12 }}>
+          {mode === "signup" && <><div className="field"><label className="label" htmlFor="auth-name">Full name</label><input id="auth-name" className="input" autoComplete="name" required maxLength={160} value={fields.full_name} onChange={set("full_name")} placeholder="Alex Morgan" /></div><div className="field"><label className="label" htmlFor="auth-ws">Workspace name</label><input id="auth-ws" className="input" autoComplete="organization" required maxLength={160} value={fields.workspace_name} onChange={set("workspace_name")} placeholder="My Agency Workspace" /></div></>}
+          <div className="field"><label className="label" htmlFor="auth-email">Email</label><input id="auth-email" className="input" type="email" autoComplete="email" required value={fields.email} onChange={set("email")} placeholder="you@company.com" /></div>
+          <div className="field"><div className="row between"><label className="label" htmlFor="auth-pw">Password</label>{mode === "login" ? <a role="button" className="xs" style={{ color: "var(--primary)", fontWeight: 600, cursor: "pointer" }} onClick={() => setError("Password recovery is not configured yet. Contact your workspace administrator.")}>Forgot password?</a> : null}</div><div className="row" style={{ position: "relative" }}><input id="auth-pw" className="input grow" type={showPassword ? "text" : "password"} autoComplete={mode === "signup" ? "new-password" : "current-password"} required minLength={mode === "signup" ? 10 : 1} maxLength={128} value={fields.password} onChange={set("password")} placeholder={mode === "signup" ? "At least 10 characters" : "Your password"} /><button type="button" className="btn btn-sm btn-ghost" style={{ position: "absolute", right: 4 }} onClick={() => setShowPassword((v) => !v)}>{showPassword ? "Hide" : "Show"}</button></div></div>
+          {mode === "login" ? <label className="row sm" style={{ cursor: "pointer" }}><input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} hidden /><span className={`check ${remember ? "on" : ""}`} />Keep me signed in</label> : <label className="row sm" style={{ alignItems: "flex-start" }}><input required type="checkbox" style={{ marginTop: 3, accentColor: "var(--primary)" }} /><span>I agree to the <a href="#terms" style={{ color: "var(--primary)", fontWeight: 600 }}>Terms of Service</a> and <a href="#privacy" style={{ color: "var(--primary)", fontWeight: 600 }}>Privacy Policy</a>.</span></label>}
+          {error && <div role="alert" className="alert error sm">{error}</div>}
+          <button disabled={busy} className="btn btn-primary btn-lg">{busy ? <LoaderCircle size={17} className="animate-spin" /> : null}{busy ? "Please wait…" : mode === "login" ? "Sign in" : "Create account"}</button>
+          <p className="sm muted" style={{ textAlign: "center" }}>{mode === "login" ? <>New to SocialCastly? <a role="button" style={{ color: "var(--primary)", fontWeight: 600, cursor: "pointer" }} onClick={() => switchMode("signup")}>Create an account</a></> : <>Already have an account? <a role="button" style={{ color: "var(--primary)", fontWeight: 600, cursor: "pointer" }} onClick={() => switchMode("login")}>Sign in</a></>}</p>
         </form>
       </div>
     </section>
-  </main>;
+  </main></div>;
 }
-
-function Field({ label, children }) { return <label className="block space-y-1.5"><span className="text-xs font-bold text-slate-700 dark:text-slate-200">{label}</span>{children}</label>; }
 
 function useObjectUrl(file) {
   const [url, setUrl] = useState("");
@@ -370,11 +355,6 @@ function MediaThumb({ file, onRemove, onEdit, onDragStart, onDragOver, onDrop })
     <button type="button" title={`Edit ${file.name}`} aria-label={`Edit ${file.name}`} onClick={onEdit} className="absolute right-8 top-1 grid h-6 w-6 place-items-center rounded-full bg-indigo-600 text-white opacity-100 shadow transition hover:bg-indigo-500 sm:opacity-0 sm:group-hover:opacity-100 sm:focus:opacity-100"><Pencil size={11} /></button>
     <button type="button" title={`Remove ${file.name}`} aria-label={`Remove ${file.name}`} onClick={onRemove} className="media-remove"><XIcon size={12} /></button><span className="media-name">{file.name}</span>
   </div>;
-}
-
-function ChannelIcon({ channel, size = 17 }) {
-  const icon = { instagram: <Instagram size={size} />, linkedin: <Linkedin size={size} />, youtube: <Youtube size={size} /> }[channel.id];
-  return icon || <span className="inline-grid min-w-[17px] place-items-center font-extrabold leading-none" style={{ fontSize: channel.id === "x" ? size : size - 2 }}>{channel.icon}</span>;
 }
 
 const CHANNEL_BRAND_PNGS = { facebook: facebookPng, instagram: instagramPng, linkedin: linkedinPng, pinterest: pinterestPng, tiktok: tiktokPng, x: xPng, youtube: youtubePng, threads: threadsPng };
@@ -399,209 +379,14 @@ function ChannelBrandImage({ channelId, size = 24 }) {
   );
 }
 
-function accountPickerName(account) {
-  return String(account.display_name || account.account_name || "").trim() || "Connected account";
-}
-
-function accountPickerHandle(account) {
-  const handle = String(account.platform_account_id || "").trim();
-  const name = accountPickerName(account);
-  if (!handle || handle === name) return "";
-  return handle.startsWith("@") ? handle : `@${handle}`;
-}
-
-function ChannelAccountPicker({ channel, accounts, selectedIds, toggleAccount, onConnect, anchorRef, onClose }) {
-  const pickerRef = useRef(null);
-  const [layout, setLayout] = useState(() => ({
-    top: 0,
-    left: 0,
-    ready: false,
-    sheet: typeof window !== "undefined" && window.matchMedia("(max-width: 639px)").matches,
-  }));
-  const selectedCount = accounts.filter((account) => selectedIds.includes(account.id)).length;
-
-  useLayoutEffect(() => {
-    const place = () => {
-      const sheet = window.matchMedia("(max-width: 639px)").matches;
-      if (sheet) {
-        setLayout((current) => (current.ready && current.sheet ? current : { top: 0, left: 0, ready: true, sheet: true }));
-        return;
-      }
-      const anchor = anchorRef?.current;
-      if (!anchor) return;
-      const rect = anchor.getBoundingClientRect();
-      const width = Math.min(320, window.innerWidth - 24);
-      const height = pickerRef.current?.offsetHeight || 280;
-      const left = Math.max(12, Math.min(rect.left, window.innerWidth - width - 12));
-      const below = rect.bottom + 8;
-      const top = below + height <= window.innerHeight - 12 ? below : Math.max(12, rect.top - height - 8);
-      setLayout((current) => (
-        current.ready && !current.sheet && current.top === top && current.left === left
-          ? current
-          : { top, left, ready: true, sheet: false }
-      ));
-    };
-    place();
-    window.addEventListener("resize", place);
-    window.addEventListener("scroll", place, true);
-    return () => {
-      window.removeEventListener("resize", place);
-      window.removeEventListener("scroll", place, true);
-    };
-  }, [anchorRef, accounts.length, selectedCount]);
-
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
-
-  useEffect(() => {
-    const close = () => onCloseRef.current?.();
-    const onPointerDown = (event) => {
-      if (pickerRef.current?.contains(event.target) || anchorRef?.current?.contains(event.target)) return;
-      close();
-    };
-    const onKeyDown = (event) => { if (event.key === "Escape") close(); };
-    document.addEventListener("pointerdown", onPointerDown);
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("pointerdown", onPointerDown);
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [anchorRef]);
-
-  useEffect(() => {
-    if (!layout.sheet) return undefined;
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => { document.body.style.overflow = previous; };
-  }, [layout.sheet]);
-
-  useEffect(() => {
-    pickerRef.current?.focus();
-  }, []);
-
-  function selectAll() {
-    accounts.forEach((account) => {
-      if (!selectedIds.includes(account.id)) toggleAccount(account.id);
-    });
-  }
-
-  function clearSelected() {
-    accounts.forEach((account) => {
-      if (selectedIds.includes(account.id)) toggleAccount(account.id);
-    });
-  }
-
-  const body = (
-    <>
-      {layout.sheet && <div className="mx-auto mt-2.5 h-1 w-10 rounded-full bg-slate-200 dark:bg-slate-700" aria-hidden="true" />}
-      <div className="flex items-start justify-between gap-3 px-3 pb-1 pt-3">
-        <div className="min-w-0">
-          <p className="text-xs font-extrabold text-slate-900 dark:text-slate-100">{channel.label} accounts</p>
-          <p className="mt-0.5 text-[10px] text-slate-500">{selectedCount} of {accounts.length} selected for this post</p>
-        </div>
-        <button type="button" onClick={onClose} className="icon-button !h-7 !w-7 shrink-0" aria-label={`Close ${channel.label} accounts`}><XIcon size={14} /></button>
-      </div>
-      <div className="flex items-center gap-3 px-3 pb-1">
-        <button type="button" onClick={selectAll} disabled={selectedCount === accounts.length} className="text-[10px] font-bold text-indigo-600 disabled:cursor-not-allowed disabled:text-slate-300 dark:text-indigo-300 dark:disabled:text-slate-600">Select all</button>
-        <button type="button" onClick={clearSelected} disabled={selectedCount === 0} className="text-[10px] font-bold text-slate-500 disabled:cursor-not-allowed disabled:text-slate-300 dark:text-slate-400 dark:disabled:text-slate-600">Clear</button>
-      </div>
-      <ul className="max-h-64 space-y-0.5 overflow-y-auto px-2 py-1" aria-label={`${channel.label} accounts`}>
-        {accounts.map((account) => {
-          const checked = selectedIds.includes(account.id);
-          const name = accountPickerName(account);
-          const handle = accountPickerHandle(account);
-          return (
-            <li key={account.id}>
-              <label className={`flex cursor-pointer items-center gap-2.5 rounded-xl px-2 py-2 transition hover:bg-slate-50 dark:hover:bg-slate-800/80 ${checked ? "bg-indigo-50/80 dark:bg-indigo-950/40" : ""}`}>
-                <input type="checkbox" className="h-4 w-4 shrink-0 accent-indigo-600" checked={checked} onChange={() => toggleAccount(account.id)} />
-                <AccountAvatar account={account} ChannelBrandImage={ChannelBrandImage} size={32} badgeScale={0.5} />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-xs font-bold text-slate-800 dark:text-slate-100">{name}</span>
-                  {handle && <span className="block truncate text-[10px] text-slate-400">{handle}</span>}
-                </span>
-              </label>
-            </li>
-          );
-        })}
-      </ul>
-      <div className={`border-t border-slate-100 p-2 dark:border-slate-800 ${layout.sheet ? "pb-[max(12px,env(safe-area-inset-bottom))]" : ""}`}>
-        <button type="button" onClick={() => { onClose?.(); onConnect(channel); }} className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2.5 text-left text-xs font-bold text-indigo-600 transition hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40">
-          <Plus size={14} /> Connect another {channel.label} account
-        </button>
-      </div>
-    </>
-  );
-
-  if (typeof document === "undefined") return null;
-
-  if (layout.sheet) {
-    return createPortal(
-      <div className="modal-backdrop !items-end !justify-center !p-0" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose?.(); }}>
-        <section ref={pickerRef} id="channel-account-picker" role="dialog" aria-modal="true" aria-label={`${channel.label} accounts`} tabIndex={-1} className="modal-card w-full max-w-lg !rounded-b-none !rounded-t-[20px] !p-0 outline-none">
-          {body}
-        </section>
-      </div>,
-      document.body,
-    );
-  }
-
-  return createPortal(
-    <section
-      ref={pickerRef}
-      id="channel-account-picker"
-      role="dialog"
-      aria-label={`${channel.label} accounts`}
-      tabIndex={-1}
-      className="fixed z-[120] w-[min(320px,calc(100vw-24px))] overflow-hidden rounded-2xl border border-slate-200 bg-white text-slate-800 shadow-[0_22px_65px_rgba(15,23,42,.18)] outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-      style={{ top: layout.top, left: layout.left, visibility: layout.ready ? "visible" : "hidden" }}
-    >
-      {body}
-    </section>,
-    document.body,
-  );
-}
-
-function ChannelBar({ accounts, selectedIds, toggleAccount, openConnect }) {
-  const [openChannelId, setOpenChannelId] = useState("");
-  const anchors = useRef({});
-  const activeByPlatform = useMemo(() => {
-    const map = new Map();
-    accounts.filter((account) => account.is_active).forEach((account) => {
-      const group = map.get(account.platform) || []; group.push(account); map.set(account.platform, group);
-    });
-    return map;
-  }, [accounts]);
-  const openChannel = CHANNELS.find((channel) => channel.id === openChannelId) || null;
-  const openAccounts = openChannel ? activeByPlatform.get(openChannel.id) || [] : [];
-
-  function anchorFor(channelId) {
-    if (!anchors.current[channelId]) anchors.current[channelId] = { current: null };
-    return anchors.current[channelId];
-  }
-
-  return <section className="surface-card px-4 py-4 sm:px-5">
-    <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><div><h2 className="text-sm font-extrabold">Choose your channels</h2><p className="mt-0.5 text-[11px] text-slate-500">Open a channel and choose which accounts should receive this post.</p></div><span className="inline-flex items-center gap-1.5 text-[10px] font-semibold text-emerald-600"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />{accounts.filter((a) => a.is_active).length} connected</span></div>
-    <div className="flex gap-2 overflow-x-auto pb-1" role="group" aria-label="Select social channels">{CHANNELS.map((channel) => {
-      const connected = activeByPlatform.get(channel.id) || [];
-      const selectedCount = connected.filter((account) => selectedIds.includes(account.id)).length;
-      const selected = selectedCount > 0;
-      const open = openChannelId === channel.id;
-      const label = selectedCount > 0 ? `${channel.label} · ${selectedCount}` : channel.label;      return <button key={channel.id} ref={(node) => { anchorFor(channel.id).current = node; }} type="button" aria-pressed={selected} aria-expanded={connected.length ? open : undefined} aria-haspopup={connected.length ? "dialog" : undefined} aria-controls={open ? "channel-account-picker" : undefined} onClick={() => { if (!connected.length) { openConnect(channel); return; } setOpenChannelId((current) => current === channel.id ? "" : channel.id); }} className={`channel-pill ${selected ? "channel-pill-active" : ""} ${connected.length ? "" : "channel-pill-offline"}`} style={selected ? { "--channel-color": channel.brand } : {}} title={connected.length ? (selectedCount ? `${selectedCount} of ${connected.length} ${channel.label} ${connected.length === 1 ? "account" : "accounts"} selected` : `${connected.length} ${channel.label} ${connected.length === 1 ? "account" : "accounts"} connected — click to choose`) : `${channel.label} is not connected — click to add an account`}>
-        <ChannelBrandImage channelId={channel.id} /><span className="whitespace-nowrap">{label}</span>{connected.length ? <ChevronDown size={12} className={`shrink-0 opacity-70 transition-transform ${open ? "rotate-180" : ""}`} /> : <Plus size={12} className="text-slate-400" />}</button>;
-    })}</div>
-    {selectedIds.length > 0 && <p className="mt-2 text-[10px] text-slate-500">{selectedIds.length} account{selectedIds.length === 1 ? "" : "s"} selected · Open a channel to change which accounts receive this post</p>}
-    {openChannel && openAccounts.length > 0 && <ChannelAccountPicker channel={openChannel} accounts={openAccounts} selectedIds={selectedIds} toggleAccount={toggleAccount} onConnect={openConnect} anchorRef={anchorFor(openChannel.id)} onClose={() => setOpenChannelId("")} />}
-  </section>;
-}
-
 function ScheduleControls({ mode, setMode, date, setDate, time, setTime, timeZone, setTimeZone, selectedAccounts = [] }) {
   const minDate = dateInZone(new Date(), timeZone);
   const queueHint = selectedAccounts.length
     ? `Places each selected account into its next free weekly slot (${selectedAccounts.length} channel${selectedAccounts.length === 1 ? "" : "s"}).`
     : "Places each selected account into its next free weekly slot.";
-  return <section className="space-y-3"><div className="flex items-center justify-between"><div><h3 className="section-title">When should it go live?</h3><p className="section-hint">Choose a time that works for your audience.</p></div><Clock3 size={17} className="text-indigo-500" /></div>
-    <div className="grid grid-cols-3 rounded-xl bg-slate-100 p-1 dark:bg-slate-800"><button type="button" onClick={() => setMode("now")} className={`mode-pill ${mode === "now" ? "mode-pill-active" : ""}`}><Send size={13} />Post now</button><button type="button" onClick={() => setMode("schedule")} className={`mode-pill ${mode === "schedule" ? "mode-pill-active" : ""}`}><CalendarDays size={13} />Schedule</button><button type="button" onClick={() => setMode("queue")} className={`mode-pill ${mode === "queue" ? "mode-pill-active" : ""}`}><Timer size={13} />Next queue</button></div>
-    {mode === "schedule" && <div className="grid grid-cols-2 gap-2"><label className="control-label">Date<input required type="date" min={minDate} value={date} onChange={(e) => setDate(e.target.value)} /></label><label className="control-label">Time<input required type="time" value={time} onChange={(e) => setTime(e.target.value)} /></label><label className="control-label col-span-2">Timezone<select value={timeZone} onChange={(e) => setTimeZone(e.target.value)}>{!TIMEZONES.includes(timeZone) && <option value={timeZone}>{timeZone}</option>}{TIMEZONES.map((tz) => <option key={tz} value={tz}>{tz.replaceAll("_", " ")}</option>)}</select></label><div className="col-span-2 flex flex-wrap gap-1.5">{[["Tomorrow 9:00 AM", 1, "09:00"], ["In 3 hours", 0, ""]].map(([label, day, clock]) => <button type="button" key={label} onClick={() => { const next = new Date(Date.now() + (label === "In 3 hours" ? 3 * 60 * 60 * 1000 : 0)); if (label !== "In 3 hours") next.setDate(next.getDate() + Number(day)); setDate(dateInZone(next, timeZone)); setTime(clock || new Intl.DateTimeFormat("en-GB", { timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(next)); }} className="quick-time">{label}</button>)}</div></div>}
+  return <section className="space-y-3"><div className="flex items-center justify-between"><div><h3 className="sc-h2">When should it go live?</h3><p className="section-hint">Choose a time that works for your audience.</p></div><Clock3 size={17} className="text-indigo-500" /></div>
+    <div className="grid grid-cols-3 rounded-xl bg-slate-100 p-1 dark:bg-slate-800"><button type="button" onClick={() => setMode("now")} className={`sc-pill ${mode === "now" ? "sc-pill-on" : ""}`}><Send size={13} />Post now</button><button type="button" onClick={() => setMode("schedule")} className={`sc-pill ${mode === "schedule" ? "sc-pill-on" : ""}`}><CalendarDays size={13} />Schedule</button><button type="button" onClick={() => setMode("queue")} className={`sc-pill ${mode === "queue" ? "sc-pill-on" : ""}`}><Timer size={13} />Next queue</button></div>
+    {mode === "schedule" && <div className="grid grid-cols-2 gap-2"><label className="label">Date<input required type="date" min={minDate} value={date} onChange={(e) => setDate(e.target.value)} /></label><label className="label">Time<input required type="time" value={time} onChange={(e) => setTime(e.target.value)} /></label><label className="label col-span-2">Timezone<select value={timeZone} onChange={(e) => setTimeZone(e.target.value)}>{!TIMEZONES.includes(timeZone) && <option value={timeZone}>{timeZone}</option>}{TIMEZONES.map((tz) => <option key={tz} value={tz}>{tz.replaceAll("_", " ")}</option>)}</select></label><div className="col-span-2 flex flex-wrap gap-1.5">{[["Tomorrow 9:00 AM", 1, "09:00"], ["In 3 hours", 0, ""]].map(([label, day, clock]) => <button type="button" key={label} onClick={() => { const next = new Date(Date.now() + (label === "In 3 hours" ? 3 * 60 * 60 * 1000 : 0)); if (label !== "In 3 hours") next.setDate(next.getDate() + Number(day)); setDate(dateInZone(next, timeZone)); setTime(clock || new Intl.DateTimeFormat("en-GB", { timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(next)); }} className="sc-pill">{label}</button>)}</div></div>}
     {mode === "queue" && <div className="rounded-2xl border border-indigo-100 bg-indigo-50/70 px-3.5 py-3 text-xs leading-5 text-indigo-900 dark:border-indigo-900 dark:bg-indigo-950/40 dark:text-indigo-100"><p className="font-bold">Add to next queue slot</p><p className="mt-1 opacity-90">{queueHint} Edit weekly times under Publish → Queue.</p></div>}
   </section>;
 }
@@ -643,17 +428,17 @@ function MediaDropzone({ files, setFiles, uploadBusy, setToast, openTool, onEdit
         addFiles(event.dataTransfer.files);
       }}
       onClick={() => inputRef.current?.click()}
-      className={`dropzone ${dragging ? "dropzone-active" : ""}`}
+      className={`dropzone ${dragging ? "sc-drop-on" : ""}`}
       role="button"
       tabIndex={0}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") inputRef.current?.click();
       }}
     >
-      <span className="dropzone-icon"><Upload size={18} /></span><span className="text-sm font-bold">{uploadBusy ? "Uploading your media…" : "Drop photos or videos here"}</span><span className="text-[11px] text-slate-500">or <span className="font-bold text-indigo-600">browse files</span> · up to 10 files</span>
+      <span className="sc-drop-ico"><Upload size={18} /></span><span className="text-sm font-bold">{uploadBusy ? "Uploading your media…" : "Drop photos or videos here"}</span><span className="text-[11px] text-slate-500">or <span className="font-bold text-indigo-600">browse files</span> · up to 10 files</span>
     </div>
     {files.length > 0 && <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-4">{files.map((file, index) => <MediaThumb key={`${file.name}-${file.lastModified}-${index}`} file={file} onEdit={() => onEditFile(file)} onRemove={(e) => { e.stopPropagation(); setFiles((current) => current.filter((_, i) => i !== index)); }} onDragStart={(event) => { event.dataTransfer.setData("text/plain", String(index)); event.dataTransfer.effectAllowed = "move"; }} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); const from = Number(event.dataTransfer.getData("text/plain")); const to = index; if (!Number.isInteger(from) || from === to) return; setFiles((current) => { const next = [...current]; const [moved] = next.splice(from, 1); next.splice(to, 0, moved); return next; }); }} />)}</div>}
-    <div className="mt-2 flex flex-wrap gap-2"><button type="button" onClick={() => openTool("image")} className="tool-launch"><WandSparkles size={13} />Mini Canva / Image Editor</button><button type="button" onClick={() => openTool("video")} className="tool-launch"><Film size={13} />Video Studio</button></div>
+    <div className="mt-2 flex flex-wrap gap-2"><button type="button" onClick={() => openTool("image")} className="btn btn-secondary btn-sm"><WandSparkles size={13} />Mini Canva / Image Editor</button><button type="button" onClick={() => openTool("video")} className="btn btn-secondary btn-sm"><Film size={13} />Video Studio</button></div>
   </div>;
 }
 
@@ -679,10 +464,10 @@ function WritingTools({ caption, setCaption }) {
   }
   return <div className="rounded-2xl border border-slate-200 bg-white transition focus-within:border-indigo-400 focus-within:ring-4 focus-within:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-900">
     <textarea ref={textarea} value={caption} maxLength={MAX_CHARS} onChange={(e) => setCaption(e.target.value)} rows={expanded ? 12 : 7} placeholder="What would you like to share? Write a first line that makes people stop scrolling…" className={`${expanded ? "min-h-[280px]" : "min-h-[170px]"} w-full resize-y rounded-2xl border-0 bg-transparent px-4 py-3.5 text-sm leading-6 outline-none placeholder:text-slate-400 focus:ring-0 transition-[min-height]`} />
-    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 px-3 py-2 dark:border-slate-800"><div className="flex flex-wrap gap-1.5"><button type="button" onClick={() => polish("viral")} className="writing-action"><Sparkles size={12} />Make it viral</button><button type="button" onClick={() => polish("grammar")} className="writing-action">✓ Fix grammar</button><button type="button" onClick={() => polish("hashtags")} className={`writing-action ${hashtagsOpen ? "writing-action-selected" : ""}`}><Hash size={12} />Generate hashtags</button><button type="button" onClick={() => insert("https://")} className="writing-action" title="Insert a link"><Link2 size={12} />Link</button></div><div className="flex items-center gap-1"><button type="button" onClick={() => setExpanded((value) => !value)} className="emoji-button" aria-label={expanded ? "Collapse caption editor" : "Expand caption editor"} title={expanded ? "Collapse editor" : "Expand editor"}>{expanded ? <Shrink size={15} /> : <Expand size={15} />}</button><button ref={emojiButton} type="button" className="emoji-button" aria-label="Open emoji picker" aria-expanded={emojiOpen} onClick={() => setEmojiOpen((old) => !old)}><Smile size={17} /></button></div></div>
-    {hashtagsOpen && <div className="border-t border-slate-100 px-3 py-2 dark:border-slate-800"><p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">Suggested hashtags · select to insert</p><div className="flex flex-wrap gap-1.5">{(suggestions.length ? suggestions : ["#socialmedia", "#contentcreator", "#yourbrand"]).map((tag) => <button key={tag} onClick={() => insert(`${caption.endsWith(" ") || !caption ? "" : " "}${tag}`)} className="variable-pill !text-indigo-600">{tag}</button>)}</div></div>}
+    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 px-3 py-2 dark:border-slate-800"><div className="flex flex-wrap gap-1.5"><button type="button" onClick={() => polish("viral")} className="sc-pill"><Sparkles size={12} />Make it viral</button><button type="button" onClick={() => polish("grammar")} className="sc-pill">✓ Fix grammar</button><button type="button" onClick={() => polish("hashtags")} className={`sc-pill ${hashtagsOpen ? "sc-pill-on" : ""}`}><Hash size={12} />Generate hashtags</button><button type="button" onClick={() => insert("https://")} className="sc-pill" title="Insert a link"><Link2 size={12} />Link</button></div><div className="flex items-center gap-1"><button type="button" onClick={() => setExpanded((value) => !value)} className="btn btn-ghost btn-sm" aria-label={expanded ? "Collapse caption editor" : "Expand caption editor"} title={expanded ? "Collapse editor" : "Expand editor"}>{expanded ? <Shrink size={15} /> : <Expand size={15} />}</button><button ref={emojiButton} type="button" className="btn btn-ghost btn-sm" aria-label="Open emoji picker" aria-expanded={emojiOpen} onClick={() => setEmojiOpen((old) => !old)}><Smile size={17} /></button></div></div>
+    {hashtagsOpen && <div className="border-t border-slate-100 px-3 py-2 dark:border-slate-800"><p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">Suggested hashtags · select to insert</p><div className="flex flex-wrap gap-1.5">{(suggestions.length ? suggestions : ["#socialmedia", "#contentcreator", "#yourbrand"]).map((tag) => <button key={tag} onClick={() => insert(`${caption.endsWith(" ") || !caption ? "" : " "}${tag}`)} className="sc-pill !text-indigo-600">{tag}</button>)}</div></div>}
     <EmojiPicker open={emojiOpen} anchorRef={emojiButton} recent={recentEmojis} onClose={() => setEmojiOpen(false)} onSelect={(emoji) => { insert(emoji); setRecentEmojis((current) => [emoji, ...current.filter((item) => item !== emoji)].slice(0, 8)); }} />
-    <div className="flex flex-wrap items-center gap-1.5 border-t border-slate-100 px-3 py-2 dark:border-slate-800"><span className="mr-1 text-[9px] font-extrabold tracking-[.15em] text-slate-400">INSERT</span>{VARIABLES.map((variable) => <button key={variable} type="button" onClick={() => insert(variable)} className="variable-pill">{variable}</button>)}<span className={`ml-auto text-[10px] font-semibold ${caption.length > MAX_CHARS - 200 ? "text-amber-600" : "text-slate-400"}`}>{caption.length.toLocaleString()} / {MAX_CHARS.toLocaleString()}</span></div>
+    <div className="flex flex-wrap items-center gap-1.5 border-t border-slate-100 px-3 py-2 dark:border-slate-800"><span className="mr-1 text-[9px] font-extrabold tracking-[.15em] text-slate-400">INSERT</span>{VARIABLES.map((variable) => <button key={variable} type="button" onClick={() => insert(variable)} className="sc-pill">{variable}</button>)}<span className={`ml-auto text-[10px] font-semibold ${caption.length > MAX_CHARS - 200 ? "text-amber-600" : "text-slate-400"}`}>{caption.length.toLocaleString()} / {MAX_CHARS.toLocaleString()}</span></div>
   </div>;
 }
 
@@ -697,10 +482,10 @@ function QuickStudioDialog({ tool, files, selectedFile, onClose, onToast }) {
 
 function QuickStudioDialogContent({ tool, file, brightness, setBrightness, contrast, setContrast, fit, setFit, onClose, onToast }) {
   const fileUrl = useObjectUrl(file);
-  return <div className="modal-backdrop" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}><section role="dialog" aria-modal="true" aria-labelledby="quick-studio-title" className="modal-card max-w-lg">
-    <div className="flex items-start justify-between"><div><span className="eyebrow">QUICK CREATIVE TOOLS</span><h2 id="quick-studio-title" className="mt-1 font-display text-xl font-extrabold">{tool === "image" ? "Mini Canva / Image Editor" : "Video Studio"}</h2></div><button onClick={onClose} className="icon-button" aria-label="Close"><XIcon size={17} /></button></div>
-    {!file ? <div className="mt-5 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-7 text-center dark:border-slate-700 dark:bg-slate-800"><ImagePlus size={24} className="mx-auto text-indigo-500" /><p className="mt-2 text-sm font-bold">Add {tool === "video" ? "a video" : "an image"} to get started</p><p className="mt-1 text-xs text-slate-500">Your media will appear here as soon as you upload it in the composer.</p></div> : tool === "image" ? <div className="mt-4 space-y-4"><div className="overflow-hidden rounded-2xl bg-slate-100 dark:bg-slate-800"><img src={fileUrl} alt="Image editing preview" className="max-h-72 w-full object-contain" style={{ filter: `brightness(${brightness}%) contrast(${contrast}%)`, objectFit: fit }} /></div><label className="control-label">Brightness · {brightness}%<input type="range" min="50" max="150" value={brightness} onChange={(e) => setBrightness(+e.target.value)} /></label><label className="control-label">Contrast · {contrast}%<input type="range" min="50" max="150" value={contrast} onChange={(e) => setContrast(+e.target.value)} /></label><label className="control-label">Image crop<select value={fit} onChange={(e) => setFit(e.target.value)}><option value="cover">Fill frame</option><option value="contain">Fit entire image</option></select></label><p className="text-[10px] leading-4 text-slate-500">Adjustments are a live preview. The original uploaded image remains unchanged.</p></div> : <div className="mt-4 space-y-3"><video controls playsInline src={fileUrl} className="max-h-72 w-full rounded-2xl bg-black" /><p className="text-xs leading-5 text-slate-500">Review your video here before scheduling. Trim and export tools depend on a media editing service, which is not part of this API.</p></div>}
-    <div className="mt-5 flex justify-end"><button onClick={() => { onToast({ title: "Preview ready", message: "Your media preview is up to date." }); onClose(); }} className="primary-button !px-5 !py-2.5">Done</button></div>
+  return <div className="modal-wrap sc-modal-wrap" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}><section role="dialog" aria-modal="true" aria-labelledby="quick-studio-title" className="modal sc-modal max-w-lg">
+    <div className="flex items-start justify-between"><div><span className="xs muted sc-eyebrow">QUICK CREATIVE TOOLS</span><h2 id="quick-studio-title" className="mt-1  text-xl font-extrabold">{tool === "image" ? "Mini Canva / Image Editor" : "Video Studio"}</h2></div><button onClick={onClose} className="btn btn-ghost btn-icon" aria-label="Close"><XIcon size={17} /></button></div>
+    {!file ? <div className="mt-5 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-7 text-center dark:border-slate-700 dark:bg-slate-800"><ImagePlus size={24} className="mx-auto text-indigo-500" /><p className="mt-2 text-sm font-bold">Add {tool === "video" ? "a video" : "an image"} to get started</p><p className="mt-1 text-xs text-slate-500">Your media will appear here as soon as you upload it in the composer.</p></div> : tool === "image" ? <div className="mt-4 space-y-4"><div className="overflow-hidden rounded-2xl bg-slate-100 dark:bg-slate-800"><img src={fileUrl} alt="Image editing preview" className="max-h-72 w-full object-contain" style={{ filter: `brightness(${brightness}%) contrast(${contrast}%)`, objectFit: fit }} /></div><label className="label">Brightness · {brightness}%<input type="range" min="50" max="150" value={brightness} onChange={(e) => setBrightness(+e.target.value)} /></label><label className="label">Contrast · {contrast}%<input type="range" min="50" max="150" value={contrast} onChange={(e) => setContrast(+e.target.value)} /></label><label className="label">Image crop<select value={fit} onChange={(e) => setFit(e.target.value)}><option value="cover">Fill frame</option><option value="contain">Fit entire image</option></select></label><p className="text-[10px] leading-4 text-slate-500">Adjustments are a live preview. The original uploaded image remains unchanged.</p></div> : <div className="mt-4 space-y-3"><video controls playsInline src={fileUrl} className="max-h-72 w-full rounded-2xl bg-black" /><p className="text-xs leading-5 text-slate-500">Review your video here before scheduling. Trim and export tools depend on a media editing service, which is not part of this API.</p></div>}
+    <div className="mt-5 flex justify-end"><button onClick={() => { onToast({ title: "Preview ready", message: "Your media preview is up to date." }); onClose(); }} className="btn btn-primary !px-5 !py-2.5">Done</button></div>
   </section></div>;
 }
 
@@ -718,7 +503,7 @@ function ConnectDialog({ channel, onClose, onConnect, busy, error }) {
     pinterest: "Pinterest boards you can pin to (user login is kept as parent).",
     threads: "Your Threads profile via the Meta Threads API.",
   };
-  return <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}><div className="modal-card max-w-md" role="dialog" aria-modal="true" aria-labelledby="connect-title"><div className="flex items-start justify-between"><div><span className="eyebrow">CONNECT SOCIAL ACCOUNT</span><h2 id="connect-title" className="mt-1 font-display text-xl font-extrabold">Connect {channel.label}</h2></div><button type="button" onClick={onClose} className="icon-button"><XIcon size={17} /></button></div>{supported ? <><p className="mt-2 text-xs leading-5 text-slate-500">You'll continue to {channel.label} to authorize SocialStudio. Tokens are encrypted on the server and never returned to the browser.</p><p className="mt-2 text-xs leading-5 text-slate-500">{typeHints[channel.id] || ""}</p><p className="mt-2 text-[11px] font-semibold text-slate-500">{canPublish ? "Scheduling/publishing is available for this network." : "Connect works; publishing needs a publish-ready destination (e.g. Facebook Page) and valid tokens."}</p></> : <p className="mt-2 text-xs leading-5 text-slate-500">{channel.label} is not a connectable network in SocialStudio yet.</p>}{error && <p role="alert" className="mt-3 rounded-xl bg-rose-50 p-3 text-xs text-rose-700">{error}</p>}<div className="mt-5 flex justify-end gap-2"><button type="button" className="secondary-button" onClick={onClose}>Cancel</button>{supported && <button type="button" disabled={busy} onClick={() => onConnect(channel.id)} className="primary-button !px-5 !py-2.5">{busy ? "Redirecting…" : `Continue with ${channel.label}`}</button>}</div></div></div>;
+  return <div className="modal-wrap sc-modal-wrap" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}><div className="modal sc-modal max-w-md" role="dialog" aria-modal="true" aria-labelledby="connect-title"><div className="flex items-start justify-between"><div><span className="xs muted sc-eyebrow">CONNECT SOCIAL ACCOUNT</span><h2 id="connect-title" className="mt-1  text-xl font-extrabold">Connect {channel.label}</h2></div><button type="button" onClick={onClose} className="btn btn-ghost btn-icon"><XIcon size={17} /></button></div>{supported ? <><p className="mt-2 text-xs leading-5 text-slate-500">You'll continue to {channel.label} to authorize SocialCastly. Tokens are encrypted on the server and never returned to the browser.</p><p className="mt-2 text-xs leading-5 text-slate-500">{typeHints[channel.id] || ""}</p><p className="mt-2 text-[11px] font-semibold text-slate-500">{canPublish ? "Scheduling/publishing is available for this network." : "Connect works; publishing needs a publish-ready destination (e.g. Facebook Page) and valid tokens."}</p></> : <p className="mt-2 text-xs leading-5 text-slate-500">{channel.label} is not a connectable network in SocialCastly yet.</p>}{error && <p role="alert" className="mt-3 rounded-xl bg-rose-50 p-3 text-xs text-rose-700">{error}</p>}<div className="mt-5 flex justify-end gap-2"><button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>{supported && <button type="button" disabled={busy} onClick={() => onConnect(channel.id)} className="btn btn-primary !px-5 !py-2.5">{busy ? "Redirecting…" : `Continue with ${channel.label}`}</button>}</div></div></div>;
 }
 
 function ConnectChannelPicker({ open, onClose, onPick, onRequestChannel }) {
@@ -734,11 +519,11 @@ function ConnectChannelPicker({ open, onClose, onPick, onRequestChannel }) {
     threads: "Profile",
   };
   return (
-    <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="modal-card max-w-2xl p-5 sm:p-6" role="dialog" aria-modal="true" aria-labelledby="connect-picker-title">
+    <div className="modal-wrap sc-modal-wrap" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal sc-modal max-w-2xl p-5 sm:p-6" role="dialog" aria-modal="true" aria-labelledby="connect-picker-title">
         <div className="flex items-start justify-between gap-3">
-          <h2 id="connect-picker-title" className="font-display text-xl font-extrabold tracking-tight">Connect a channel</h2>
-          <button type="button" onClick={onClose} className="icon-button" aria-label="Close"><XIcon size={17} /></button>
+          <h2 id="connect-picker-title" className=" text-xl font-extrabold tracking-tight">Connect a channel</h2>
+          <button type="button" onClick={onClose} className="btn btn-ghost btn-icon" aria-label="Close"><XIcon size={17} /></button>
         </div>
         <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3">
           {CHANNELS.map((channel) => (
@@ -746,14 +531,14 @@ function ConnectChannelPicker({ open, onClose, onPick, onRequestChannel }) {
               type="button"
               key={channel.id}
               onClick={() => onPick(channel)}
-              className="connect-channel-tile"
+              className="card card-pad"
             >
               <ChannelBrandImage channelId={channel.id} size={36} />
               <span className="mt-3 block text-sm font-bold text-slate-900 dark:text-slate-100">{channel.label}</span>
               <span className="mt-0.5 block text-[11px] text-slate-500">{hints[channel.id] || "Profile"}</span>
             </button>
           ))}
-          <button type="button" onClick={onRequestChannel} className="connect-channel-tile">
+          <button type="button" onClick={onRequestChannel} className="card card-pad">
             <span className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300">
               <Plus size={18} />
             </span>
@@ -764,385 +549,6 @@ function ConnectChannelPicker({ open, onClose, onPick, onRequestChannel }) {
       </div>
     </div>
   );
-}
-
-function MetricCard({ icon: Icon, label, value, detail, accent, progress, footnote, valueNode, trailing }) {
-  return <article className="dashboard-metric group relative overflow-hidden rounded-3xl border border-slate-200/80 bg-white/75 p-5 shadow-[0_12px_36px_rgba(21,32,66,.045)] backdrop-blur-xl transition duration-300 hover:-translate-y-1 hover:shadow-[0_18px_48px_rgba(62,53,160,.10)] dark:border-slate-800 dark:bg-slate-900/75 sm:p-6">
-    <div className={`metric-orb ${accent}`} />
-    <div className="relative flex items-start justify-between"><div><p className="text-xs font-semibold text-slate-500 dark:text-slate-400">{label}</p><p className="mt-3 flex flex-wrap items-center gap-2 font-display text-3xl font-extrabold tracking-[-.06em] text-slate-900 dark:text-white">{valueNode ?? value}{trailing}</p><p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">{detail}</p></div><span className={`metric-icon ${accent}`}><Icon size={18} /></span></div>
-    {progress !== undefined && <div className="relative mt-5"><div className="h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800"><div className="h-full rounded-full bg-gradient-to-r from-indigo-600 via-purple-600 to-blue-600 transition-all" style={{ width: `${Math.min(progress, 100)}%` }} /></div><p className="mt-2 text-[10px] font-semibold text-slate-400">{footnote}</p></div>}
-    {progress === undefined && <p className="relative mt-5 text-[10px] font-semibold text-slate-400">{footnote}</p>}
-  </article>;
-}
-
-function readWeeklyGoal() {
-  try {
-    const raw = Number(localStorage.getItem("social_studio_weekly_goal"));
-    if (Number.isFinite(raw) && raw >= 1 && raw <= 30) return Math.round(raw);
-  } catch { /* Keep default. */ }
-  return 5;
-}
-
-function accountTokenBadge(account) {
-  const raw = account?.token_expires_at || account?.expires_at;
-  if (!raw) return null;
-  const expires = new Date(raw);
-  if (Number.isNaN(expires.getTime())) return null;
-  const msLeft = expires.getTime() - Date.now();
-  if (msLeft <= 0) return { label: "Expired", tone: "expired" };
-  if (msLeft < 7 * 24 * 60 * 60 * 1000) return { label: "Expiring", tone: "expiring" };
-  return null;
-}
-
-function HomeDashboard({ user, accounts, posts, openStudio, openConnect, openPlaceholder, openApiDocs, goToTab, localDrafts = [], onOpenDraft, onRetryPost, request }) {
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => { const timer = window.setInterval(() => setNow(new Date()), 60000); return () => window.clearInterval(timer); }, []);
-  const [weeklyGoal, setWeeklyGoal] = useState(readWeeklyGoal);
-  const [editingGoal, setEditingGoal] = useState(false);
-  const [goalDraft, setGoalDraft] = useState(() => String(readWeeklyGoal()));
-  const [publishOpened, setPublishOpened] = useState(() => {
-    try { return localStorage.getItem("social_studio_opened_publish") === "1"; } catch { return false; }
-  });
-  const [hideFirstSteps, setHideFirstSteps] = useState(() => {
-    try { return localStorage.getItem("social_studio_hide_first_steps") === "1"; } catch { return false; }
-  });
-  const [serverDrafts, setServerDrafts] = useState([]);
-
-  useEffect(() => {
-    if (typeof request !== "function") return undefined;
-    let cancelled = false;
-    (async () => {
-      try {
-        const result = await request("/publish/drafts");
-        if (!cancelled) setServerDrafts(Array.isArray(result) ? result.filter(Boolean) : []);
-      } catch {
-        if (!cancelled) setServerDrafts([]);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [request]);
-
-  const firstName = user.full_name?.trim().split(/\s+/)[0] || "there";
-  const hour = now.getHours();
-  const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
-  const weekStart = new Date(now); weekStart.setHours(0, 0, 0, 0); weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7));
-  const confirmedPosts = posts.filter((post) => post.status === "published" && post.provider_post_id);
-  const weekPosts = confirmedPosts.filter((post) => { const date = new Date(post.published_at || post.scheduled_at); return date >= weekStart && date <= now; }).length;
-  const analyticsPosts = confirmedPosts.flatMap((post) => {
-    const analytics = post.post_metadata?.analytics;
-    if (!analytics || analytics.source === "simulated") return [];
-    const engagements = Number(analytics.engagements ?? analytics.engagement_count);
-    const commentCount = Number(analytics.comments ?? analytics.comment_count);
-    return [{ engagements: Number.isFinite(engagements) ? engagements : 0, comments: Number.isFinite(commentCount) ? commentCount : 0 }];
-  });
-  const engagement = analyticsPosts.reduce((sum, item) => sum + item.engagements, 0);
-  const comments = analyticsPosts.reduce((sum, item) => sum + item.comments, 0);
-  const failedPosts = posts.filter((post) => post.status === "failed");
-  const activeChannels = accounts.filter((account) => account.is_active);
-  const upcoming = posts.filter((post) => ["scheduled", "queued", "publishing"].includes(post.status) && new Date(post.scheduled_at) > now).sort((a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at)).slice(0, 5);
-  const hasScheduledOrQueued = posts.some((post) => ["scheduled", "queued", "publishing"].includes(post.status));
-  const recentDrafts = [...(Array.isArray(localDrafts) ? localDrafts : []), ...serverDrafts]
-    .filter(Boolean)
-    .sort((a, b) => new Date(b.updated_at || b.created_at || 0) - new Date(a.updated_at || a.created_at || 0))
-    .slice(0, 3);
-  const step1Done = activeChannels.length > 0;
-  const step2Done = posts.length > 0 || recentDrafts.length > 0 || (Array.isArray(localDrafts) && localDrafts.length > 0) || serverDrafts.length > 0;
-  const step3Done = publishOpened || hasScheduledOrQueued;
-  const stepsDone = [step1Done, step2Done, step3Done].filter(Boolean).length;
-  const postedDayKeys = new Set(confirmedPosts.map((post) => new Date(post.published_at || post.created_at).toDateString()));
-  let streak = 0;
-  const streakCursor = new Date(now); streakCursor.setHours(0, 0, 0, 0);
-  if (!postedDayKeys.has(streakCursor.toDateString())) streakCursor.setDate(streakCursor.getDate() - 1);
-  while (postedDayKeys.has(streakCursor.toDateString()) && streak < 365) { streak += 1; streakCursor.setDate(streakCursor.getDate() - 1); }
-
-  function openPublish() {
-    try { localStorage.setItem("social_studio_opened_publish", "1"); } catch { /* Session flag still works. */ }
-    setPublishOpened(true);
-    if (typeof goToTab === "function") goToTab("publish");
-    else openPlaceholder("Publish calendar");
-  }
-
-  function commitWeeklyGoal(raw) {
-    const next = Math.min(30, Math.max(1, Math.round(Number(raw))));
-    const safe = Number.isFinite(next) ? next : 5;
-    setWeeklyGoal(safe);
-    setGoalDraft(String(safe));
-    setEditingGoal(false);
-    try { localStorage.setItem("social_studio_weekly_goal", String(safe)); } catch { /* Goal still applies this session. */ }
-  }
-
-  function openDraftPeek(draft) {
-    if (typeof onOpenDraft === "function") onOpenDraft(draft);
-    else openPublish();
-  }
-
-  function handleChannelClick(account) {
-    const badge = accountTokenBadge(account);
-    const channel = CHANNELS.find((item) => item.id === account.platform);
-    if (badge?.tone === "expired" && channel && typeof openConnect === "function") {
-      openConnect(channel);
-      return;
-    }
-    if (typeof goToTab === "function") goToTab("accounts");
-    else if (channel) openConnect(channel);
-  }
-
-  return <div className="animate-fade-up space-y-6 pb-12">
-    <section className="dashboard-hero relative overflow-hidden rounded-[30px] border border-white/70 px-6 py-7 shadow-[0_22px_70px_rgba(41,39,112,.12)] backdrop-blur-xl dark:border-slate-700/70 sm:px-8 sm:py-9">
-      <div className="hero-grid" /><div className="relative z-10 flex flex-wrap items-end justify-between gap-5"><div className="max-w-2xl"><span className="inline-flex items-center gap-2 rounded-full border border-white/25 bg-white/10 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[.16em] text-indigo-100 backdrop-blur-md"><Sparkles size={13} />Your creative command center</span><h1 className="mt-5 font-display text-3xl font-extrabold leading-tight tracking-[-.055em] text-white sm:text-[40px]">{greeting}, {firstName}<span className="text-indigo-300">.</span></h1><p className="mt-2 max-w-lg text-sm leading-6 text-slate-300">Your ideas are ready to meet the world. Here’s what’s happening in your workspace.</p><div className="mt-5 flex flex-wrap gap-2"><button type="button" onClick={openStudio} className="primary-button inline-flex items-center gap-2 !border-white/20 !bg-gradient-to-r !from-indigo-500 !via-purple-500 !to-blue-500 !px-4 !py-2.5 !shadow-[0_8px_28px_rgba(99,102,241,.35)]"><Plus size={15} />Create a post</button><button type="button" onClick={openPublish} className="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-[11px] font-bold text-white backdrop-blur-md transition hover:bg-white/15"><CalendarDays size={14} />View calendar</button></div></div><div className="date-badge"><CalendarDays size={15} /><span>{new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric" }).format(now)}</span></div></div>
-      <div className="hero-glow hero-glow-one" /><div className="hero-glow hero-glow-two" />
-    </section>
-
-    <section className="dashboard-panel px-4 py-3.5 sm:px-5">
-      <div className="mb-2.5 flex items-center justify-between gap-3">
-        <div><span className="eyebrow">CONNECTED CHANNELS</span><p className="mt-0.5 text-[10px] text-slate-400">{activeChannels.length ? `${activeChannels.length} active account${activeChannels.length === 1 ? "" : "s"}` : "No accounts connected yet"}</p></div>
-        <button type="button" onClick={() => (activeChannels.length && typeof goToTab === "function" ? goToTab("accounts") : openConnect())} className="text-[10px] font-bold text-indigo-600 hover:text-indigo-700">{activeChannels.length ? "Manage" : "Connect"}</button>
-      </div>
-      {activeChannels.length ? (
-        <div className="flex gap-2 overflow-x-auto pb-1">
-          {activeChannels.map((account) => {
-            const platform = CHANNELS.find((item) => item.id === account.platform);
-            const badge = accountTokenBadge(account);
-            return (
-              <button key={account.id} type="button" onClick={() => handleChannelClick(account)} className="inline-flex min-w-[148px] items-center gap-2.5 rounded-2xl border border-slate-200/90 bg-white/80 px-2.5 py-2 text-left transition hover:border-indigo-300 hover:shadow-sm dark:border-slate-700 dark:bg-slate-950/60">
-                <AccountAvatar account={account} ChannelBrandImage={ChannelBrandImage} size={34} />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[11px] font-bold text-slate-800 dark:text-slate-100">{account.account_name || platform?.label || "Account"}</span>
-                  <span className="mt-0.5 flex items-center gap-1.5 text-[9px] font-semibold text-slate-400">
-                    <span className="inline-flex items-center gap-1"><ChannelBrandImage channelId={account.platform} size={12} />{platform?.label || account.platform}</span>
-                    {badge && <span className={`rounded-full px-1.5 py-0.5 text-[8px] font-extrabold uppercase tracking-wide ${badge.tone === "expired" ? "bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:text-rose-200" : "bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-200"}`}>{badge.label}</span>}
-                  </span>
-                </span>
-              </button>
-            );
-          })}
-          <button type="button" onClick={() => openConnect()} className="inline-flex min-w-[120px] items-center justify-center gap-1.5 rounded-2xl border border-dashed border-slate-300 px-3 py-2 text-[10px] font-bold text-slate-500 transition hover:border-indigo-300 hover:text-indigo-600 dark:border-slate-600"><Plus size={13} />Add</button>
-        </div>
-      ) : (
-        <button type="button" onClick={() => openConnect()} className="flex w-full items-center justify-between rounded-2xl border border-dashed border-slate-300 bg-slate-50/70 px-4 py-3 text-left dark:border-slate-600 dark:bg-slate-900/40">
-          <span><b className="text-xs text-slate-700 dark:text-slate-200">Connect your first channel</b><span className="mt-0.5 block text-[10px] text-slate-400">Bring social accounts into one workspace</span></span>
-          <ChevronRight size={15} className="text-slate-400" />
-        </button>
-      )}
-    </section>
-
-    <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-      <MetricCard icon={Flame} label="Publishing streak" value={`${streak} day${streak === 1 ? "" : "s"}`} detail={streak ? "You’re building a steady rhythm" : "Your next confirmed post starts the streak"} accent="metric-violet" footnote={streak ? "Consecutive days with a provider-confirmed post." : "Only posts with a provider post id count."} />
-      <MetricCard
-        icon={Target}
-        label="Weekly posting goal"
-        value={`${Math.min(weekPosts, weeklyGoal)} / ${weeklyGoal}`}
-        valueNode={editingGoal ? (
-          <input
-            type="number"
-            min={1}
-            max={30}
-            autoFocus
-            value={goalDraft}
-            onChange={(event) => setGoalDraft(event.target.value)}
-            onBlur={() => commitWeeklyGoal(goalDraft)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") commitWeeklyGoal(goalDraft);
-              if (event.key === "Escape") { setEditingGoal(false); setGoalDraft(String(weeklyGoal)); }
-            }}
-            className="w-[4.5rem] rounded-xl border border-indigo-300 bg-white px-2 py-1 text-2xl font-extrabold outline-none dark:border-indigo-700 dark:bg-slate-950"
-            aria-label="Weekly posting goal"
-          />
-        ) : (
-          <button type="button" onClick={() => { setGoalDraft(String(weeklyGoal)); setEditingGoal(true); }} className="text-left transition hover:text-indigo-600" title="Edit weekly goal">
-            {`${Math.min(weekPosts, weeklyGoal)} / ${weeklyGoal}`}
-          </button>
-        )}
-        trailing={!editingGoal ? (
-          <button type="button" onClick={() => { setGoalDraft(String(weeklyGoal)); setEditingGoal(true); }} className="inline-flex rounded-lg p-1 text-slate-400 opacity-70 transition hover:bg-slate-100 hover:text-indigo-600 hover:opacity-100 dark:hover:bg-slate-800" aria-label="Edit weekly goal">
-            <Pencil size={14} />
-          </button>
-        ) : null}
-        detail="confirmed posts this week · click to edit goal"
-        accent="metric-blue"
-        progress={(weekPosts / Math.max(weeklyGoal, 1)) * 100}
-        footnote={`${Math.max(weeklyGoal - weekPosts, 0)} more confirmed posts to reach this week’s goal${failedPosts.length ? ` · ${failedPosts.length} failed` : ""}`}
-      />
-      <MetricCard icon={Heart} label="Engagement & comments" value={analyticsPosts.length ? engagement.toLocaleString() : "—"} detail={analyticsPosts.length ? `${comments.toLocaleString()} comments on posts with provider analytics` : "No provider analytics yet"} accent="metric-pink" footnote={analyticsPosts.length ? `Based on ${analyticsPosts.length} confirmed post${analyticsPosts.length === 1 ? "" : "s"}` : confirmedPosts.length ? `${confirmedPosts.length} confirmed publish${confirmedPosts.length === 1 ? "" : "es"} and no provider metrics` : "Metrics appear only after a provider confirms the post"} />
-    </section>
-
-    {failedPosts.length > 0 && (
-      <section className="rounded-2xl border border-rose-200 bg-rose-50/80 p-4 text-xs text-rose-800 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-100">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <b>{failedPosts.length} post{failedPosts.length === 1 ? "" : "s"} failed after a provider attempt.</b>
-          <button type="button" onClick={openPublish} className="text-[10px] font-bold text-rose-700 underline dark:text-rose-200">Open in Publish</button>
-        </div>
-        <ul className="mt-2 space-y-2">
-          {failedPosts.slice(0, 3).map((post) => {
-            const account = accounts.find((item) => item.id === post.connected_account_id);
-            return (
-              <li key={post.id} className="flex flex-wrap items-start justify-between gap-2 rounded-xl bg-white/50 px-3 py-2 dark:bg-rose-950/30">
-                <span className="min-w-0 flex-1">
-                  <span className="line-clamp-1 font-semibold">{post.content || "Untitled post"}</span>
-                  <span className="mt-0.5 block text-[10px] opacity-80">{account?.account_name || account?.platform || "Account"} · {post.last_error_message || post.last_error_code || "The provider did not accept this post."}{post.latest_execution_outcome ? ` · log ${post.latest_execution_outcome}` : ""}</span>
-                </span>
-                <span className="flex shrink-0 items-center gap-2">
-                  {typeof onRetryPost === "function" && <button type="button" onClick={() => void onRetryPost(post.id)} className="rounded-lg bg-rose-600 px-2.5 py-1 text-[10px] font-bold text-white">Retry</button>}
-                  <button type="button" onClick={openPublish} className="rounded-lg border border-rose-300 px-2.5 py-1 text-[10px] font-bold">View</button>
-                </span>
-              </li>
-            );
-          })}
-        </ul>
-      </section>
-    )}
-
-    {hideFirstSteps ? (
-      <p className="text-[10px] text-slate-400">
-        <button
-          type="button"
-          onClick={() => {
-            try { localStorage.removeItem("social_studio_hide_first_steps"); } catch { /* Session flag still works. */ }
-            setHideFirstSteps(false);
-          }}
-          className="font-semibold text-indigo-600 hover:underline"
-        >
-          Show setup
-        </button>
-      </p>
-    ) : (
-      <section className="dashboard-panel px-4 py-4 sm:px-5">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <span className="eyebrow">GETTING STARTED</span>
-            <h2 className="mt-0.5 font-display text-base font-extrabold tracking-tight">First steps</h2>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="text-[10px] font-semibold tabular-nums text-slate-500">{stepsDone} of 3</span>
-            <button
-              type="button"
-              onClick={() => {
-                try { localStorage.setItem("social_studio_hide_first_steps", "1"); } catch { /* Session flag still works. */ }
-                setHideFirstSteps(true);
-              }}
-              className="text-[10px] font-bold text-slate-400 transition hover:text-slate-600 dark:hover:text-slate-200"
-            >
-              Dismiss
-            </button>
-          </div>
-        </div>
-        <div className="mt-2.5 h-1 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800" role="progressbar" aria-valuenow={stepsDone} aria-valuemin={0} aria-valuemax={3} aria-label="First steps progress">
-          <div className="h-full rounded-full bg-gradient-to-r from-indigo-500 via-purple-500 to-blue-500 transition-all duration-300" style={{ width: `${(stepsDone / 3) * 100}%` }} />
-        </div>
-        <div className="mt-3.5 grid gap-3 sm:grid-cols-3">
-          <div className="first-step-tile">
-            {step1Done ? (
-              <span className="first-step-check" aria-hidden="true"><Check size={12} /></span>
-            ) : null}
-            <p className="pr-7 text-[13px] font-bold tracking-tight text-slate-900 dark:text-slate-50">1. Connect a channel</p>
-            <p className="mt-1.5 flex-1 text-[11px] leading-snug text-slate-500 dark:text-slate-400">Add a social account so you can publish from SocialStudio.</p>
-            <button
-              type="button"
-              onClick={() => openConnect()}
-              className="first-step-cta"
-            >
-              <Plus size={14} /> Connect channel
-            </button>
-          </div>
-          <div className="first-step-tile">
-            {step2Done ? (
-              <span className="first-step-check" aria-hidden="true"><Check size={12} /></span>
-            ) : null}
-            <p className="pr-7 text-[13px] font-bold tracking-tight text-slate-900 dark:text-slate-50">2. Create a post</p>
-            <p className="mt-1.5 flex-1 text-[11px] leading-snug text-slate-500 dark:text-slate-400">Open the studio and draft your first post for any channel.</p>
-            <button type="button" onClick={openStudio} className="first-step-cta">
-              <Plus size={14} /> Create a post
-            </button>
-          </div>
-          <div className="first-step-tile">
-            {step3Done ? (
-              <span className="first-step-check" aria-hidden="true"><Check size={12} /></span>
-            ) : null}
-            <p className="pr-7 text-[13px] font-bold tracking-tight text-slate-900 dark:text-slate-50">3. Open calendar</p>
-            <p className="mt-1.5 flex-1 text-[11px] leading-snug text-slate-500 dark:text-slate-400">Check your queue, schedule, and publishing calendar.</p>
-            <button type="button" onClick={openPublish} className="first-step-cta">
-              Open calendar
-            </button>
-          </div>
-        </div>
-      </section>
-    )}
-
-    <section className="grid items-start gap-4 xl:grid-cols-[1.08fr_.92fr]">
-      <article className="dashboard-panel">
-        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800">
-          <div><span className="eyebrow">YOUR PUBLISHING PLAN</span><h2 className="mt-1 font-display text-base font-extrabold">Up next</h2></div>
-          <button type="button" onClick={openPublish} className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-600 hover:text-indigo-700">See all<ArrowRight size={13} /></button>
-        </div>
-        {upcoming.length ? (
-          <div className="divide-y divide-slate-100 dark:divide-slate-800">
-            {upcoming.map((post) => {
-              const account = accounts.find((item) => item.id === post.connected_account_id);
-              const platform = CHANNELS.find((item) => item.id === account?.platform);
-              return (
-                <div key={post.id} className="flex items-center gap-3 px-5 py-3.5">
-                  <span className="up-next-icon" style={{ color: platform?.brand || "#6366f1" }}>{platform ? <ChannelBrandImage channelId={platform.id} /> : <CalendarDays size={15} />}</span>
-                  <div className="min-w-0 flex-1">
-                    <p className="line-clamp-1 text-xs font-semibold">{post.content}</p>
-                    <p className="mt-1 text-[10px] text-slate-400">{account?.account_name || account?.platform || "Connected account"} · {new Date(post.scheduled_at).toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</p>
-                  </div>
-                  <span className="status-chip">{post.status}</span>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="empty-dashboard-state">
-            <span className="empty-dashboard-icon"><ListTodo size={19} /></span>
-            <b>Nothing on the schedule yet</b>
-            <p>Your upcoming posts will show up here.</p>
-            <button type="button" onClick={openStudio} className="mt-2 inline-flex items-center gap-1 text-[10px] font-bold text-indigo-600">Create a post<ArrowRight size={12} /></button>
-          </div>
-        )}
-      </article>
-
-      <div className="space-y-4">
-        <article className="dashboard-panel">
-          <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800">
-            <div><span className="eyebrow">WORK IN PROGRESS</span><h2 className="mt-1 font-display text-base font-extrabold">Recent drafts</h2></div>
-            <button type="button" onClick={openPublish} className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-600 hover:text-indigo-700">All drafts<ArrowRight size={13} /></button>
-          </div>
-          {recentDrafts.length ? (
-            <div className="divide-y divide-slate-100 dark:divide-slate-800">
-              {recentDrafts.map((draft) => (
-                <button key={draft.id} type="button" onClick={() => openDraftPeek(draft)} className="flex w-full items-center gap-3 px-5 py-3.5 text-left transition hover:bg-slate-50/80 dark:hover:bg-slate-900/50">
-                  <span className="up-next-icon text-indigo-500"><FileText size={15} /></span>
-                  <span className="min-w-0 flex-1">
-                    <span className="line-clamp-1 block text-xs font-semibold">{draft.content || draft.title || draft.metadata?.title || "Untitled draft"}</span>
-                    <span className="mt-1 block text-[10px] text-slate-400">{draft.updated_at || draft.created_at ? new Date(draft.updated_at || draft.created_at).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "Draft"}</span>
-                  </span>
-                  <ChevronRight size={14} className="text-slate-300" />
-                </button>
-              ))}
-            </div>
-          ) : (
-            <div className="px-5 py-8 text-center">
-              <p className="text-[11px] font-semibold text-slate-500">No drafts yet</p>
-              <p className="mt-1 text-[10px] text-slate-400">Save from the studio to continue later.</p>
-              <button type="button" onClick={openStudio} className="mt-3 inline-flex items-center gap-1 text-[10px] font-bold text-indigo-600">Start a draft<ArrowRight size={12} /></button>
-            </div>
-          )}
-        </article>
-
-        <article className="dashboard-panel border-dashed opacity-80">
-          <div className="flex items-center gap-3 px-5 py-4">
-            <span className="empty-dashboard-icon !h-9 !w-9"><MessagesSquare size={16} /></span>
-            <div className="min-w-0 flex-1">
-              <span className="eyebrow">THE CONVERSATION</span>
-              <h2 className="mt-0.5 font-display text-sm font-extrabold text-slate-600 dark:text-slate-300">Community inbox — coming soon</h2>
-              <p className="mt-1 text-[10px] leading-4 text-slate-400">Comments and replies will land here when Community is ready. Nothing is missing from your workspace.</p>
-            </div>
-            <span className="rounded-full bg-slate-100 px-2 py-1 text-[8px] font-extrabold uppercase tracking-wide text-slate-500 dark:bg-slate-800 dark:text-slate-400">Soon</span>
-          </div>
-        </article>
-      </div>
-    </section>
-  </div>;
 }
 
 function App() {
@@ -1190,9 +596,14 @@ function App() {
   const [showQueue, setShowQueue] = useState(false);
   const [activeTab, setActiveTab] = useState(() => {
     const tab = oauthReturnTabFromUrl();
-    return ["home", "studio", "accounts", "publish", "biolink"].includes(tab) ? tab : "home";
+    return tab === "publish" ? "calendar" : ["home", "studio", "accounts", "calendar", "week", "posts", "queue", "drafts", "approvals", "library", "analytics", "media", "team", "settings", "onboarding", "states", "biolink"].includes(tab) ? tab : "home";
   });
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [settingsTab, setSettingsTab] = useState("profile");
+  const [navOpts, setNavOpts] = useState(null);
+  const [approvalItems, setApprovalItems] = useState([]);
+  const [draftCount, setDraftCount] = useState(0);
+  const [moreOpen, setMoreOpen] = useState(false);
   const [remember, setRemember] = useState(true);
   const toastTimer = useRef(null);
   const mediaUrls = useRef(new Map());
@@ -1203,6 +614,7 @@ function App() {
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", dark);
+    document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
     try { localStorage.setItem(THEME_KEY, dark ? "dark" : "light"); } catch { /* Theme still works for this session. */ }
   }, [dark]);
 
@@ -1230,6 +642,16 @@ function App() {
   }, [token]);
 
   useEffect(() => { if (token) void loadWorkspace(token); }, [token, loadWorkspace]);
+
+  const refreshNavCounts = useCallback(async () => {
+    if (!token) return;
+    const [approvalData, draftData] = await Promise.all([
+      api("/publish/approvals", { token }).catch(() => null), api("/publish/drafts", { token }).catch(() => null),
+    ]);
+    if (Array.isArray(approvalData)) setApprovalItems(approvalData);
+    if (Array.isArray(draftData)) setDraftCount(draftData.length);
+  }, [token]);
+  useEffect(() => { void refreshNavCounts(); }, [refreshNavCounts, activeTab]);
 
   const selectedAccounts = useMemo(() => accounts.filter((account) => selectedIds.includes(account.id) && account.is_active), [accounts, selectedIds]);
   const previewAccount = selectedAccounts.find((item) => item.id === previewId) || selectedAccounts[0] || null;
@@ -1307,9 +729,12 @@ function App() {
   }
 
   function openPlaceholder(name) { notify({ title: `${name} is coming soon`, message: "This workspace view will be available as the product grows." }); }
-  function goToTab(tab) {
-    if (["home", "studio", "accounts", "publish", "biolink"].includes(tab)) {
-      if (tab === "publish") {
+  function goToTab(rawTab, opts) {
+    let tab = rawTab === "publish" ? "calendar" : rawTab === "insights" ? "analytics" : rawTab;
+    if (tab === "billing" || tab === "notifications" || tab === "profile") { setSettingsTab(tab); tab = "settings"; }
+    if (opts?.tab) setNavOpts(opts); else setNavOpts(null);
+    if (["home", "studio", "accounts", "calendar", "week", "posts", "queue", "drafts", "approvals", "library", "analytics", "media", "team", "settings", "onboarding", "states", "biolink"].includes(tab)) {
+      if (["calendar", "week", "posts", "queue", "drafts", "approvals"].includes(tab)) {
         try { localStorage.setItem("social_studio_opened_publish", "1"); } catch { /* Session flag still works. */ }
       }
       setActiveTab(tab);
@@ -1551,7 +976,7 @@ function App() {
 
   async function connectAccount(platform) {
     if (!OAUTH_PLATFORMS.has(platform)) {
-      setConnectError("This network is not connectable in SocialStudio.");
+      setConnectError("This network is not connectable in SocialCastly.");
       return;
     }
     setConnectBusy(true); setConnectError("");
@@ -1603,7 +1028,8 @@ function App() {
     } catch {
       returnTab = "accounts";
     }
-    if (!["home", "studio", "accounts", "publish", "biolink"].includes(returnTab)) returnTab = "accounts";
+    if (returnTab === "publish") returnTab = "calendar";
+    if (!["home", "studio", "accounts", "calendar", "week", "posts", "queue", "drafts", "approvals", "library", "analytics", "media", "team", "settings", "onboarding", "states", "biolink"].includes(returnTab)) returnTab = "accounts";
     goToTab(returnTab);
     if (oauthPick && pickSessionId) {
       setPickSession({ platform: oauthPick, sessionId: pickSessionId });
@@ -1623,9 +1049,9 @@ function App() {
   if (!isLoggedIn || !token) return <><AuthScreen onAuthenticated={handleAuthenticated} dark={dark} toggleTheme={() => setDark((value) => !value)} remember={remember} setRemember={setRemember} /><Toast toast={toast} onClose={() => setToast(null)} /></>;
 
   const navigation = [
-    { id: "home", label: "Home", icon: Home },
+    { id: "home", label: "Dashboard", icon: Home },
     { id: "studio", label: "Create Post", icon: Plus },
-    { id: "accounts", label: "Accounts", icon: Users },
+    { id: "accounts", label: "Channels", icon: Users },
     { id: "publish", label: "Publish", icon: CalendarDays },
     { id: "biolink", label: "Bio Link", icon: Link2 },
     { id: "community", label: "Community", icon: MessagesSquare },
@@ -1667,52 +1093,77 @@ function App() {
     goToTab("studio");
   };
 
-  return <div className="app-shell min-h-screen transition-colors duration-300">
-    <div className="flex min-h-screen">
-      <aside className={`sidebar ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
-        <div className="sidebar-brand"><SidebarBrandLockup collapsed={sidebarCollapsed} dark={dark} /><button className="sidebar-collapse ml-auto" onClick={() => setSidebarCollapsed((value) => !value)} aria-label={sidebarCollapsed ? "Expand navigation" : "Collapse navigation"}>{sidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}</button></div>
-        <div className="sidebar-workspace"><span className="workspace-avatar">{(user.workspace_name || user.full_name || "S").slice(0, 1).toUpperCase()}</span>{!sidebarCollapsed && <span className="min-w-0 flex-1"><b>{user.workspace_name || "My Workspace"}</b><small>Workspace</small></span>}<ChevronDown size={13} className="text-slate-400" /></div>
-        <nav className="sidebar-nav" aria-label="Main navigation">{navigation.map(({ id, label, icon: Icon }) => { const active = activeTab === id; return <button key={id} onClick={() => goToTab(id)} title={sidebarCollapsed ? label : undefined} aria-current={active ? "page" : undefined} className={`sidebar-nav-item ${active ? "sidebar-nav-active" : ""}`}><Icon size={17} /><span>{!sidebarCollapsed && label}</span>{id === "studio" && !sidebarCollapsed && <span className="nav-plus"><Plus size={12} /></span>}</button>; })}</nav>
-        {!sidebarCollapsed && <div className="sidebar-section-label">CONNECTED CHANNELS</div>}
-        <div className={`sidebar-channels ${sidebarCollapsed ? "sidebar-channels-collapsed" : ""}`}>{CHANNELS.map((channel) => { const connected = accounts.filter((account) => account.platform === channel.id && account.is_active); const count = connected.length; return <button key={channel.id} title={`${channel.label}${count ? ` · ${count} connected` : " · not connected"}`} onClick={() => count ? goToTab("accounts") : connect(channel)} className="sidebar-channel"><span className="sidebar-channel-symbol" style={{ color: count ? channel.brand : undefined }}><ChannelBrandImage channelId={channel.id} /></span>{!sidebarCollapsed && <><span>{channel.label}</span><span className={`sidebar-channel-status ${count ? "is-connected" : ""}`} /></>}</button>; })}</div>
-        <div className="sidebar-spacer" />
-        <button onClick={() => openPlaceholder("Workspace settings")} className={`sidebar-settings ${sidebarCollapsed ? "justify-center" : ""}`}><span className="workspace-avatar workspace-avatar-small">{(user.full_name || "S").slice(0, 1).toUpperCase()}</span>{!sidebarCollapsed && <span className="min-w-0 flex-1 text-left"><b>{user.full_name || "Workspace member"}</b><small>Workspace profile</small></span>}<Settings2 size={15} className="text-slate-400" /></button>
+  const navCounts = { queue: posts.filter((post) => ["scheduled", "queued", "publishing"].includes(post.status)).length, drafts: draftCount, approvals: approvalItems.length };
+  const navGroups = [
+    ["Workspace", [["home", "Dashboard", Home], ["studio", "Create post", Plus], ["calendar", "Calendar", CalendarDays], ["queue", "Queue", ListTodo], ["drafts", "Drafts", FileText], ["approvals", "Approvals", CheckCircle2]]],
+    ["Insights", [["analytics", "Analytics", BarChart3]]],
+    ["Manage", [["accounts", "Channels", Share2], ["media", "Media library", ImagePlus], ["team", "Team", Users], ["settings", "Settings", Settings2]]],
+    ["More", [["onboarding", "Get started", Sparkles], ["biolink", "Bio Link", Link2], ["community", "Community", MessagesSquare], ["states", "UI states", Target]]],
+  ];
+  const navActive = (id) => activeTab === id || (id === "calendar" && ["week", "posts"].includes(activeTab));
+  const navLink = ([id, label, Icon]) => <a key={id} href={`#${id}`} onClick={(event) => { event.preventDefault(); setMoreOpen(false); goToTab(id); }} className={navActive(id) ? "active" : ""} aria-current={navActive(id) ? "page" : undefined}><Icon size={18} className="ico" />{label}{navCounts[id] ? <span className="count">{navCounts[id]}</span> : null}</a>;
+  const publishViews = ["calendar", "week", "posts", "queue", "drafts", "approvals", "library"];
+  const activeChannels = accounts.filter((account) => account.is_active !== false);
+
+  return <div className={`scd sc-app-root ${dark ? "dark" : ""}`}>
+    <div className="app">
+      <aside className="sidebar sc-sidebar">
+        <div className="brand"><img className="logo-light" src={lockupLight} alt="SocialCastly" style={{ height: 30 }} /><img className="logo-dark" src={lockupDark} alt="SocialCastly" style={{ height: 30 }} /></div>
+        <nav className="nav" aria-label="Main navigation">{navGroups.map(([group, items]) => <React.Fragment key={group}><div className="nav-label">{group}</div>{items.map(navLink)}</React.Fragment>)}</nav>
+        <div className="nav-label">Channels</div>
+        <div className="col" style={{ gap: 8, padding: "0 10px" }}>{activeChannels.length ? activeChannels.slice(0, 6).map((account) => <a key={account.id} href="#accounts" onClick={(event) => { event.preventDefault(); goToTab("accounts"); }} className="row" style={{ gap: 10 }}><span className="with-ch"><ScAvatar name={account.account_name || account.platform} size={26} src={account.avatar_url || undefined} /><ScCh platform={account.platform} /></span><span className="sm muted grow" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{account.account_name || account.platform}</span></a>) : <button type="button" className="btn btn-sm btn-secondary" onClick={() => connect()}><Plus size={14} />Connect a channel</button>}</div>
+        <div className="foot"><div className="card" style={{ padding: 12, background: "var(--surface-2)", boxShadow: "none" }}><div className="row between"><b className="sm" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{user.workspace_name || "My Workspace"}</b><span className="badge b-primary nodot">Self-hosted</span></div><div className="xs muted" style={{ marginTop: 4 }}>{activeChannels.length} channel{activeChannels.length === 1 ? "" : "s"} · {navCounts.queue} scheduled</div><div className="row" style={{ marginTop: 10, gap: 6 }}><button type="button" className="btn btn-sm btn-secondary grow" onClick={() => setDark((value) => !value)} aria-label={`Switch to ${dark ? "light" : "dark"} theme`}>{dark ? <Sun size={14} /> : <Moon size={14} />}{dark ? "Light" : "Dark"}</button><button type="button" className="btn btn-sm btn-ghost" onClick={logout}>Sign out</button></div></div></div>
       </aside>
 
-      <div className="min-w-0 flex-1">
-        <header className="topbar"><div className="topbar-inner"><div className="flex min-w-0 items-center gap-3">{activeTab === "studio" ? <button onClick={() => goToTab("home")} className="back-dashboard"><ArrowLeft size={15} /><span>Back to Dashboard</span></button> : <><span className="topbar-mobile-brand"><span className="brand-mark brand-mark-image"><BrandMark size={22} /></span><BrandWordmark variant={dark ? "light" : "dark"} className="topbar-wordmark" /></span><span className="hidden text-xs text-slate-400 lg:block">/</span><span className="hidden text-xs font-bold text-slate-600 dark:text-slate-300 lg:block">{activeTab === "publish" ? "Publish workspace" : activeTab === "home" ? "Home dashboard" : activeTab === "biolink" ? "Bio Link" : activeTab === "accounts" ? "Accounts" : activeTab}</span></>}</div><div className="ml-auto flex items-center gap-2"><span className="hidden text-[11px] text-slate-400 sm:inline">{user.full_name || "Workspace member"}</span><button className="icon-button" onClick={() => setDark((value) => !value)} aria-label={`Switch to ${dark ? "light" : "dark"} theme`} title="Switch theme">{dark ? <Sun size={16} /> : <Moon size={16} />}</button><button onClick={logout} className="secondary-button !px-3 !py-2 text-[11px]">Sign out</button></div></div>
-          <nav className="mobile-nav" aria-label="Mobile navigation">{navigation.slice(0, 3).map(({ id, label, icon: Icon }) => <button key={id} onClick={() => goToTab(id)} className={activeTab === id ? "mobile-nav-active" : ""}><Icon size={15} />{label}</button>)}</nav>
+      <div className="main">
+        <header className="topbar">
+          <span className="sc-m-brand"><img className="logo-light" src={lockupLight} alt="SocialCastly" style={{ height: 26 }} /><img className="logo-dark" src={lockupDark} alt="SocialCastly" style={{ height: 26 }} /></span>
+          <div className="search sc-search"><svg className="ico" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg><span className="grow">Search posts, channels, media…</span><span className="kbd">⌘K</span></div>
+          <div className="grow" />
+          <button type="button" className="btn btn-ghost btn-icon sc-hide-m" aria-label={`Switch to ${dark ? "light" : "dark"} theme`} title="Switch theme" onClick={() => setDark((value) => !value)}>{dark ? <Sun size={18} /> : <Moon size={18} />}</button>
+          <button type="button" className="btn btn-ghost btn-icon" aria-label="Notifications" title="Notification settings" onClick={() => goToTab("notifications")}><svg className="ico" viewBox="0 0 24 24"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9" /><path d="M10 21a2 2 0 0 0 4 0" /></svg></button>
+          {activeTab !== "studio" && <button type="button" className="btn btn-primary sc-hide-m" onClick={() => openStudio()}><Plus size={16} />New post</button>}
+          <a href="#settings" onClick={(event) => { event.preventDefault(); goToTab("settings"); }} className="row sc-hide-m" style={{ borderLeft: "1px solid var(--border)", paddingLeft: 16 }}><ScAvatar name={user.full_name || "W"} size={32} /><div><div className="sm" style={{ fontWeight: 600 }}>{user.full_name || "Workspace member"}</div><div className="xs subtle">{user.workspace_name || "Workspace"}</div></div></a>
         </header>
 
-        <main className="mx-auto max-w-[1400px] px-4 pb-14 pt-6 sm:px-6 lg:px-8 lg:pt-8">
-          {loadError && <div role="alert" className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700"><span>{loadError}</span><button onClick={() => void loadWorkspace()} className="font-bold underline">Retry</button></div>}
-          {activeTab === "home" ? <HomeDashboard user={user} accounts={accounts} posts={posts} openStudio={openStudio} openConnect={connect} openPlaceholder={(name) => name.toLowerCase().includes("calendar") ? goToTab("publish") : openPlaceholder(name)} openApiDocs={openApiDocs} goToTab={goToTab} localDrafts={localDrafts} onOpenDraft={openSavedDraft} onRetryPost={retryQueuedPost} request={authenticatedFetch} /> : activeTab === "biolink" ? <RenderErrorBoundary scope="Bio Link dashboard"><BioLinkDashboard user={user} accounts={accounts} posts={posts} /></RenderErrorBoundary> : activeTab === "publish" ? <RenderErrorBoundary scope="Publish workspace"><PublishSection request={authenticatedFetch} posts={posts} accounts={accounts} authorName={user.full_name} localDrafts={localDrafts} onUpdateLocalDraft={updateLocalDraft} onRemoveLocalDraft={removeLocalDraft} onCreatePost={openStudio} onOpenDraft={openSavedDraft} onUseAsset={useLibraryAsset} onRefresh={() => loadWorkspace(token)} /></RenderErrorBoundary> : activeTab === "accounts" ? <section className="animate-fade-up space-y-4">
-            <div><div className="eyebrow">ACCOUNT MANAGEMENT</div><h1 className="mt-2 font-display text-[27px] font-extrabold leading-tight tracking-[-.05em] sm:text-3xl">Manage your <span className="text-gradient">connected accounts.</span></h1><p className="mt-1.5 text-xs text-slate-500 sm:text-sm">Connect, disconnect, or re-auth social destinations. Create Post still picks which accounts receive a draft.</p></div>
-            <ManageAccounts accounts={accounts} channels={CHANNELS} request={authenticatedFetch} onConnect={connect} onChanged={() => loadWorkspace(token)} ChannelBrandImage={ChannelBrandImage} publishablePlatforms={PUBLISHABLE_PLATFORMS} />
-          </section> : <section className="animate-fade-up space-y-4">
-            <div><div className="eyebrow">YOUR CREATIVE WORKSPACE</div><h1 className="mt-2 font-display text-[27px] font-extrabold leading-tight tracking-[-.05em] sm:text-3xl">Make your next post <span className="text-gradient">matter.</span></h1><p className="mt-1.5 text-xs text-slate-500 sm:text-sm">One idea, every channel. Create it once and see how it looks everywhere.</p></div>
-            <ChannelBar accounts={accounts} selectedIds={selectedIds} toggleAccount={toggleAccount} openConnect={connect} />
-            <div className="grid grid-cols-1 items-stretch gap-6 lg:grid-cols-12">
-              <form onSubmit={createPost} className="surface-card studio-scroll-panel relative z-10 min-w-0 space-y-5 p-4 sm:p-5 lg:col-span-12 xl:col-span-7 xl:max-h-[calc(100vh-6rem)] xl:overflow-y-auto xl:overscroll-auto">
-                <div className="flex flex-wrap items-start justify-between gap-3"><div><span className="eyebrow">THE COMPOSER</span><h2 className="mt-1 font-display text-lg font-extrabold tracking-tight">Create something great</h2></div><div className="flex items-center gap-2"><button type="button" onClick={() => setWritingTool(writingTool === "templates" ? null : "templates")} aria-expanded={writingTool === "templates"} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[10px] font-bold text-slate-600 transition hover:border-indigo-300 hover:text-indigo-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300"><FileText size={13} />Templates</button><button type="button" onClick={() => setWritingTool(writingTool === "assistant" ? null : "assistant")} aria-expanded={writingTool === "assistant"} className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-indigo-600 via-purple-600 to-blue-600 px-3 py-2 text-[10px] font-bold text-white shadow-md shadow-indigo-500/15"><WandSparkles size={13} />AI Assistant</button></div></div>
+        <div className="content">
+          {loadError && <div role="alert" className="alert error sm"><span className="grow">{loadError}</span><button type="button" onClick={() => void loadWorkspace()} className="btn btn-sm btn-secondary">Retry</button></div>}
+          {activeTab === "home" ? <RenderErrorBoundary scope="Dashboard"><ScDashboard user={user} accounts={accounts} posts={posts} approvals={approvalItems} goToTab={goToTab} openStudio={openStudio} onRetryPost={retryQueuedPost} /></RenderErrorBoundary>
+          : publishViews.includes(activeTab) ? <RenderErrorBoundary scope="Publish workspace"><PublishSection key={activeTab === "week" || activeTab === "calendar" ? "cal" : activeTab} view={activeTab} initialQueueTab={navOpts?.tab} onNavigate={goToTab} request={authenticatedFetch} posts={posts} accounts={accounts} authorName={user.full_name} localDrafts={localDrafts} onUpdateLocalDraft={updateLocalDraft} onRemoveLocalDraft={removeLocalDraft} onCreatePost={openStudio} onOpenDraft={openSavedDraft} onUseAsset={useLibraryAsset} onRefresh={() => { void loadWorkspace(token); void refreshNavCounts(); }} /></RenderErrorBoundary>
+          : activeTab === "analytics" ? <RenderErrorBoundary scope="Analytics"><ScAnalytics posts={posts} accounts={accounts} /></RenderErrorBoundary>
+          : activeTab === "media" ? <RenderErrorBoundary scope="Media library"><ScMedia request={authenticatedFetch} onUseAsset={useLibraryAsset} /></RenderErrorBoundary>
+          : activeTab === "team" ? <ScTeam user={user} accounts={accounts} />
+          : activeTab === "settings" ? <ScSettings tab={settingsTab} setTab={setSettingsTab} user={user} dark={dark} setDark={setDark} accounts={accounts} posts={posts} onLogout={logout} />
+          : activeTab === "onboarding" ? <ScOnboarding accounts={accounts} connect={(id) => connect(CHANNELS.find((channel) => channel.id === id))} connectable={[...OAUTH_PLATFORMS]} goToTab={goToTab} dark={dark} />
+          : activeTab === "states" ? <ScStates goToTab={goToTab} />
+          : activeTab === "biolink" ? <RenderErrorBoundary scope="Bio Link dashboard"><BioLinkDashboard user={user} accounts={accounts} posts={posts} /></RenderErrorBoundary> : activeTab === "accounts" ? <><ManageAccounts posts={posts} ownerName={user.full_name} accounts={accounts} channels={CHANNELS} request={authenticatedFetch} onConnect={connect} onChanged={() => loadWorkspace(token)} ChannelBrandImage={ChannelBrandImage} publishablePlatforms={PUBLISHABLE_PLATFORMS} /></> : <section className="animate-fade-up space-y-4">
+            <div className="page-head"><div><h1>Create post</h1><p className="muted">Write once, tailor for each channel, and preview before it goes out.</p></div><div className="row"><button type="button" className="btn btn-ghost" onClick={() => setWritingTool(writingTool === "templates" ? null : "templates")} aria-expanded={writingTool === "templates"}><FileText size={15} />Templates</button><button type="button" className="btn btn-ghost" onClick={() => setWritingTool(writingTool === "assistant" ? null : "assistant")} aria-expanded={writingTool === "assistant"}><WandSparkles size={15} />Assistant</button><button type="button" className="btn btn-secondary" onClick={() => void saveAsDraft()} disabled={saving || uploadBusy || loadingAccounts}>Save draft</button></div></div>
+            <div className="grid sc-composer" style={{ gridTemplateColumns: "minmax(0,1.45fr) minmax(0,1fr)", alignItems: "start" }}>
+              <form onSubmit={createPost} className="card col sc-composer-form" style={{ padding: 20, gap: 20, minWidth: 0 }}>
+                <div className="row wrap sc-publish-to" style={{ gap: 8, padding: "14px 20px", borderBottom: "1px solid var(--border)", margin: "-20px -20px 0" }}><span className="sm muted">Publish to</span>{accounts.filter((account) => account.is_active).map((account) => { const on = selectedIds.includes(account.id); return <button type="button" key={account.id} onClick={() => toggleAccount(account.id)} aria-pressed={on} className="row sc-acct-pill" style={{ gap: 6, padding: "3px 10px 3px 3px", borderRadius: 999, border: `1px solid ${on ? "var(--primary)" : "var(--border)"}`, background: on ? "var(--primary-soft)" : "var(--surface)", opacity: on ? 1 : .7 }}><span className="with-ch"><ScAvatar name={account.account_name || account.platform} size={24} src={account.avatar_url || undefined} /><ScCh platform={account.platform} /></span><span className="sm" style={{ fontWeight: 600 }}>{account.account_name || account.platform}</span></button>; })}<button type="button" className="btn btn-ghost btn-icon btn-sm" aria-label="Connect a channel" onClick={() => connect()}><Plus size={16} /></button></div>
                 {writingTool && <div className="rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50/80 to-purple-50/70 p-3 dark:border-indigo-900/60 dark:from-indigo-950/30 dark:to-purple-950/20"><div className="mb-2 flex items-center justify-between"><p className="text-[10px] font-extrabold uppercase tracking-wider text-indigo-700 dark:text-indigo-200">{writingTool === "templates" ? "Start with a template" : "Writing assistant"}</p><button type="button" onClick={() => setWritingTool(null)} className="text-[10px] font-bold text-slate-400">Close</button></div>{writingTool === "templates" ? <div className="grid gap-2 sm:grid-cols-3">{COMPOSER_TEMPLATES.map((template) => <button type="button" key={template.name} onClick={() => { updateTargetCaption(() => template.text); setWritingTool(null); }} className="rounded-xl border border-white bg-white/80 p-2.5 text-left text-[10px] font-bold text-slate-700 transition hover:border-indigo-300 hover:shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">{template.name}<span className="mt-1 block line-clamp-2 text-[9px] font-normal leading-4 text-slate-500">{template.text.split("\n")[0]}</span></button>)}</div> : <><p className="mb-2 text-[10px] text-slate-500">Quick local writing helpers for {captionMode === "custom" ? (previewAccount?.account_name || "the selected preview account") : "your universal caption"}. Connect a text-generation service to enable generated copy.</p><div className="flex flex-wrap gap-2"><button type="button" onClick={() => applyWritingHelper("hook")} className="rounded-lg border border-indigo-100 bg-white px-2.5 py-1.5 text-[10px] font-bold text-indigo-700 dark:border-slate-700 dark:bg-slate-900 dark:text-indigo-200">Make it engaging</button><button type="button" onClick={() => applyWritingHelper("grammar")} className="rounded-lg border border-indigo-100 bg-white px-2.5 py-1.5 text-[10px] font-bold text-indigo-700 dark:border-slate-700 dark:bg-slate-900 dark:text-indigo-200">Fix grammar</button><button type="button" onClick={() => applyWritingHelper("hashtags")} className="rounded-lg border border-indigo-100 bg-white px-2.5 py-1.5 text-[10px] font-bold text-indigo-700 dark:border-slate-700 dark:bg-slate-900 dark:text-indigo-200">Add hashtag ideas</button></div></>}</div>}
-                {previewAccount && (formatForAccount(previewAccount) === "Short" || formatForAccount(previewAccount) === "Reel / Video" || previewAccount.platform === "youtube") && <label className="block"><span className="section-title">Video title <span className="font-normal text-slate-400">· optional</span></span><input value={title} onChange={(event) => setTitle(event.target.value)} maxLength={100} placeholder="Add a title for your video" className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs outline-none transition focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-950" /></label>}
+                {previewAccount && (formatForAccount(previewAccount) === "Short" || formatForAccount(previewAccount) === "Reel / Video" || previewAccount.platform === "youtube") && <label className="block"><span className="sc-h2">Video title <span className="font-normal text-slate-400">· optional</span></span><input value={title} onChange={(event) => setTitle(event.target.value)} maxLength={100} placeholder="Add a title for your video" className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs outline-none transition focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-950" /></label>}
                 <RenderErrorBoundary scope="Channel caption editor" compact><ComposerChannelEditor accounts={selectedAccounts} mode={captionMode} setMode={changeCaptionMode} caption={caption} setCaption={setCaption} captionsByAccount={captionsByAccount} setCaptionsByAccount={setCaptionsByAccount} useUniversalCaptionByAccount={useUniversalCaptionByAccount} setUseUniversalCaptionByAccount={setUseUniversalCaptionByAccount} channelFiles={channelFiles} setChannelFiles={setChannelFiles} channelMediaUrlsByAccount={channelMediaUrlsByAccount} setChannelMediaUrlsByAccount={setChannelMediaUrlsByAccount} useSharedMediaByAccount={useSharedMediaByAccount} setUseSharedMediaByAccount={setUseSharedMediaByAccount} sharedMediaCount={files.length + libraryMediaUrls.length} channelWarnings={channelWarnings} previewId={previewAccount?.id} setPreviewId={setPreviewId} formatsByAccount={formatsByAccount} formatOverridesByAccount={formatOverridesByAccount} setAccountFormat={setAccountFormat} platformSettingsByAccount={platformSettingsByAccount} setPlatformSetting={setPlatformSetting} onChannelFilesAdded={(account, incoming) => { void suggestFormatsForAccounts(incoming, [account]); }} onOpenAssistant={(accountId) => { if (accountId) setPreviewId(accountId); setWritingTool("assistant"); }} onEditMedia={(file) => { setQuickFile(file); setQuickTool(file.type.startsWith("video/") ? "video" : "image"); }}>
                   <div className="mb-2 flex justify-end"><span className={`text-[10px] font-bold ${caption.length > postLimit ? "text-rose-500" : "text-slate-400"}`}>{caption.length.toLocaleString()} / {postLimit.toLocaleString()}</span></div><WritingTools caption={caption} setCaption={setCaption} />
                 </ComposerChannelEditor></RenderErrorBoundary>
-                <section><div className="mb-2.5 flex items-center justify-between"><div><h3 className="section-title">Add your media</h3><p className="section-hint mt-0.5">Photos and video make a post feel real.</p></div><span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Optional</span></div><MediaDropzone files={files} setFiles={setFiles} uploadBusy={uploadBusy} setToast={notify} openTool={setQuickTool} onFilesAdded={(incoming) => { void suggestFormatsForAccounts(incoming); }} onEditFile={(file) => { setQuickFile(file); setQuickTool(file.type.startsWith("video/") ? "video" : "image"); }} />{libraryMediaUrls.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{libraryMediaUrls.map((url) => <span key={url} className="inline-flex max-w-full items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 text-[10px] font-semibold text-indigo-800 dark:border-indigo-900 dark:bg-indigo-950/50 dark:text-indigo-200"><ImagePlus size={12} /><span className="max-w-48 truncate">{decodeURIComponent(url.split("/").pop().split("?")[0])}</span><button type="button" onClick={() => setLibraryMediaUrls((current) => current.filter((item) => item !== url))} aria-label="Remove selected library media" className="font-bold">×</button></span>)}</div>}</section>
+                <section><div className="mb-2.5 flex items-center justify-between"><div><h3 className="sc-h2">Add your media</h3><p className="section-hint mt-0.5">Photos and video make a post feel real.</p></div><span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Optional</span></div><MediaDropzone files={files} setFiles={setFiles} uploadBusy={uploadBusy} setToast={notify} openTool={setQuickTool} onFilesAdded={(incoming) => { void suggestFormatsForAccounts(incoming); }} onEditFile={(file) => { setQuickFile(file); setQuickTool(file.type.startsWith("video/") ? "video" : "image"); }} />{libraryMediaUrls.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{libraryMediaUrls.map((url) => <span key={url} className="inline-flex max-w-full items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 text-[10px] font-semibold text-indigo-800 dark:border-indigo-900 dark:bg-indigo-950/50 dark:text-indigo-200"><ImagePlus size={12} /><span className="max-w-48 truncate">{decodeURIComponent(url.split("/").pop().split("?")[0])}</span><button type="button" onClick={() => setLibraryMediaUrls((current) => current.filter((item) => item !== url))} aria-label="Remove selected library media" className="font-bold">×</button></span>)}</div>}</section>
                 <ScheduleControls mode={scheduleMode} setMode={setScheduleMode} date={date} setDate={setDate} time={time} setTime={setTime} timeZone={timeZone} setTimeZone={setTimeZone} selectedAccounts={selectedAccounts} />
-                <div className="border-t border-slate-100 pt-4 dark:border-slate-800"><div className="flex flex-wrap gap-2"><button type="button" onClick={() => void saveAsDraft()} disabled={saving || uploadBusy || loadingAccounts} className="secondary-button flex flex-1 items-center justify-center gap-2 !py-3.5">{saving && !uploadBusy ? <LoaderCircle size={16} className="animate-spin" /> : <FileText size={15} />}Save as draft</button><button type="submit" disabled={saving || uploadBusy || loadingAccounts} className="primary-button flex flex-[1.4] items-center justify-center gap-2.5 !py-3.5">{saving || uploadBusy ? <LoaderCircle size={17} className="animate-spin" /> : scheduleMode === "now" ? <Send size={16} /> : scheduleMode === "queue" ? <Timer size={16} /> : <CalendarDays size={16} />}{saving || uploadBusy ? "Preparing your post…" : scheduleMode === "now" ? "Post now" : scheduleMode === "queue" ? "Add to next queue slot" : "Schedule post"}<ArrowRight size={16} className="ml-1" /></button></div><p className="mt-2 text-center text-[9px] text-slate-400">Posts are created separately for each selected account.</p></div>
+                <div className="row between wrap" style={{ borderTop: "1px solid var(--border)", margin: "0 -20px -20px", padding: "14px 20px", gap: 10 }}><span className="xs subtle">Posts are created separately for each selected account.</span><div className="row"><button type="button" onClick={() => void saveAsDraft()} disabled={saving || uploadBusy || loadingAccounts} className="btn btn-secondary">{saving && !uploadBusy ? <LoaderCircle size={15} className="animate-spin" /> : null}Save as draft</button><button type="submit" disabled={saving || uploadBusy || loadingAccounts} className="btn btn-primary">{saving || uploadBusy ? <LoaderCircle size={15} className="animate-spin" /> : null}{saving || uploadBusy ? "Preparing…" : scheduleMode === "now" ? `Post now${selectedAccounts.length > 1 ? ` (${selectedAccounts.length})` : ""}` : scheduleMode === "queue" ? "Add to queue" : `Schedule ${selectedAccounts.length || ""} post${selectedAccounts.length === 1 ? "" : "s"}`.replace("  ", " ")}</button></div></div>
               </form>
-              <aside className="studio-scroll-panel relative z-0 min-w-0 space-y-4 self-start lg:col-span-12 xl:sticky xl:top-20 xl:col-span-5 xl:max-h-[calc(100vh-6rem)] xl:overflow-y-auto xl:overscroll-auto"><RenderErrorBoundary scope="Live preview" compact><LivePreview channelInfo={{ account: previewAccount, platform: previewChannel }} accounts={selectedAccounts} previewId={previewId} setPreviewId={setPreviewId} caption={previewCaption} uploadedMedia={previewFiles} mediaUrls={previewMediaUrls} posts={posts} title={title} format={formatForAccount(previewAccount)} formatsByAccount={formatsByAccount} platformSettingsByAccount={platformSettingsByAccount} destinationUrl={platformSettingsByAccount[previewAccount?.id]?.destination_url || ""} destinationBoard={platformSettingsByAccount[previewAccount?.id]?.board || "Brand inspiration"} device={device} setDevice={setDevice} /></RenderErrorBoundary>
-                <section className="surface-card"><button type="button" onClick={() => setShowQueue((value) => !value)} className="flex w-full items-center justify-between p-4 text-left sm:px-5"><span><span className="eyebrow">YOUR CONTENT</span><span className="mt-1 flex items-center gap-2 font-display text-base font-extrabold">Publishing queue <span className="queue-count">{queuedPosts.length}</span></span></span><ChevronDown size={17} className={`text-slate-400 transition-transform ${showQueue ? "rotate-180" : ""}`} /></button>{showQueue && <div className="max-h-72 space-y-2 overflow-y-auto border-t border-slate-100 p-3 dark:border-slate-800">{queuedPosts.length ? queuedPosts.map((post) => { const account = accounts.find((item) => item.id === post.connected_account_id); return <article key={post.id} className="queue-item"><div className="min-w-0 flex-1"><p className="line-clamp-2 text-xs font-semibold">{post.content}</p><p className="mt-1 text-[10px] text-slate-400">{account?.account_name || account?.platform || "Account"} · {new Date(post.scheduled_at).toLocaleString()}{post.provider_post_id ? " · provider confirmed" : ""}{post.last_error_message ? ` · ${post.last_error_message}` : ""}</p></div><span className="status-chip" title={post.latest_execution_outcome ? `Last log: ${post.latest_execution_outcome}` : post.status}>{post.status === "published" && post.provider_post_id ? "published" : post.status === "published" ? "unconfirmed" : post.status}</span>{post.status === "failed" && <button type="button" className="text-[10px] font-bold text-indigo-600" onClick={() => void retryQueuedPost(post.id)}>Retry</button>}{["failed", "cancelled"].includes(post.status) && <button type="button" className="text-[10px] font-bold text-slate-500" onClick={() => void archiveQueuedPost(post.id)}>Archive</button>}</article>; }) : <p className="py-5 text-center text-xs text-slate-400">Your queue is clear. Time for a new idea.</p>}</div>}</section>
-                <div className="security-note"><span className="security-lock">⌑</span><span>Workspace is private and secure <span className="mx-1">·</span> Your credentials stay encrypted</span></div>
+              <aside className="col sc-composer-preview" style={{ gap: 12, position: "sticky", top: 88, minWidth: 0 }}><h2>Preview</h2><RenderErrorBoundary scope="Live preview" compact><LivePreview channelInfo={{ account: previewAccount, platform: previewChannel }} accounts={selectedAccounts} previewId={previewId} setPreviewId={setPreviewId} caption={previewCaption} uploadedMedia={previewFiles} mediaUrls={previewMediaUrls} posts={posts} title={title} format={formatForAccount(previewAccount)} formatsByAccount={formatsByAccount} platformSettingsByAccount={platformSettingsByAccount} destinationUrl={platformSettingsByAccount[previewAccount?.id]?.destination_url || ""} destinationBoard={platformSettingsByAccount[previewAccount?.id]?.board || "Brand inspiration"} device={device} setDevice={setDevice} /></RenderErrorBoundary>
               </aside>
             </div>
           </section>}
-        </main>
+        </div>
       </div>
     </div>
+    <nav className="m-tab sc-mtab" aria-label="Mobile navigation">
+      {[["home", "Home", Home], ["calendar", "Calendar", CalendarDays]].map(([id, label, Icon]) => <a key={id} href={`#${id}`} className={navActive(id) ? "active" : ""} onClick={(event) => { event.preventDefault(); setMoreOpen(false); goToTab(id); }}><Icon size={20} className="ico" />{label}</a>)}
+      <a href="#studio" aria-label="New post" onClick={(event) => { event.preventDefault(); setMoreOpen(false); openStudio(); }}><span className="fab"><Plus size={22} /></span></a>
+      <a href="#queue" className={activeTab === "queue" ? "active" : ""} onClick={(event) => { event.preventDefault(); setMoreOpen(false); goToTab("queue"); }}><ListTodo size={20} className="ico" />Queue</a>
+      <a href="#more" className={moreOpen ? "active" : ""} onClick={(event) => { event.preventDefault(); setMoreOpen((value) => !value); }}><MoreHorizontal size={20} className="ico" />More</a>
+    </nav>
+    {moreOpen && <div className="sc-more card" role="menu"><nav className="nav">{navGroups.flatMap(([, items]) => items).filter(([id]) => !["home", "calendar", "queue", "studio"].includes(id)).map(navLink)}<a href="#signout" onClick={(event) => { event.preventDefault(); logout(); }}><XIcon size={18} className="ico" />Sign out</a></nav></div>}
     <QuickStudioDialog tool={quickTool} files={files} selectedFile={quickFile} onClose={() => { setQuickTool(null); setQuickFile(null); }} onToast={notify} />
     {pickSession && <DestinationPicker platform={pickSession.platform} sessionId={pickSession.sessionId} request={authenticatedFetch} channelMeta={CHANNELS.find((item) => item.id === pickSession.platform)} ChannelBrandImage={ChannelBrandImage} onClose={() => setPickSession(null)} onSaved={async (platform) => { setPickSession(null); await loadWorkspace(token); notify({ title: "Destinations saved", message: `${platform} destinations are connected.`, kind: "success" }); }} />}
     <ConnectChannelPicker
@@ -1726,4 +1177,4 @@ function App() {
   </div>;
 }
 
-createRoot(document.getElementById("root")).render(<React.StrictMode><RenderErrorBoundary scope="SocialStudio workspace"><App /></RenderErrorBoundary></React.StrictMode>);
+createRoot(document.getElementById("root")).render(<React.StrictMode><RenderErrorBoundary scope="SocialCastly workspace"><App /></RenderErrorBoundary></React.StrictMode>);

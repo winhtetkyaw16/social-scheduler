@@ -140,18 +140,18 @@ export function DestinationPicker({
   };
 
   return (
-    <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) onClose?.(); }}>
-      <div className="modal-card max-w-lg" role="dialog" aria-modal="true" aria-labelledby="pick-title">
+    <div className="modal-wrap sc-modal-wrap" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) onClose?.(); }}>
+      <div className="modal sc-modal max-w-lg" role="dialog" aria-modal="true" aria-labelledby="pick-title">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-3">
             <BrandThumb channelId={platform} ChannelBrandImage={ChannelBrandImage} />
             <div>
-              <span className="eyebrow">CHOOSE DESTINATIONS</span>
-              <h2 id="pick-title" className="mt-1 font-display text-xl font-extrabold">Connect {label}</h2>
+              <span className="xs muted sc-eyebrow">CHOOSE DESTINATIONS</span>
+              <h2 id="pick-title" className="mt-1  text-xl font-extrabold">Connect {label}</h2>
               <p className="mt-1 text-xs leading-5 text-slate-500">{notes}</p>
             </div>
           </div>
-          <button type="button" onClick={onClose} className="icon-button" aria-label="Close destination picker"><XIcon size={17} /></button>
+          <button type="button" onClick={onClose} className="btn btn-ghost btn-icon" aria-label="Close destination picker"><XIcon size={17} /></button>
         </div>
         {loading ? (
           <div className="mt-6 flex items-center justify-center gap-2 py-10 text-xs font-semibold text-slate-500">
@@ -180,8 +180,8 @@ export function DestinationPicker({
         )}
         {error && destinations.length > 0 && <p role="alert" className="mt-3 rounded-xl bg-rose-50 p-3 text-xs text-rose-700">{error}</p>}
         <div className="mt-5 flex justify-end gap-2">
-          <button type="button" className="secondary-button" onClick={onClose} disabled={saving}>Cancel</button>
-          <button type="button" className="primary-button !px-5 !py-2.5" disabled={saving || loading || !destinations.length} onClick={() => void save()}>
+          <button type="button" className="btn btn-secondary" onClick={onClose} disabled={saving}>Cancel</button>
+          <button type="button" className="btn btn-primary !px-5 !py-2.5" disabled={saving || loading || !destinations.length} onClick={() => void save()}>
             {saving ? "Saving…" : `Save ${selected.length || 0} destination${selected.length === 1 ? "" : "s"}`}
           </button>
         </div>
@@ -197,6 +197,8 @@ export default function ManageAccounts({
   onConnect,
   onChanged,
   ChannelBrandImage,
+  posts = [],
+  ownerName = "",
   publishablePlatforms = new Set(["x", "linkedin", "instagram", "facebook", "youtube", "tiktok", "pinterest", "threads"]),
 }) {
   const [busyId, setBusyId] = useState("");
@@ -226,90 +228,60 @@ export default function ManageAccounts({
     }
   };
 
+  const DAY = 864e5;
+  const health = (account) => {
+    if (!account.is_active) return ["Disconnected", ""];
+    const exp = account.token_expires_at ? new Date(account.token_expires_at) : null;
+    if (exp && exp < new Date()) return ["Token expired", "b-error"];
+    if (exp && exp - Date.now() < 7 * DAY) return [`Reconnect in ${Math.max(1, Math.ceil((exp - Date.now()) / DAY))} days`, "b-warning"];
+    if (posts.some((post) => post.connected_account_id === account.id && post.status === "failed")) return ["Publish errors", "b-error"];
+    return ["Healthy", "b-success"];
+  };
+  const expiring = sorted.filter((account) => account.is_active && account.token_expires_at && new Date(account.token_expires_at) - Date.now() < 7 * DAY);
+  const posts30 = (account) => posts.filter((post) => post.connected_account_id === account.id && post.status !== "draft" && Date.now() - new Date(post.published_at || post.scheduled_at || post.created_at) < 30 * DAY).length;
+  const ownerInitials = (ownerName || "You").split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase();
+  const desc = { x: "Threads & text", linkedin: "Profiles & pages", instagram: "Business accounts", facebook: "Pages", youtube: "Channel uploads", tiktok: "Creator accounts", pinterest: "Boards & pins", threads: "Text posts" };
+
   return (
-    <section className="surface-card space-y-4 p-4 sm:p-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <span className="eyebrow">MANAGE ACCOUNTS</span>
-          <h2 className="mt-1 font-display text-lg font-extrabold tracking-tight">Connected social destinations</h2>
-          <p className="mt-1 text-xs text-slate-500">Connect, disconnect, or reconnect accounts. Create Post chips select which destinations receive a draft — this panel manages the connections themselves.</p>
-        </div>
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-          {accounts.filter((account) => account.is_active).length} active
-        </span>
-      </div>
-
-      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-        {channels.map((channel) => {
-          const connected = accounts.filter((account) => account.platform === channel.id && account.is_active);
-          const count = connected.length;
-          const publishable = publishablePlatforms.has(channel.id);
-          return (
-            <button
-              key={channel.id}
-              type="button"
-              onClick={() => onConnect?.(channel)}
-              className="flex items-center gap-3 rounded-2xl border border-slate-200/80 bg-white/80 px-3 py-3 text-left transition hover:border-indigo-300 hover:shadow-sm dark:border-slate-700 dark:bg-slate-950/60"
-            >
-              <BrandThumb channelId={channel.id} ChannelBrandImage={ChannelBrandImage} size={36} />
-              <span className="min-w-0 flex-1">
-                <span className="block text-xs font-extrabold text-slate-900 dark:text-slate-100">{channel.label}</span>
-                <span className="block text-[10px] text-slate-500">{count ? `${count} connected` : "Not connected"} · {publishable ? "publish ready" : "connect only"}</span>
-              </span>
-              <Plus size={14} className="text-indigo-500" />
-            </button>
-          );
-        })}
-      </div>
-
-      {error && <p role="alert" className="rounded-xl bg-rose-50 p-3 text-xs text-rose-700 dark:bg-rose-950/40 dark:text-rose-200">{error}</p>}
-
-      {sorted.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-8 text-center dark:border-slate-700">
-          <Link2 className="mx-auto text-slate-300" size={22} />
-          <p className="mt-2 text-xs font-semibold text-slate-500">No accounts yet. Connect a network above.</p>
-        </div>
-      ) : (
-        <ul className="divide-y divide-slate-100 overflow-hidden rounded-2xl border border-slate-200/80 dark:divide-slate-800 dark:border-slate-700">
+    <>
+      <div className="page-head"><div><h1>Channels</h1><p className="muted">Manage connected accounts and their publishing health.</p></div><button type="button" className="btn btn-primary" onClick={() => onConnect?.()}><Plus size={16} />Connect channel</button></div>
+      {expiring.map((account) => <div key={account.id} className="alert warning"><svg className="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path d="M12 8v4M12 16h.01" /></svg><div className="grow sm"><b>{channelById[account.platform]?.label || account.platform} access {new Date(account.token_expires_at) < new Date() ? "expired" : "expires"} {new Date(account.token_expires_at).toLocaleDateString([], { month: "short", day: "numeric" })}.</b> <span className="muted">Reconnect to keep scheduled posts publishing.</span></div><button type="button" className="btn btn-sm btn-secondary" onClick={() => onConnect?.(channelById[account.platform])}>Reconnect</button></div>)}
+      {error && <div role="alert" className="alert error sm">{error}</div>}
+      <div className="card" style={{ overflow: "hidden" }}>
+        {sorted.length === 0 ? <div className="empty"><div className="art"><Link2 size={26} /></div><h2>No channels yet</h2><p className="muted sm">Connect a network below to start scheduling.</p></div> : <table className="table"><thead><tr><th>Account</th><th>Network</th><th>Status</th><th>Posts (30d)</th><th>Connected by</th><th /></tr></thead><tbody>
           {sorted.map((account) => {
             const channel = channelById[account.platform] || { label: account.platform, id: account.platform };
             const busy = busyId === account.id;
             const typeLabel = account.account_type_label || account.account_type || "Account";
-            return (
-              <li key={account.id} className="flex flex-wrap items-center gap-3 bg-white/70 px-3 py-3 dark:bg-slate-950/50 sm:px-4">
-                <AccountAvatar account={account} ChannelBrandImage={ChannelBrandImage} size={36} />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-xs font-extrabold text-slate-900 dark:text-slate-100">{account.account_name}</p>
-                  <p className="mt-0.5 text-[10px] text-slate-500">
-                    {channel.label} · {typeLabel}
-                    {account.is_active ? "" : " · disconnected"}
-                    {account.can_publish ? " · can publish" : " · connect only"}
-                  </p>
-                  <p className="mt-0.5 text-[10px] text-slate-400">{TYPE_HINTS[account.platform] || ""}</p>
-                </div>
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {account.is_active ? (
-                    <button type="button" disabled={busy} onClick={() => void run(account.id, "disconnect")} className="secondary-button !px-2.5 !py-1.5 text-[10px]">
-                      {busy ? <LoaderCircle size={12} className="animate-spin" /> : <Unplug size={12} />} Disconnect
-                    </button>
-                  ) : (
-                    <button type="button" disabled={busy} onClick={() => void run(account.id, "reconnect")} className="secondary-button !px-2.5 !py-1.5 text-[10px]">
-                      {busy ? <LoaderCircle size={12} className="animate-spin" /> : <RefreshCw size={12} />} Reconnect
-                    </button>
-                  )}
-                  <button type="button" disabled={busy} onClick={() => onConnect?.(channel)} className="secondary-button !px-2.5 !py-1.5 text-[10px]">
-                    <RefreshCw size={12} /> Re-auth
-                  </button>
-                  <button type="button" disabled={busy} onClick={() => void run(account.id, "remove")} className="secondary-button !px-2.5 !py-1.5 text-[10px] text-rose-600">
-                    Remove
-                  </button>
-                </div>
-              </li>
-            );
+            const [label, cls] = health(account);
+            return <tr key={account.id}>
+              <td><div className="row"><AccountAvatar account={account} ChannelBrandImage={ChannelBrandImage} size={32} /><div><b className="sm">{account.account_name}</b><div className="xs subtle">{typeLabel}</div></div></div></td>
+              <td className="sm">{channel.label} · {account.can_publish ? "publish" : "connect only"}</td>
+              <td><span className={`badge ${cls}`}>{label}</span></td>
+              <td className="sm">{posts30(account)}</td>
+              <td><div className="row sm"><span className="avatar" style={{ width: 22, height: 22, fontSize: 9, background: "#4F46E5" }}>{ownerInitials}</span>{(ownerName || "You").split(/\s+/)[0]}</div></td>
+              <td><div className="row" style={{ justifyContent: "flex-end", gap: 6 }}>
+                {busy && <LoaderCircle size={14} className="animate-spin" />}
+                {account.is_active ? <button type="button" disabled={busy} className="btn btn-sm btn-secondary" onClick={() => void run(account.id, "disconnect")}><Unplug size={13} />Disconnect</button> : <button type="button" disabled={busy} className="btn btn-sm btn-secondary" onClick={() => void run(account.id, "reconnect")}><RefreshCw size={13} />Reconnect</button>}
+                <button type="button" disabled={busy} className="btn btn-sm btn-ghost" onClick={() => onConnect?.(channel)} title="Re-authorize this network">Re-auth</button>
+                <button type="button" disabled={busy} className="btn btn-sm btn-ghost" style={{ color: "var(--error)" }} onClick={() => void run(account.id, "remove")}>Remove</button>
+              </div></td>
+            </tr>;
           })}
-        </ul>
-      )}
-    </section>
+        </tbody></table>}
+      </div>
+      <h2>Add a channel</h2>
+      <div className="grid g3">
+        {channels.map((channel) => {
+          const publishable = publishablePlatforms.has(channel.id);
+          const count = accounts.filter((account) => account.platform === channel.id && account.is_active).length;
+          return <div key={channel.id} className="card row" style={{ padding: 16, gap: 12, opacity: publishable ? 1 : .7 }}>
+            <BrandThumb channelId={channel.id} ChannelBrandImage={ChannelBrandImage} size={36} />
+            <div className="grow"><b>{channel.label}</b><div className="xs muted">{publishable ? (count ? `${count} connected` : desc[channel.id] || "Ready to connect") : "Connect only"}</div></div>
+            <button type="button" className={`btn btn-sm ${publishable ? "btn-primary" : "btn-secondary"}`} onClick={() => onConnect?.(channel)}>Connect</button>
+          </div>;
+        })}
+      </div>
+    </>
   );
 }

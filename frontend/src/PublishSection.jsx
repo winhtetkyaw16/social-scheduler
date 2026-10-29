@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { Ch, meta, chColor, Seg, Tabs, PageHead, Avatar, Empty, StatusBadge, fmtTime, fmtTime24, fmtDay, postTitle, AccountAvatar as ScAccountAvatar } from "./sc/ui.jsx";
 import { createPortal } from "react-dom";
 import RenderErrorBoundary from "./RenderErrorBoundary.jsx";
 import { AccountAvatar } from "./ManageAccounts.jsx";
@@ -91,30 +92,24 @@ function statusChipClass(status) {
 function PublishFilterBar({ accounts = [], status, setStatus, platform, setPlatform, accountId, setAccountId, counts = {} }) {
   const platforms = [...new Set((Array.isArray(accounts) ? accounts : []).map((account) => account.platform).filter(Boolean))].sort();
   const accountOptions = (Array.isArray(accounts) ? accounts : []).filter((account) => platform === "all" || account.platform === platform);
-  return <div className={`${card} flex flex-wrap items-end gap-3 p-3.5 sm:p-4`}>
-    <div className="mr-auto flex items-center gap-2 text-[11px] font-extrabold uppercase tracking-wider text-slate-400"><Filter size={13} />Filters{typeof counts.total === "number" && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] normal-case tracking-normal text-slate-600 dark:bg-slate-800 dark:text-slate-300">{counts.total} shown{counts.failed ? ` · ${counts.failed} failed` : ""}</span>}</div>
-    <label className="text-[10px] font-bold text-slate-500">Status
-      <select value={status} onChange={(event) => setStatus(event.target.value)} className="mt-1 block min-w-[140px] rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold outline-none focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-950">
-        {STATUS_FILTERS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
-      </select>
-    </label>
-    <label className="text-[10px] font-bold text-slate-500">Channel
-      <select value={platform} onChange={(event) => { setPlatform(event.target.value); setAccountId("all"); }} className="mt-1 block min-w-[140px] rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold capitalize outline-none focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-950">
-        <option value="all">All channels</option>
-        {platforms.map((item) => <option key={item} value={item}>{item}</option>)}
-      </select>
-    </label>
-    <label className="text-[10px] font-bold text-slate-500">Account
-      <select value={accountId} onChange={(event) => setAccountId(event.target.value)} className="mt-1 block min-w-[160px] rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold outline-none focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-950">
-        <option value="all">All accounts</option>
-        {accountOptions.map((account) => <option key={account.id} value={account.id}>{account.account_name || account.platform}</option>)}
-      </select>
-    </label>
-    {(status !== "all" || platform !== "all" || accountId !== "all") && <button type="button" className={button} onClick={() => { setStatus("all"); setPlatform("all"); setAccountId("all"); }}>Clear</button>}
+  return <div className="row wrap" style={{ gap: 8 }}>
+    {typeof counts.total === "number" && <span className="xs subtle">{counts.total} shown{counts.failed ? ` · ${counts.failed} failed` : ""}</span>}
+    <select aria-label="Status" value={status} onChange={(event) => setStatus(event.target.value)} className="select" style={{ height: 32, width: "auto", fontSize: 13 }}>
+      {STATUS_FILTERS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+    </select>
+    {setPlatform && <select aria-label="Channel" value={platform} onChange={(event) => { setPlatform(event.target.value); setAccountId("all"); }} className="select" style={{ height: 32, width: "auto", fontSize: 13, textTransform: "capitalize" }}>
+      <option value="all">All channels</option>
+      {platforms.map((item) => <option key={item} value={item}>{item}</option>)}
+    </select>}
+    <select aria-label="Account" value={accountId} onChange={(event) => setAccountId(event.target.value)} className="select" style={{ height: 32, width: "auto", fontSize: 13 }}>
+      <option value="all">All accounts</option>
+      {accountOptions.map((account) => <option key={account.id} value={account.id}>{account.account_name || account.platform}</option>)}
+    </select>
+    {(status !== "all" || platform !== "all" || accountId !== "all") && <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setStatus("all"); setPlatform?.("all"); setAccountId("all"); }}>Clear</button>}
   </div>;
 }
 
-function PostsListView({ posts, accounts = [], request, onSelectPost, onRefresh, status, setStatus, platform, setPlatform, accountId, setAccountId }) {
+function PostsListView({ posts, accounts = [], request, onSelectPost, onRefresh, status, setStatus, platform, setPlatform, accountId, setAccountId, headerExtra = null }) {
   const safeAccounts = Array.isArray(accounts) ? accounts : [];
   const filtered = useMemo(
     () => filterPublishPosts(posts, safeAccounts, { status, platform, accountId })
@@ -139,51 +134,37 @@ function PostsListView({ posts, accounts = [], request, onSelectPost, onRefresh,
     }
   }
 
-  return <section className="space-y-4">
-    <PublishFilterBar accounts={safeAccounts} status={status} setStatus={setStatus} platform={platform} setPlatform={setPlatform} accountId={accountId} setAccountId={setAccountId} counts={{ total: filtered.length, failed: failedCount }} />
-    {error && <p role="alert" className="rounded-xl bg-rose-50 p-3 text-xs text-rose-700 dark:bg-rose-950/40 dark:text-rose-200">{error}</p>}
-    <div className={`${card} overflow-hidden`}>
-      <div className="border-b border-slate-100 px-5 py-4 dark:border-slate-800">
-        <span className="text-[10px] font-extrabold uppercase tracking-[.16em] text-indigo-500">All posts</span>
-        <h2 className="mt-1 font-display text-xl font-extrabold">Publishing activity</h2>
-        <p className="mt-1 text-xs text-slate-500">Failed publishes show the provider error. Retry queues them again.</p>
-      </div>
-      {filtered.length === 0 ? <EmptyState icon={List} title="No matching posts" text="Try another status, channel, or account filter." /> : (
-        <div className="divide-y divide-slate-100 dark:divide-slate-800">
-          {filtered.map((post) => {
-            const account = safeAccounts.find((item) => item.id === post.connected_account_id);
-            const when = postPlacementAt(post);
-            const failed = post.status === "failed";
-            return <article key={post.id} className={`flex flex-wrap items-start gap-3 px-5 py-4 ${failed ? "bg-rose-50/40 dark:bg-rose-950/20" : ""}`}>
-              {post.media_urls?.[0] ? <img src={post.media_urls[0]} alt="" className="h-14 w-14 rounded-xl object-cover" /> : <span className="grid h-14 w-14 place-items-center rounded-xl bg-slate-100 text-slate-500 dark:bg-slate-800"><FileText size={18} /></span>}
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold capitalize ${statusChipClass(post.status)}`}>{post.status}</span>
-                  <span className="text-[11px] font-bold capitalize text-slate-600 dark:text-slate-300">{account?.account_name || account?.platform || "Account"}</span>
-                  {when && <span className="text-[10px] text-slate-400">{new Date(when).toLocaleString()}</span>}
-                </div>
-                <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-800 dark:text-slate-100">{post.content || "Untitled post"}</p>
-                {failed && (post.last_error_message || post.last_error_code) && (
-                  <p className="mt-2 rounded-xl border border-rose-200 bg-white/80 px-2.5 py-2 text-[11px] font-semibold leading-4 text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200" title={post.last_error_message || post.last_error_code}>
-                    {post.last_error_code ? `${post.last_error_code}: ` : ""}{post.last_error_message || "Publish failed"}
-                  </p>
-                )}
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <button type="button" className={button} onClick={() => onSelectPost?.(post)}>Open</button>
-                {failed && <button type="button" className={primary} disabled={!!busyId} onClick={() => void retryPost(post.id)}>{busyId === post.id ? <LoaderCircle size={13} className="animate-spin" /> : <RotateCcw size={13} />}Retry</button>}
-              </div>
-            </article>;
-          })}
-        </div>
-      )}
+  return <div className="col" style={{ gap: 16 }}>
+    <div className="row between wrap"><PublishFilterBar accounts={safeAccounts} status={status} setStatus={setStatus} platform={platform} setPlatform={setPlatform} accountId={accountId} setAccountId={setAccountId} counts={{ total: filtered.length, failed: failedCount }} />{headerExtra}</div>
+    {error && <div role="alert" className="alert error sm">{error}</div>}
+    <div className="card">
+      <div className="card-head"><h3>All posts</h3><span className="xs subtle">Failed publishes show the provider error. Retry queues them again.</span></div>
+      {filtered.length === 0 ? <Empty title="No matching posts" text="Try another status, channel, or account filter." /> : filtered.map((post) => {
+        const account = safeAccounts.find((item) => item.id === post.connected_account_id);
+        const when = postPlacementAt(post);
+        const failed = post.status === "failed";
+        return <div key={post.id} className="post">
+          <div className="time">{when ? fmtTime(when).replace(/\s?(AM|PM)/i, "") : "—"}<span>{when ? `${(fmtTime(when).match(/AM|PM/i) || [""])[0]} · ${new Date(when).toLocaleDateString([], { month: "short", day: "numeric" })}` : ""}</span></div>
+          <ScAccountAvatar account={account} size={36} />
+          <div className="body">
+            <div className="row" style={{ gap: 8, marginBottom: 4 }}><b className="sm">{account?.account_name || account?.platform || "Account"}</b><StatusBadge status={post.status} post={post} /></div>
+            <div className="txt">{post.content || "Untitled post"}</div>
+            {failed && (post.last_error_message || post.last_error_code) && <div className="xs" style={{ color: "var(--error)", marginTop: 6 }} title={post.last_error_message || post.last_error_code}>⚠ {post.last_error_code ? `${post.last_error_code}: ` : ""}{post.last_error_message || "Publish failed"}</div>}
+          </div>
+          {post.media_urls?.[0] && <img className="thumb" src={post.media_urls[0]} alt="" style={{ objectFit: "cover" }} />}
+          <div className="row" style={{ gap: 6 }}>
+            <button type="button" className="btn btn-sm btn-ghost" onClick={() => onSelectPost?.(post)}>Open</button>
+            {failed && <button type="button" className="btn btn-sm btn-secondary" disabled={!!busyId} onClick={() => void retryPost(post.id)}>{busyId === post.id ? <LoaderCircle size={13} className="animate-spin" /> : <RotateCcw size={13} />}Retry</button>}
+          </div>
+        </div>;
+      })}
     </div>
-  </section>;
+  </div>;
 }
 
-function MonthCalendar({ posts, accounts = [], onCreatePost, onSelectPost, request, onRefresh }) {
+function MonthCalendar({ posts, accounts = [], onCreatePost, onSelectPost, request, onRefresh, onList, platformFilter = "all", setPlatformFilter, filters = null, initialView = "month" }) {
   const safePosts = Array.isArray(posts) ? posts.filter(Boolean) : [];
-  const [view, setView] = useState("month");
+  const [view, setView] = useState(initialView);
   const [cursor, setCursor] = useState(() => new Date());
   const [dragOverKey, setDragOverKey] = useState("");
   const [draggingId, setDraggingId] = useState("");
@@ -193,7 +174,7 @@ function MonthCalendar({ posts, accounts = [], onCreatePost, onSelectPost, reque
   const dates = useMemo(() => {
     const first = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
     const start = new Date(first);
-    if (view === "month") start.setDate(first.getDate() - ((first.getDay() + 6) % 7));
+    if (view === "month") start.setDate(first.getDate() - first.getDay());
     else start.setDate(cursor.getDate() - ((cursor.getDay() + 6) % 7));
     const count = view === "month" ? 42 : 7;
     return Array.from({ length: count }, (_, index) => {
@@ -218,7 +199,7 @@ function MonthCalendar({ posts, accounts = [], onCreatePost, onSelectPost, reque
       return `${fmt.format(start)} – ${fmt.format(end)}, ${end.getFullYear()}`;
     })()
     : new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" }).format(cursor);
-  const postLimit = view === "week" ? 12 : 3;
+  const postLimit = view === "week" ? 12 : 2;
 
   function step(amount) {
     setCursor((current) => {
@@ -284,81 +265,106 @@ function MonthCalendar({ posts, accounts = [], onCreatePost, onSelectPost, reque
     return () => { document.body.style.overflow = previousOverflow; window.removeEventListener("keydown", onKeyDown); };
   }, [dayDetail, busyId]);
 
-  return <section className={`${card} overflow-hidden`}>
-    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 p-4 dark:border-slate-800 sm:p-5">
-      <div><span className="text-[10px] font-extrabold uppercase tracking-[.16em] text-indigo-500">Publishing plan</span><h2 className="mt-1 font-display text-lg font-extrabold">{label}</h2><p className="mt-1 text-[10px] text-slate-400">Click a day to compose · +N more opens every post that day · drag to reschedule · click a post to edit</p></div>
-      <div className="flex items-center gap-2"><div className="flex rounded-xl bg-slate-100 p-1 dark:bg-slate-800">{["week", "month"].map((item) => <button key={item} type="button" onClick={() => setView(item)} className={`rounded-lg px-3 py-1.5 text-[11px] font-bold capitalize ${view === item ? "bg-white text-indigo-700 shadow-sm dark:bg-slate-700 dark:text-white" : "text-slate-500"}`}>{item}</button>)}</div><button type="button" className={button} onClick={() => step(-1)} aria-label="Previous period"><ArrowLeft size={14} /></button><button type="button" className={button} onClick={() => step(1)} aria-label="Next period"><ArrowRight size={14} /></button><button type="button" className={primary} onClick={() => openComposerForDay()}><Plus size={14} />Create</button></div>
+  function dropProps(date, key) {
+    return {
+      onDragOver: (event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; if (dragOverKey !== key) setDragOverKey(key); },
+      onDragLeave: (event) => { if (!event.currentTarget.contains(event.relatedTarget)) setDragOverKey((current) => current === key ? "" : current); },
+      onDrop: (event) => {
+        event.preventDefault();
+        const raw = event.dataTransfer.getData("application/x-socialstudio-post") || event.dataTransfer.getData("text/plain");
+        let payload = null;
+        try { payload = JSON.parse(raw); } catch { payload = null; }
+        const post = safePosts.find((item) => String(item.id) === String(payload?.id || raw));
+        setDragOverKey("");
+        if (post) void reschedulePostGroup(post, date);
+      },
+    };
+  }
+  function dragProps(post) {
+    const draggable = canDragPost(post);
+    return {
+      draggable: draggable && !busyId,
+      onDragStart: (event) => {
+        if (!draggable) { event.preventDefault(); return; }
+        setDraggingId(String(post.id)); setError("");
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("application/x-socialstudio-post", JSON.stringify({ id: post.id }));
+        event.dataTransfer.setData("text/plain", String(post.id));
+      },
+      onDragEnd: () => { setDraggingId(""); setDragOverKey(""); },
+      onClick: (event) => { event.stopPropagation(); onSelectPost?.(post); },
+    };
+  }
+  const platformsInUse = [...new Set((Array.isArray(accounts) ? accounts : []).filter((a) => a?.is_active !== false).map((a) => a.platform).filter(Boolean))];
+  const todayKey = dateKey(new Date());
+  const sortedFor = (key) => (grouped.get(key) || []).slice().sort((a, b) => new Date(postPlacementAt(a) || 0) - new Date(postPlacementAt(b) || 0));
+  const weekHours = (() => {
+    if (view !== "week") return [];
+    let lo = 8, hi = 18;
+    dates.forEach((d) => sortedFor(dateKey(d)).forEach((p) => { const h = new Date(postPlacementAt(p)).getHours(); lo = Math.min(lo, h); hi = Math.max(hi, h); }));
+    return Array.from({ length: hi - lo + 1 }, (_, i) => lo + i);
+  })();
+  const hourLabel = (h) => `${h % 12 || 12} ${h < 12 ? "AM" : "PM"}`;
+
+  return <div className="col" style={{ gap: 16 }}>
+    <div className="row between wrap" style={{ gap: 12 }}>
+      <div className="row">
+        <button type="button" className="btn btn-secondary btn-icon btn-sm" aria-label="Previous" onClick={() => step(-1)}><svg className="ico" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6" /></svg></button>
+        <button type="button" className="btn btn-secondary btn-icon btn-sm" aria-label="Next" onClick={() => step(1)}><svg className="ico" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6" /></svg></button>
+        <button type="button" className="btn btn-secondary btn-sm" onClick={() => setCursor(new Date())}>Today</button>
+        <h2 style={{ marginLeft: 6 }}>{label}</h2>
+      </div>
+      <div className="row wrap">
+        {filters}
+        <div className="row sm muted" style={{ gap: 6 }}>Channels {platformsInUse.length ? platformsInUse.map((p) => <button type="button" key={p} onClick={() => setPlatformFilter?.(platformFilter === p ? "all" : p)} title={`Show only ${p}`} style={{ background: "none", border: 0, padding: 0, opacity: platformFilter === "all" || platformFilter === p ? 1 : .35 }}><Ch platform={p} /></button>) : <span className="xs subtle">none connected</span>}</div>
+        <Seg value={view} onChange={(v) => v === "list" ? onList?.() : setView(v)} options={[["month", "Month"], ["week", "Week"], ["list", "List"]]} />
+      </div>
     </div>
-    {error && <p role="alert" className="mx-4 mt-3 rounded-xl bg-rose-50 p-3 text-xs text-rose-700 dark:mx-5 dark:bg-rose-950/40 dark:text-rose-200 sm:mx-5">{error}</p>}
-    <div className="grid grid-cols-7 border-b border-slate-100 text-center text-[10px] font-extrabold uppercase tracking-wider text-slate-400 dark:border-slate-800">{["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((day) => <div key={day} className="py-3">{day}</div>)}</div>
-    <div className="grid grid-cols-7">{dates.map((date) => {
-      const key = dateKey(date);
-      const dayPosts = (grouped.get(key) || []).slice().sort((a, b) => new Date(postPlacementAt(a) || 0) - new Date(postPlacementAt(b) || 0));
-      const today = key === dateKey(new Date());
-      const sameMonth = date.getMonth() === cursor.getMonth();
-      const isDropTarget = dragOverKey === key;
-      const cellMin = view === "week" ? "min-h-48 sm:min-h-56" : "min-h-28 sm:min-h-36";
-      return <div
-        key={key}
-        data-day={key}
-        onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; if (dragOverKey !== key) setDragOverKey(key); }}
-        onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setDragOverKey((current) => current === key ? "" : current); }}
-        onDrop={(event) => {
-          event.preventDefault();
-          const raw = event.dataTransfer.getData("application/x-socialstudio-post") || event.dataTransfer.getData("text/plain");
-          let payload = null;
-          try { payload = JSON.parse(raw); } catch { payload = null; }
-          const post = safePosts.find((item) => String(item.id) === String(payload?.id || raw));
-          setDragOverKey("");
-          if (post) void reschedulePostGroup(post, date);
-        }}
-        className={`${cellMin} border-b border-r border-slate-100 p-1.5 transition dark:border-slate-800 sm:p-2 ${!sameMonth && view === "month" ? "bg-slate-50/60 dark:bg-slate-950/30" : ""} ${isDropTarget ? "bg-indigo-50/80 ring-2 ring-inset ring-indigo-400 dark:bg-indigo-950/40" : ""}`}
-      >
-        <div className="flex items-center justify-between gap-1">
-          <button type="button" onClick={() => openComposerForDay(date)} title={`Create post on ${key}`} className={`inline-flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold transition hover:ring-2 hover:ring-indigo-300 ${today ? "bg-gradient-to-br from-indigo-600 to-purple-600 text-white" : sameMonth ? "text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800" : "text-slate-300 dark:text-slate-600"}`}>{date.getDate()}</button>
-          <button type="button" onClick={() => openComposerForDay(date)} aria-label={`Create post on ${key}`} className="grid h-6 w-6 place-items-center rounded-md text-slate-400 transition hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-indigo-950/50 dark:hover:text-indigo-300"><Plus size={12} /></button>
-        </div>
-        <div className={`mt-1 space-y-1 ${view === "week" ? "max-h-44 overflow-y-auto pr-0.5" : ""}`}>
+    {error && <div role="alert" className="alert error sm">{error}</div>}
+    {view === "month" ? <div className="cal">
+      {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => <div key={d} className="dow">{d}</div>)}
+      {dates.map((date) => {
+        const key = dateKey(date);
+        const dayPosts = sortedFor(key);
+        const out = date.getMonth() !== cursor.getMonth();
+        return <div key={key} data-day={key} {...dropProps(date, key)} onClick={() => openComposerForDay(date)} title={`Create post on ${key}`}
+          className={`cell ${out ? "out" : ""} ${key === todayKey ? "today" : ""}`} style={{ cursor: "pointer", ...(dragOverKey === key ? { boxShadow: "inset 0 0 0 2px var(--primary)", background: "var(--primary-soft)" } : null) }}>
+          <span className="n">{date.getDate()}</span>
           {dayPosts.slice(0, postLimit).map((post) => {
-            const draggable = canDragPost(post);
-            const isDragging = draggingId === String(post.id);
-            const isBusy = busyId === String(post.id);
-            const failed = post.status === "failed";
             const account = accountById.get(post.connected_account_id);
-            const when = postPlacementAt(post);
-            return <button
-              type="button"
-              key={post.id}
-              draggable={draggable && !busyId}
-              onDragStart={(event) => {
-                if (!draggable) { event.preventDefault(); return; }
-                setDraggingId(String(post.id));
-                setError("");
-                event.dataTransfer.effectAllowed = "move";
-                event.dataTransfer.setData("application/x-socialstudio-post", JSON.stringify({ id: post.id }));
-                event.dataTransfer.setData("text/plain", String(post.id));
-              }}
-              onDragEnd={() => { setDraggingId(""); setDragOverKey(""); }}
-              onClick={(event) => { event.stopPropagation(); onSelectPost?.(post); }}
-              aria-label={`${draggable ? "Drag to reschedule or open" : "Open"} scheduled post: ${post.content || "Untitled post"}`}
-              className={`block w-full overflow-hidden rounded-lg border text-left text-[10px] transition focus:outline-none focus:ring-2 focus:ring-indigo-500 ${draggable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"} ${failed ? "border-rose-300 bg-rose-50/90 dark:border-rose-800 dark:bg-rose-950/40" : "border-slate-200 bg-white/90 dark:border-slate-700 dark:bg-slate-900/80"} ${isDragging ? "opacity-40" : ""} ${isBusy ? "opacity-70" : ""}`}
-            >
-              {post.media_urls?.[0] && view === "week" && <img src={post.media_urls[0]} alt="" className="h-14 w-full object-cover" loading="lazy" />}
-              {post.media_urls?.[0] && view === "month" && <img src={post.media_urls[0]} alt="" className="h-11 w-full object-cover" loading="lazy" />}
-              <div className="p-1.5">
-                <p className="flex items-center gap-1 font-bold"><Clock3 size={10} />{when ? new Date(when).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "—"}{isBusy && <LoaderCircle size={10} className="animate-spin" />}</p>
-                <p className="mt-0.5 truncate text-[9px] font-semibold capitalize text-slate-500">{account?.account_name || account?.platform || "Account"}</p>
-                <p className="mt-1 line-clamp-2">{post.content || "Untitled post"}</p>
-                <span title={post.last_error_message || (post.provider_post_id ? "Provider confirmed" : post.status)} className={`mt-1 inline-flex rounded-full px-1.5 py-0.5 font-bold ${statusChipClass(post.status)}`}>{post.status === "published" && post.provider_post_id ? "published" : post.status === "published" ? "unconfirmed" : post.status}</span>
-                {failed && post.last_error_message && <p className="mt-1 line-clamp-2 text-[9px] font-semibold leading-3 text-rose-700 dark:text-rose-300" title={post.last_error_message}>{post.last_error_message}</p>}
-                {post.post_metadata?.recommended_time && <span className="ml-1 mt-1 inline-flex rounded-full bg-amber-100 px-1.5 py-0.5 font-bold text-amber-800 dark:bg-amber-900/50 dark:text-amber-200">Recommended time</span>}
-              </div>
-            </button>;
+            const m = meta(account?.platform);
+            return <div key={post.id} role="button" tabIndex={0} {...dragProps(post)} onKeyDown={(e) => { if (e.key === "Enter") onSelectPost?.(post); }}
+              aria-label={`Open post: ${post.content || "Untitled post"}`}
+              className={`chip ${m.chip} ${post.status === "failed" ? "failed" : ""}`}
+              style={{ cursor: canDragPost(post) ? "grab" : "pointer", opacity: draggingId === String(post.id) || busyId === String(post.id) ? .5 : 1, ...(m.chip ? null : { borderColor: chColor(account?.platform) }) }}
+              title={`${account?.account_name || ""} · ${post.status}`}><b>{fmtTime24(postPlacementAt(post))}</b>{postTitle(post)}</div>;
           })}
-          {dayPosts.length > postLimit && <button type="button" onClick={(event) => { event.stopPropagation(); setDayDetail(date); }} className="w-full rounded-md px-1 py-0.5 text-left text-[10px] font-semibold text-indigo-600 transition hover:bg-indigo-50 hover:text-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-indigo-300 dark:hover:bg-indigo-950/50">+{dayPosts.length - postLimit} more</button>}
-        </div>
-      </div>;
-    })}</div>
+          {dayPosts.length > postLimit && <span role="button" className="xs subtle" style={{ cursor: "pointer" }} onClick={(e) => { e.stopPropagation(); setDayDetail(date); }}>+{dayPosts.length - postLimit} more</span>}
+        </div>;
+      })}
+    </div> : <div className="week">
+      <div className="h"></div>
+      {dates.map((d) => <div key={dateKey(d)} className="h"><div className="xs subtle">{d.toLocaleDateString(undefined, { weekday: "short" })}</div><div style={{ fontWeight: 700, fontSize: 18, color: dateKey(d) === todayKey ? "var(--primary)" : undefined }}>{d.getDate()}</div></div>)}
+      {weekHours.map((h) => <React.Fragment key={h}>
+        <div className="t">{hourLabel(h)}</div>
+        {dates.map((d) => {
+          const key = dateKey(d);
+          const slotKey = `${key}-${h}`;
+          const inHour = sortedFor(key).filter((p) => new Date(postPlacementAt(p)).getHours() === h);
+          const isToday = key === todayKey;
+          const slotDate = new Date(d.getFullYear(), d.getMonth(), d.getDate(), h, 0);
+          return <div key={slotKey} className="s" {...dropProps(d, slotKey)} onClick={() => openComposerForDay(slotDate)} style={{ cursor: "pointer", background: dragOverKey === slotKey ? "var(--primary-soft)" : isToday ? "color-mix(in srgb,var(--primary) 4%,transparent)" : undefined }}>
+            {inHour.slice(0, 1).map((post) => {
+              const account = accountById.get(post.connected_account_id);
+              const m = meta(account?.platform);
+              return <div key={post.id} role="button" tabIndex={0} {...dragProps(post)} className={`ev ${m.ev}`} style={{ cursor: canDragPost(post) ? "grab" : "pointer", ...(post.status === "failed" ? { background: "var(--error-soft)", borderColor: "var(--error)" } : null), ...(m.ev ? null : { borderColor: chColor(account?.platform) }) }}>
+                <div className="row" style={{ gap: 6 }}><Ch platform={account?.platform} /><b>{fmtTime24(postPlacementAt(post))}</b>{inHour.length > 1 && <span className="xs subtle" role="button" onClick={(e) => { e.stopPropagation(); setDayDetail(d); }}>+{inHour.length - 1}</span>}</div>{postTitle(post)}</div>;
+            })}
+          </div>;
+        })}
+      </React.Fragment>)}
+    </div>}
+    <p className="xs subtle">Click a day to compose · drag a post to another day to reschedule · click a post to open it</p>
     {dayDetail instanceof Date && (() => {
       const detailKey = dateKey(dayDetail);
       const detailPosts = (grouped.get(detailKey) || []).slice().sort((a, b) => new Date(postPlacementAt(a) || 0) - new Date(postPlacementAt(b) || 0));
@@ -369,7 +375,7 @@ function MonthCalendar({ posts, accounts = [], onCreatePost, onSelectPost, reque
           <header className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-4 dark:border-slate-800 sm:px-6">
             <div className="min-w-0">
               <span className="text-[10px] font-extrabold uppercase tracking-[.16em] text-indigo-500">Day schedule</span>
-              <h2 id="day-detail-title" className="mt-1 font-display text-lg font-extrabold">{detailLabel}</h2>
+              <h2 id="day-detail-title" className="mt-1  text-lg font-extrabold">{detailLabel}</h2>
               <p className="mt-1 text-xs text-slate-500">{detailPosts.length} post{detailPosts.length === 1 ? "" : "s"} · click one to open</p>
             </div>
             <button type="button" onClick={closeDayDetail} aria-label="Close day schedule" className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-white"><X size={18} /></button>
@@ -420,10 +426,10 @@ function MonthCalendar({ posts, accounts = [], onCreatePost, onSelectPost, reque
         </section>
       </div>, document.body);
     })()}
-  </section>;
+  </div>;
 }
 
-function DraftsView({ request, accounts = [], onCreatePost, onOpenDraft, onRefresh, localDrafts = [], onUpdateLocalDraft, onRemoveLocalDraft }) {
+function DraftsView({ request, accounts = [], authorName, onCreatePost, onOpenDraft, onRefresh, localDrafts = [], onUpdateLocalDraft, onRemoveLocalDraft }) {
   const [drafts, setDrafts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState("");
@@ -547,54 +553,51 @@ function DraftsView({ request, accounts = [], onCreatePost, onOpenDraft, onRefre
     }
   }
 
-  return <section className={`${card} p-5 sm:p-6`}>
-    <div className="flex flex-wrap items-end justify-between gap-3">
-      <div>
-        <span className="text-[10px] font-extrabold uppercase tracking-[.16em] text-indigo-500">Saved for later</span>
-        <h2 className="mt-1 font-display text-xl font-extrabold">Drafts</h2>
-        <p className="mt-1 text-xs text-slate-500">Durable workspace drafts — edit, schedule, queue, or delete.</p>
-      </div>
-      <div className="flex gap-2">
-        <button type="button" className={button} onClick={() => void createDraft()} disabled={!!busyId}>{busyId === "new" ? <LoaderCircle className="animate-spin" size={14} /> : <Plus size={14} />}New draft</button>
-        <button type="button" className={primary} onClick={() => onCreatePost?.()}><Plus size={14} />Open composer</button>
-      </div>
-    </div>
-    {error && <p role="alert" className="mt-4 rounded-xl bg-rose-50 p-3 text-xs text-rose-700 dark:bg-rose-950/40 dark:text-rose-200">{error}</p>}
-    {notice && <p className="mt-4 rounded-xl bg-emerald-50 p-3 text-xs text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200">{notice}</p>}
-    {loading ? <p className="py-12 text-center text-xs text-slate-400">Loading drafts…</p> : visibleDrafts.length ? (
-      <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {visibleDrafts.map((draft) => {
+  const [query, setQuery] = useState("");
+  const shownDrafts = visibleDrafts.filter((d) => !query.trim() || String(d.content || "").toLowerCase().includes(query.trim().toLowerCase()));
+  function draftPlatforms(draft) {
+    const m = draft?.metadata_json && typeof draft.metadata_json === "object" ? draft.metadata_json : (draft?.metadata || {});
+    const ids = Array.isArray(m.selectedIds) ? m.selectedIds : [];
+    return [...new Set(ids.map((id) => accounts.find((acc) => acc.id === id)?.platform).filter(Boolean))];
+  }
+  return <div className="col" style={{ gap: 24 }}>
+    <PageHead title="Drafts" sub={`${visibleDrafts.length} draft${visibleDrafts.length === 1 ? "" : "s"} saved — edit, schedule, queue, or delete.`}>
+      <div className="search" style={{ width: 220 }}><svg className="ico" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></svg><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search drafts" style={{ border: 0, background: "transparent", outline: "none", width: "100%", color: "inherit", font: "inherit" }} /></div>
+      <button type="button" className="btn btn-secondary" onClick={() => void createDraft()} disabled={!!busyId}>{busyId === "new" ? <LoaderCircle className="animate-spin" size={14} /> : <Plus size={14} />}New draft</button>
+      <button type="button" className="btn btn-primary" onClick={() => onCreatePost?.()}><Plus size={14} />Open composer</button>
+    </PageHead>
+    {error && <div role="alert" className="alert error sm">{error}</div>}
+    {notice && <div className="alert info sm">{notice}</div>}
+    {loading ? <div className="grid g3">{[0, 1, 2].map((i) => <div key={i} className="card card-pad col"><div className="skel" style={{ height: 120 }} /><div className="skel" style={{ height: 14, width: "70%" }} /><div className="skel" style={{ height: 12, width: "40%" }} /></div>)}</div> : shownDrafts.length ? (
+      <div className="grid g3">
+        {shownDrafts.map((draft) => {
           const localOnly = !!draft.local_only || String(draft.id).startsWith("local-");
           const busy = busyId === draft.id;
-          return <article key={draft.id} className="rounded-2xl border border-slate-200 p-4 dark:border-slate-800">
-            <div className="flex gap-3">
-              {draft.media_urls?.[0] ? <img src={draft.media_urls[0]} alt="" className="h-16 w-16 rounded-xl object-cover" /> : <span className="grid h-16 w-16 place-items-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300"><FileText size={20} /></span>}
-              <div className="min-w-0 flex-1">
-                <p className="line-clamp-3 text-xs leading-5">{draft.content || "Untitled draft"}</p>
-                <p className="mt-2 text-[10px] text-slate-400">{localOnly ? "Saved in this session" : `Updated ${new Date(draft.updated_at || draft.created_at || Date.now()).toLocaleString()}`}</p>
-                <p className="mt-1 text-[10px] font-semibold text-slate-500">{accountSummary(draft)}</p>
+          const plats = draftPlatforms(draft);
+          return <div key={draft.id} className="card" style={{ overflow: "hidden" }}>
+            {draft.media_urls?.[0] ? <img src={draft.media_urls[0]} alt="" style={{ height: 120, width: "100%", objectFit: "cover", display: "block" }} /> : <div style={{ height: 120, display: "grid", placeItems: "center", background: "var(--surface-2)" }} className="xs subtle">Text only</div>}
+            <div className="card-pad col" style={{ gap: 10 }}>
+              <b className="sm" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{draft.content || "Untitled draft"}</b>
+              <div className="row" style={{ gap: 4 }}>{plats.length ? plats.map((pl) => <Ch key={pl} platform={pl} />) : <span className="xs subtle">{accountSummary(draft)}</span>}<span className="badge nodot" style={{ marginLeft: "auto", textTransform: "capitalize" }}>{String(draft.status || "draft").replaceAll("_", " ")}</span></div>
+              <div className="xs subtle">{localOnly ? "Saved in this session" : `Edited ${new Date(draft.updated_at || draft.created_at || Date.now()).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`}{authorName ? ` · ${authorName}` : ""}</div>
+              <div className="row" style={{ gap: 6 }}>
+                <button type="button" className="btn btn-secondary btn-sm grow" disabled={!!busyId} onClick={() => onOpenDraft?.(draft)}><Pencil size={13} />Edit</button>
+                <button type="button" className="btn btn-primary btn-sm grow" disabled={!!busyId || localOnly} title={localOnly ? "Save to workspace first" : "Schedule at an exact time"} onClick={() => openSchedule(draft)}><CalendarDays size={13} />Schedule</button>
+                <button type="button" className="btn btn-ghost btn-sm btn-icon" disabled={!!busyId || localOnly} title={localOnly ? "Save to workspace first" : "Add to next queue slot"} aria-label="Add to queue" onClick={() => void addToQueue(draft)}>{busy ? <LoaderCircle size={13} className="animate-spin" /> : <Timer size={13} />}</button>
+                <button type="button" className="btn btn-ghost btn-sm btn-icon" style={{ color: "var(--error)" }} title="Delete draft" aria-label="Delete draft" disabled={!!busyId} onClick={() => void removeDraft(draft.id)}><Trash2 size={13} /></button>
               </div>
             </div>
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
-              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold capitalize text-slate-600 dark:bg-slate-800 dark:text-slate-300">{String(draft.status || "draft").replaceAll("_", " ")}</span>
-              <div className="flex flex-wrap gap-2">
-                <button type="button" className={primary} disabled={!!busyId} onClick={() => onOpenDraft?.(draft)}><Pencil size={13} />Edit</button>
-                <button type="button" className={button} disabled={!!busyId || localOnly} title={localOnly ? "Save to workspace first" : "Schedule at an exact time"} onClick={() => openSchedule(draft)}><CalendarDays size={13} />Schedule</button>
-                <button type="button" className={button} disabled={!!busyId || localOnly} title={localOnly ? "Save to workspace first" : "Add to next queue slot"} onClick={() => void addToQueue(draft)}>{busy ? <LoaderCircle size={13} className="animate-spin" /> : <Timer size={13} />}Add to queue</button>
-                <button type="button" className={`${button} !px-2 text-rose-500`} title="Delete draft" disabled={!!busyId} onClick={() => void removeDraft(draft.id)}><Trash2 size={13} /></button>
-              </div>
-            </div>
-          </article>;
+          </div>;
         })}
       </div>
-    ) : <EmptyState icon={FileText} title="No drafts yet" text="Save unfinished ideas from the composer. They stay in your workspace until you schedule, queue, or delete them." action="Create a post" onClick={() => onCreatePost?.()} />}
+    ) : <div className="card"><Empty art="📝" title={query ? "No drafts match" : "No drafts yet"} text="Save unfinished ideas from the composer. They stay in your workspace until you schedule, queue, or delete them." action="Create a post" onAction={() => onCreatePost?.()} /></div>}
 
     {scheduleFor && createPortal(
-      <div className="fixed inset-0 z-[80] grid place-items-center bg-slate-950/50 p-4 backdrop-blur-sm" onClick={() => setScheduleFor(null)}>
-        <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-slate-800 dark:bg-slate-900" onClick={(event) => event.stopPropagation()}>
+      <div className="scd"><div className="modal-wrap" style={{ position: "fixed", zIndex: 80 }} onClick={() => setScheduleFor(null)}>
+        <div className="modal" style={{ padding: 20 }} onClick={(event) => event.stopPropagation()}>
           <div className="flex items-start justify-between gap-3">
             <div>
-              <h3 className="font-display text-lg font-extrabold">Schedule draft</h3>
+              <h3 className=" text-lg font-extrabold">Schedule draft</h3>
               <p className="mt-1 text-xs text-slate-500">Pick an exact time. Each selected channel gets its own scheduled post.</p>
             </div>
             <button type="button" className={button} onClick={() => setScheduleFor(null)} aria-label="Close"><X size={14} /></button>
@@ -608,10 +611,10 @@ function DraftsView({ request, accounts = [], onCreatePost, onOpenDraft, onRefre
             <button type="button" className={primary} disabled={!!busyId} onClick={() => void confirmSchedule()}>{busyId === scheduleFor.id ? <LoaderCircle size={14} className="animate-spin" /> : <CalendarDays size={14} />}Confirm schedule</button>
           </div>
         </div>
-      </div>,
+      </div></div>,
       document.body,
     )}
-  </section>;
+  </div>;
 }
 function LibraryView({ request, onUseAsset }) {
   const [assets, setAssets] = useState([]);
@@ -656,19 +659,47 @@ function LibraryView({ request, onUseAsset }) {
     return matchesKind && searchable.includes(query.trim().toLowerCase());
   });
   return <section className={`${card} p-5 sm:p-6`}>
-    <div className="flex flex-wrap items-end justify-between gap-3"><div><span className="text-[10px] font-extrabold uppercase tracking-[.16em] text-indigo-500">Workspace assets</span><h2 className="mt-1 font-display text-xl font-extrabold">Content library</h2><p className="mt-1 text-xs text-slate-500">Upload, organize, and reuse your media across posts.</p></div><label className={`${primary} cursor-pointer`}><UploadCloud size={14} />{uploading ? "Uploading…" : "Upload media"}<input type="file" accept="image/*,video/*" multiple disabled={uploading} onChange={uploadFiles} className="sr-only" /></label></div>
+    <div className="flex flex-wrap items-end justify-between gap-3"><div><span className="text-[10px] font-extrabold uppercase tracking-[.16em] text-indigo-500">Workspace assets</span><h2 className="mt-1  text-xl font-extrabold">Content library</h2><p className="mt-1 text-xs text-slate-500">Upload, organize, and reuse your media across posts.</p></div><label className={`${primary} cursor-pointer`}><UploadCloud size={14} />{uploading ? "Uploading…" : "Upload media"}<input type="file" accept="image/*,video/*" multiple disabled={uploading} onChange={uploadFiles} className="sr-only" /></label></div>
     <div className="mt-5 flex flex-wrap gap-2"><label className="relative min-w-[200px] flex-1"><Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search files or tags" className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-xs outline-none focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-950" /></label><div className="flex rounded-xl bg-slate-100 p-1 dark:bg-slate-800">{["all", "image", "video"].map((item) => <button type="button" key={item} onClick={() => setKind(item)} className={`rounded-lg px-3 py-1.5 text-[10px] font-bold capitalize ${kind === item ? "bg-white text-indigo-700 shadow-sm dark:bg-slate-700 dark:text-white" : "text-slate-500"}`}>{item === "all" ? "All media" : item}</button>)}</div></div>
     {error && <p role="alert" className="mt-4 rounded-xl bg-rose-50 p-3 text-xs text-rose-700 dark:bg-rose-950/40 dark:text-rose-200">{error}</p>}
     {loading ? <p className="py-12 text-center text-xs text-slate-400">Loading library…</p> : filteredAssets.length ? <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">{filteredAssets.map((asset) => { const isVideo = asset.media_type?.startsWith("video/"); return <article key={asset.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950"><a href={asset.public_url} target="_blank" rel="noreferrer" className="relative block aspect-square bg-slate-100 dark:bg-slate-900">{isVideo ? <video src={asset.public_url} muted playsInline className="h-full w-full object-cover" /> : <img src={asset.public_url} alt={asset.alt_text || asset.filename} className="h-full w-full object-cover" loading="lazy" />}{isVideo && <span className="absolute right-2 top-2 rounded-md bg-black/60 p-1.5 text-white"><Video size={13} /></span>}</a><div className="p-3"><p className="truncate text-xs font-bold" title={asset.filename}>{asset.filename}</p><p className="mt-1 text-[10px] text-slate-400">{(asset.size_bytes / (1024 * 1024)).toFixed(1)} MB · {new Date(asset.created_at).toLocaleDateString()}</p><input aria-label={`Tag ${asset.filename}`} value={tags[asset.id] || ""} onChange={(event) => updateTag(asset.id, event.target.value)} placeholder="Add a tag" className="mt-2 w-full rounded-lg border border-slate-200 bg-transparent px-2 py-1.5 text-[10px] outline-none focus:border-indigo-400 dark:border-slate-700" /><div className="mt-2 flex gap-2"><button type="button" onClick={() => onUseAsset?.(asset)} className={`${primary} min-w-0 flex-1 !px-2 !py-2 !text-[10px]`}><Plus size={12} />Use in composer</button><button type="button" title="Copy media URL" onClick={() => navigator.clipboard?.writeText(new URL(asset.public_url, window.location.origin).href)} className={`${button} !px-2`}><Copy size={13} /></button></div></div></article>; })}</div> : <EmptyState icon={UploadCloud} title={assets.length ? "No matching media" : "Your library is ready"} text={assets.length ? "Try another search or filter, or upload a new asset." : "Upload photos and videos here, then reuse them in the composer."} />}
   </section>;
 }
 
-function ApprovalsView({ request, onRefresh }) {
+function ApprovalsView({ request, onRefresh, accounts = [] }) {
   const [items, setItems] = useState([]); const [loading, setLoading] = useState(true); const [error, setError] = useState(""); const [busy, setBusy] = useState("");
+  const [selectedId, setSelectedId] = useState(""); const [comment, setComment] = useState("");
   async function refresh() { setLoading(true); try { const result = await request("/publish/approvals"); setItems(Array.isArray(result) ? result.filter(Boolean) : []); setError(""); } catch (e) { setError(e.message); } finally { setLoading(false); } }
   useEffect(() => { void refresh(); }, [request]);
-  async function decide(id, decision) { setBusy(id); try { await request(`/publish/approvals/${id}/decision`, { method: "POST", body: JSON.stringify({ decision }) }); await refresh(); if (decision === "approved") await onRefresh?.(); } catch (e) { setError(e.message); } finally { setBusy(""); } }
-  return <section className={`${card} p-5 sm:p-6`}><div><span className="text-[10px] font-extrabold uppercase tracking-[.16em] text-indigo-500">Team review</span><h2 className="mt-1 font-display text-xl font-extrabold">Approvals</h2><p className="mt-1 text-xs text-slate-500">Review submitted posts before they move into the publishing queue.</p></div>{error && <p role="alert" className="mt-4 rounded-xl bg-rose-50 p-3 text-xs text-rose-700">{error}</p>}{loading ? <p className="py-12 text-center text-xs text-slate-400">Loading approvals…</p> : items.length ? <div className="mt-5 space-y-3">{items.map((item) => <article key={item.id} className="flex flex-wrap items-center gap-4 rounded-2xl border border-slate-200 p-4 dark:border-slate-800"><div className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300">{item.media_urls?.[0] ? <img src={item.media_urls[0]} alt="" className="h-full w-full object-cover" /> : <MessageSquareText size={18} />}</div><div className="min-w-0 flex-1"><p className="line-clamp-2 text-xs leading-5">{item.content || "Untitled post"}</p><p className="mt-1 text-[10px] text-slate-400">Submitted {new Date(item.updated_at).toLocaleString()}</p></div><div className="flex gap-2"><button className={button} disabled={!!busy} onClick={() => void decide(item.id, "changes_requested")}>Request changes</button><button className={primary} disabled={!!busy} onClick={() => void decide(item.id, "approved")}>{busy === item.id ? <LoaderCircle size={14} className="animate-spin" /> : <Check size={14} />}Approve</button></div></article>)}</div> : <EmptyState icon={Check} title="Nothing waiting for review" text="Posts submitted for approval will appear here." />}</section>;
+  async function decide(id, decision) { setBusy(id); try { await request(`/publish/approvals/${id}/decision`, { method: "POST", body: JSON.stringify({ decision, ...(comment.trim() ? { comment: comment.trim() } : {}) }) }); setComment(""); await refresh(); if (decision === "approved") await onRefresh?.(); } catch (e) { setError(e.message); } finally { setBusy(""); } }
+  const selected = items.find((i) => i.id === selectedId) || items[0];
+  const platsOf = (item) => { const ids = Array.isArray(item?.metadata_json?.selectedIds) ? item.metadata_json.selectedIds : []; return [...new Set(ids.map((id) => accounts.find((a) => a.id === id)?.platform).filter(Boolean))]; };
+  const titleOf = (item) => postTitle(item);
+  const ago = (v) => new Date(v).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  return <div className="col" style={{ gap: 24 }}>
+    <PageHead title="Approvals" sub="Review drafts from your team before they're scheduled."><Seg value="pending" onChange={() => {}} options={[["pending", `Pending (${items.length})`]]} /></PageHead>
+    {error && <div role="alert" className="alert error sm">{error}</div>}
+    {loading ? <div className="card card-pad col"><div className="skel" style={{ height: 56 }} /><div className="skel" style={{ height: 56 }} /></div> : !items.length ? <div className="card"><Empty art="✅" title="Nothing waiting for review" text="When someone submits a draft for approval it shows up here." /></div> :
+      <div className="grid" style={{ gridTemplateColumns: "minmax(0,1fr) minmax(0,1.3fr)", alignItems: "start" }}>
+        <div className="card">{items.map((item) => <div key={item.id} className="post" role="button" style={{ cursor: "pointer", background: selected?.id === item.id ? "var(--primary-soft)" : undefined }} onClick={() => setSelectedId(item.id)}>
+          {item.media_urls?.[0] ? <img className="thumb" src={item.media_urls[0]} alt="" style={{ width: 36, height: 36, objectFit: "cover" }} /> : <Avatar name={titleOf(item)} size={36} />}
+          <div className="body"><b className="sm">{titleOf(item)}</b><div className="xs subtle">Submitted {ago(item.updated_at)}</div><div className="row" style={{ gap: 4, marginTop: 6 }}>{platsOf(item).map((pl) => <Ch key={pl} platform={pl} />)}<span className="badge b-warning">Pending</span></div></div>
+        </div>)}</div>
+        {selected && <div className="card">
+          <div className="card-head"><div><b>{titleOf(selected)}</b><div className="xs subtle">Submitted {ago(selected.updated_at)}{selected.scheduled_at ? ` · for ${ago(selected.scheduled_at)}` : ""}{platsOf(selected).length ? ` · ${platsOf(selected).map((p) => meta(p).label).join(", ")}` : ""}</div></div><span className="badge b-warning">Pending review</span></div>
+          <div style={{ padding: 20 }} className="col">
+            <div className="pv"><p style={{ whiteSpace: "pre-wrap" }}>{selected.content || "Untitled post"}</p>{selected.media_urls?.[0] && <img className="img" src={selected.media_urls[0]} alt="" style={{ objectFit: "cover", width: "100%" }} />}</div>
+            <label className="label" htmlFor="approval-comment">Feedback</label>
+            <textarea id="approval-comment" className="input" rows="2" placeholder="Leave feedback (sent with your decision)…" value={comment} onChange={(e) => setComment(e.target.value)} style={{ height: "auto", padding: 10 }} />
+            <div className="row" style={{ justifyContent: "flex-end" }}>
+              <button type="button" className="btn btn-secondary" disabled={!!busy} onClick={() => void decide(selected.id, "changes_requested")}>Request changes</button>
+              <button type="button" className="btn btn-danger" disabled={!!busy} onClick={() => void decide(selected.id, "rejected")}>Reject</button>
+              <button type="button" className="btn btn-primary" disabled={!!busy} onClick={() => void decide(selected.id, "approved")}>{busy === selected.id ? <LoaderCircle size={14} className="animate-spin" /> : <Check size={14} />}Approve & schedule</button>
+            </div>
+          </div>
+        </div>}
+      </div>}
+  </div>;
 }
 
 function EmptyState({ icon: Icon, title, text, action, onClick }) {
@@ -676,7 +707,11 @@ function EmptyState({ icon: Icon, title, text, action, onClick }) {
 }
 
 
-function QueueView({ request, accounts = [], posts = [], onCreatePost, onSelectPost }) {
+function QueueView({ request, accounts = [], posts = [], onCreatePost, onSelectPost, onRefresh, initialTab }) {
+  const [qTab, setQTab] = useState(initialTab || "scheduled");
+  const [chanFilter, setChanFilter] = useState("all");
+  const [showSettings, setShowSettings] = useState(false);
+  const [retrying, setRetrying] = useState("");
   const safeAccounts = Array.isArray(accounts) ? accounts.filter((item) => item?.is_active !== false) : [];
   const platforms = [...new Set(safeAccounts.map((account) => account.platform).filter(Boolean))].sort();
   const [platform, setPlatform] = useState(platforms[0] || "instagram");
@@ -748,12 +783,42 @@ function QueueView({ request, accounts = [], posts = [], onCreatePost, onSelectP
     return acc;
   }, {});
 
-  return <section className="space-y-4">
+  const safePostsQ = (Array.isArray(posts) ? posts : []).filter(Boolean);
+  const accById = new Map(accounts.map((acc) => [acc.id, acc]));
+  const tabStatus = { scheduled: ["scheduled"], queued: ["queued", "publishing"], published: ["published"], failed: ["failed"] };
+  const chanPosts = safePostsQ.filter((p) => chanFilter === "all" || accById.get(p.connected_account_id)?.platform === chanFilter);
+  const countFor = (t) => chanPosts.filter((p) => tabStatus[t].includes(p.status)).length;
+  const tabPosts = chanPosts.filter((p) => tabStatus[qTab].includes(p.status)).sort((x, y) => (qTab === "published" ? -1 : 1) * (new Date(postPlacementAt(x) || 0) - new Date(postPlacementAt(y) || 0)));
+  const groups = tabPosts.reduce((acc, p) => { const d = new Date(postPlacementAt(p) || p.created_at); const k = dateKey(d); (acc[k] ||= { d, items: [] }).items.push(p); return acc; }, {});
+  const todayK = dateKey(new Date()); const tom = new Date(); tom.setDate(tom.getDate() + 1); const tomK = dateKey(tom);
+  const dayTitle = (k, d) => `${k === todayK ? "Today · " : k === tomK ? "Tomorrow · " : ""}${d.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" })}`;
+  const openSlotsByDay = upcoming.reduce((acc, it) => { if (!it.filled) { const k = dateKey(it.scheduled_at); acc[k] = (acc[k] || 0) + 1; } return acc; }, {});
+  const allPlatforms = [...new Set(accounts.filter((a2) => a2?.is_active !== false).map((a2) => a2.platform).filter(Boolean))];
+  async function retry(id) { setRetrying(id); try { await request(`/posts/${id}/retry`, { method: "POST" }); await onRefresh?.(); } catch (e) { setError(e.message || "Retry failed."); } finally { setRetrying(""); } }
+
+  return <div className="col" style={{ gap: 24 }}>
+    <PageHead title="Queue" sub="Everything scheduled to go out, grouped by day.">
+      <Seg value={chanFilter} onChange={setChanFilter} options={[["all", "All channels"], ...allPlatforms.map((p) => [p, meta(p).label])]} />
+      <button type="button" className={`btn ${showSettings ? "btn-primary" : "btn-secondary"}`} onClick={() => setShowSettings((v) => !v)}>Queue settings</button>
+    </PageHead>
+    <Tabs value={qTab} onChange={setQTab} options={[["scheduled", "Scheduled", countFor("scheduled")], ["queued", "Queued", countFor("queued")], ["published", "Published", countFor("published")], ["failed", "Failed", countFor("failed")]]} />
+    {error && !showSettings && <div role="alert" className="alert error sm">{error}</div>}
+    {!showSettings && (Object.keys(groups).length === 0 ? <div className="card"><Empty art="🗓️" title={`No ${qTab} posts`} text={qTab === "scheduled" ? "Schedule a post or add one to the queue and it will appear here." : "Nothing here yet."} action="Create post" onAction={() => onCreatePost?.()} /></div> : Object.entries(groups).map(([k, { d, items }]) => <div key={k} className="card">
+      <div className="card-head"><h3>{dayTitle(k, d)}</h3><span className="xs subtle">{items.length} post{items.length === 1 ? "" : "s"}{qTab === "scheduled" && openSlotsByDay[k] ? ` · ${openSlotsByDay[k]} open slot${openSlotsByDay[k] === 1 ? "" : "s"}` : ""}</span></div>
+      {items.map((p) => { const acc = accById.get(p.connected_account_id); const when = postPlacementAt(p); const t = when ? fmtTime(when) : ""; return <div key={p.id} className="post">
+        <div className="time">{t.replace(/\s?(AM|PM)/i, "")}<span>{(t.match(/AM|PM/i) || [""])[0]}</span></div>
+        <ScAccountAvatar account={acc} size={36} />
+        <div className="body"><div className="row" style={{ gap: 8, marginBottom: 4 }}><b className="sm">{acc?.account_name || acc?.platform || "Account"}</b><StatusBadge status={p.status} post={p} /></div><div className="txt">{p.content || "Untitled post"}</div>{p.status === "failed" && (p.last_error_message || p.last_error_code) && <div className="xs" style={{ color: "var(--error)", marginTop: 6 }}>⚠ {p.last_error_code ? `${p.last_error_code}: ` : ""}{p.last_error_message}</div>}</div>
+        {p.media_urls?.[0] && <img className="thumb" src={p.media_urls[0]} alt="" style={{ objectFit: "cover" }} />}
+        {p.status === "failed" ? <button type="button" className="btn btn-sm btn-secondary" disabled={!!retrying} onClick={() => void retry(p.id)}>{retrying === p.id ? <LoaderCircle size={13} className="animate-spin" /> : <RotateCcw size={13} />}Retry</button> : <button type="button" className="btn btn-sm btn-ghost btn-icon" aria-label="Open post" onClick={() => onSelectPost?.(p)}><svg className="ico" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /></svg></button>}
+      </div>; })}
+    </div>))}
+    {showSettings && <section className="space-y-4">
     <div className={`${card} p-5 sm:p-6`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <span className="text-[10px] font-extrabold uppercase tracking-[.16em] text-indigo-500">Buffer-style queue</span>
-          <h2 className="mt-1 font-display text-xl font-extrabold">Weekly posting slots</h2>
+          <span className="text-[10px] font-extrabold uppercase tracking-[.16em] text-indigo-500">Queue settings</span>
+          <h2 className="mt-1  text-xl font-extrabold">Weekly posting slots</h2>
           <p className="mt-1 max-w-xl text-xs leading-5 text-slate-500">Define when each channel can publish. Composer → Next queue places posts into the next free slot.</p>
         </div>
         <button type="button" className={primary} onClick={() => onCreatePost?.()}><Plus size={14} />Create post</button>
@@ -787,7 +852,7 @@ function QueueView({ request, accounts = [], posts = [], onCreatePost, onSelectP
     <div className={`${card} p-5 sm:p-6`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h3 className="font-display text-lg font-extrabold">Upcoming queue</h3>
+          <h3 className=" text-lg font-extrabold">Upcoming queue</h3>
           <p className="text-xs text-slate-500">Next 14 days of slot assignments for {platform || "all channels"}.</p>
         </div>
         <button type="button" className={button} onClick={() => void loadAll(platform)}><RotateCcw size={13} />Refresh</button>
@@ -812,13 +877,14 @@ function QueueView({ request, accounts = [], posts = [], onCreatePost, onSelectP
         ))}
       </div>
     </div>
-  </section>;
+  </section>}
+  </div>;
 }
 
-export default function PublishSection({ request, posts = [], accounts = [], authorName, localDrafts = [], onUpdateLocalDraft, onRemoveLocalDraft, onCreatePost, onOpenDraft, onUseAsset, onRefresh }) {
+export default function PublishSection({ request, posts = [], accounts = [], authorName, localDrafts = [], onUpdateLocalDraft, onRemoveLocalDraft, onCreatePost, onOpenDraft, onUseAsset, onRefresh, view = "calendar", onNavigate, initialQueueTab }) {
   const safePosts = Array.isArray(posts) ? posts.filter(Boolean) : [];
   const safeAccounts = Array.isArray(accounts) ? accounts.filter(Boolean) : [];
-  const [active, setActive] = useState("calendar");
+  const active = view;
   const [selectedPost, setSelectedPost] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [filterStatus, setFilterStatus] = useState("all");
@@ -848,20 +914,19 @@ export default function PublishSection({ request, posts = [], accounts = [], aut
     setSelectedPost({ ...post, channel_posts: channelPosts });
     setIsModalOpen(true);
   }
-  return <section className="animate-fade-up space-y-4 pb-10">
-    <header className="relative overflow-hidden rounded-[30px] bg-gradient-to-br from-slate-950 via-indigo-950 to-blue-900 px-6 py-7 text-white shadow-[0_22px_70px_rgba(41,39,112,.16)] sm:px-8"><div className="absolute -right-12 -top-28 h-72 w-72 rounded-full bg-purple-500/20 blur-3xl" /><div className="relative flex flex-wrap items-end justify-between gap-4"><div><span className="text-[10px] font-extrabold uppercase tracking-[.18em] text-indigo-200">Plan and publish</span><h1 className="mt-2 font-display text-3xl font-extrabold tracking-[-.05em]">Your content, in motion.</h1><p className="mt-2 text-sm text-indigo-100/75">Shape your publishing rhythm across every connected channel.</p></div><div className="flex items-center gap-2 rounded-2xl border border-white/15 bg-white/10 px-3 py-2 text-xs font-semibold text-indigo-100 backdrop-blur-xl"><LayoutGrid size={14} />Publishing workspace</div></div></header>
-    <nav aria-label="Publish sections" className="flex gap-1 overflow-x-auto rounded-2xl border border-slate-200/80 bg-white/75 p-1.5 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/70">{TABS.map(({ id, label, icon: Icon }) => <button key={id} onClick={() => setActive(id)} aria-current={active === id ? "page" : undefined} className={`inline-flex shrink-0 items-center gap-2 rounded-xl px-3.5 py-2.5 text-xs font-bold transition ${active === id ? "bg-gradient-to-r from-indigo-600 via-purple-600 to-blue-600 text-white shadow-md shadow-indigo-500/20" : "text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"}`}><Icon size={14} />{label}{id === "calendar" && scheduledCount > 0 && <span className={`rounded-full px-1.5 py-0.5 text-[9px] ${active === id ? "bg-white/20" : "bg-slate-100 dark:bg-slate-800"}`}>{scheduledCount}</span>}{id === "posts" && failedCount > 0 && <span className={`rounded-full px-1.5 py-0.5 text-[9px] ${active === id ? "bg-rose-400/40 text-white" : "bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:text-rose-200"}`}>{failedCount}</span>}{id === "queue" && <span className={`rounded-full px-1.5 py-0.5 text-[9px] ${active === id ? "bg-white/20" : "bg-slate-100 dark:bg-slate-800"}`}>slots</span>}</button>)}</nav>
-    {active === "calendar" && <div className="space-y-4">
-      <PublishFilterBar accounts={safeAccounts} status={filterStatus} setStatus={setFilterStatus} platform={filterPlatform} setPlatform={setFilterPlatform} accountId={filterAccountId} setAccountId={setFilterAccountId} counts={{ total: calendarPosts.length, failed: calendarPosts.filter((post) => post.status === "failed").length }} />
-      <MonthCalendar posts={calendarPosts} accounts={safeAccounts} onCreatePost={onCreatePost} onSelectPost={openPost} request={request} onRefresh={onRefresh} />
-    </div>}
-    {active === "posts" && <PostsListView posts={safePosts} accounts={safeAccounts} request={request} onSelectPost={openPost} onRefresh={onRefresh} status={filterStatus} setStatus={setFilterStatus} platform={filterPlatform} setPlatform={setFilterPlatform} accountId={filterAccountId} setAccountId={setFilterAccountId} />}
-    {active === "queue" && <QueueView request={request} accounts={safeAccounts} posts={safePosts} onCreatePost={onCreatePost} onSelectPost={openPost} />}
-    {active === "drafts" && <DraftsView request={request} accounts={safeAccounts} localDrafts={localDrafts} onUpdateLocalDraft={onUpdateLocalDraft} onRemoveLocalDraft={onRemoveLocalDraft} onCreatePost={onCreatePost} onOpenDraft={onOpenDraft} onRefresh={onRefresh} />}
+  const calendarHead = <PageHead title="Calendar" sub="Drag posts to reschedule. Click an empty day to create.">
+    <button type="button" onClick={() => onCreatePost?.()} className="btn btn-primary"><Plus size={15} />New post</button>
+  </PageHead>;
+  const statusOnly = <PublishFilterBar accounts={safeAccounts} status={filterStatus} setStatus={setFilterStatus} platform={filterPlatform} accountId={filterAccountId} setAccountId={setFilterAccountId} />;
+  return <>
+    {(active === "calendar" || active === "week") && <>{calendarHead}<MonthCalendar key={active} initialView={active === "week" ? "week" : "month"} posts={calendarPosts} accounts={safeAccounts} onCreatePost={onCreatePost} onSelectPost={openPost} request={request} onRefresh={onRefresh} onList={() => onNavigate?.("posts")} platformFilter={filterPlatform} setPlatformFilter={setFilterPlatform} filters={statusOnly} /></>}
+    {active === "posts" && <>{calendarHead}<PostsListView posts={safePosts} accounts={safeAccounts} request={request} onSelectPost={openPost} onRefresh={onRefresh} status={filterStatus} setStatus={setFilterStatus} platform={filterPlatform} setPlatform={setFilterPlatform} accountId={filterAccountId} setAccountId={setFilterAccountId} headerExtra={<Seg value="list" onChange={(v) => v !== "list" && onNavigate?.(v === "week" ? "week" : "calendar")} options={[["month", "Month"], ["week", "Week"], ["list", "List"]]} />} /></>}
+    {active === "queue" && <QueueView request={request} accounts={safeAccounts} posts={safePosts} onCreatePost={onCreatePost} onSelectPost={openPost} onRefresh={onRefresh} initialTab={initialQueueTab} />}
+    {active === "drafts" && <DraftsView request={request} accounts={safeAccounts} authorName={authorName} localDrafts={localDrafts} onUpdateLocalDraft={onUpdateLocalDraft} onRemoveLocalDraft={onRemoveLocalDraft} onCreatePost={onCreatePost} onOpenDraft={onOpenDraft} onRefresh={onRefresh} />}
     {active === "library" && <LibraryView request={request} onUseAsset={onUseAsset} />}
-    {active === "approvals" && <ApprovalsView request={request} onRefresh={onRefresh} />}
+    {active === "approvals" && <ApprovalsView request={request} onRefresh={onRefresh} accounts={safeAccounts} />}
     {isModalOpen && selectedPost && <RenderErrorBoundary scope="Post details modal" compact><ScheduledPostModal post={selectedPost} accounts={safeAccounts} authorName={authorName} request={request} onRefresh={onRefresh} onClose={() => { setIsModalOpen(false); setSelectedPost(null); }} /></RenderErrorBoundary>}
-  </section>;
+  </>;
 }
 
 export function toLocalInputValue(value) {
@@ -921,7 +986,7 @@ function NativePostPreview({ platform, accountName, authorName, content, mediaUr
 
   if (normalized === "x") return <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-950"><div className="flex gap-3">{avatarNode}<div className="min-w-0 flex-1"><p className="text-xs font-extrabold">{name} <span className="font-normal text-slate-500">@{name.replaceAll(" ", "").toLowerCase()} · {stamp}</span></p><p className="mt-2 whitespace-pre-wrap text-sm leading-6">{caption}</p>{mediaUrl && <div className="mt-3 max-h-80 overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800">{media}</div>}<div className="mt-4 flex max-w-sm justify-between text-slate-500"><MessageCircle size={16} /><Share2 size={16} /><Heart size={16} /><Bookmark size={16} /></div></div></div></article>;
 
-  if (normalized === "linkedin") return <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-950"><header className="flex items-center gap-3 p-4">{avatarNode}<div className="min-w-0 flex-1"><p className="truncate text-xs font-extrabold">{name}</p><p className="text-[10px] text-slate-500">SocialStudio workspace · {stamp}</p></div><MoreHorizontal size={18} /></header><p className="whitespace-pre-wrap px-4 pb-4 text-xs leading-5">{caption}</p>{mediaUrl && <div className="max-h-80 overflow-hidden border-y border-slate-100 dark:border-slate-800">{media}</div>}<div className="px-4 py-2 text-[10px] text-slate-500">♡ 0 reactions · Be the first to react</div>{actions([[ThumbsUp, "Like"], [MessageCircle, "Comment"], [Share2, "Repost"], [Send, "Send"]])}</article>;
+  if (normalized === "linkedin") return <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-950"><header className="flex items-center gap-3 p-4">{avatarNode}<div className="min-w-0 flex-1"><p className="truncate text-xs font-extrabold">{name}</p><p className="text-[10px] text-slate-500">SocialCastly workspace · {stamp}</p></div><MoreHorizontal size={18} /></header><p className="whitespace-pre-wrap px-4 pb-4 text-xs leading-5">{caption}</p>{mediaUrl && <div className="max-h-80 overflow-hidden border-y border-slate-100 dark:border-slate-800">{media}</div>}<div className="px-4 py-2 text-[10px] text-slate-500">♡ 0 reactions · Be the first to react</div>{actions([[ThumbsUp, "Like"], [MessageCircle, "Comment"], [Share2, "Repost"], [Send, "Send"]])}</article>;
 
   if (normalized === "pinterest") return <article className="mx-auto max-w-sm overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-950"><div className="relative max-h-[520px] overflow-hidden rounded-t-2xl">{mediaUrl ? media : fallbackMedia}<button type="button" className="absolute right-3 top-3 rounded-full bg-rose-600 px-4 py-2 text-xs font-extrabold text-white">Save</button></div><div className="p-4"><h3 className="text-sm font-extrabold">{title || caption.slice(0, 80) || "Untitled pin"}</h3><p className="mt-2 line-clamp-4 whitespace-pre-wrap text-xs leading-5">{caption}</p><div className="mt-4 flex items-center gap-2">{avatarNode}<div><p className="text-xs font-bold">{name}</p><p className="text-[10px] text-slate-500">{stamp}</p></div></div></div></article>;
 
@@ -1097,14 +1162,14 @@ function ScheduledPostModal({ post, accounts, authorName, request, onRefresh, on
 
   return createPortal(<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/20 p-4 backdrop-blur-[2px]" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy && !commentBusy && !confirmDelete) onClose(); }}>
     <section role="dialog" aria-modal="true" aria-labelledby="scheduled-post-title" className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-[28px] border border-white/70 bg-white text-slate-900 shadow-[0_32px_100px_rgba(15,23,42,.20)] dark:border-slate-700 dark:bg-slate-900 dark:text-white">
-      <header className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800 sm:px-6"><div className="flex min-w-0 items-center gap-3"><AccountAvatar account={activeChannelOption.account || { account_name: activeChannelOption.accountName, platform: activeChannelOption.platform }} size={40} showBadge={false} /><div className="min-w-0"><div className="flex items-center gap-2"><h2 id="scheduled-post-title" className="font-display text-base font-extrabold">Post details</h2><span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[9px] font-bold capitalize text-indigo-700 dark:bg-indigo-950/70 dark:text-indigo-200">{activePost.status}</span></div><p className="truncate text-xs text-slate-500 dark:text-slate-400">{activeChannelOption.accountName} · {displayAuthor}</p></div></div><button type="button" onClick={onClose} aria-label="Close post preview" className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-white"><X size={18} /></button></header>
+      <header className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800 sm:px-6"><div className="flex min-w-0 items-center gap-3"><AccountAvatar account={activeChannelOption.account || { account_name: activeChannelOption.accountName, platform: activeChannelOption.platform }} size={40} showBadge={false} /><div className="min-w-0"><div className="flex items-center gap-2"><h2 id="scheduled-post-title" className=" text-base font-extrabold">Post details</h2><span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[9px] font-bold capitalize text-indigo-700 dark:bg-indigo-950/70 dark:text-indigo-200">{activePost.status}</span></div><p className="truncate text-xs text-slate-500 dark:text-slate-400">{activeChannelOption.accountName} · {displayAuthor}</p></div></div><button type="button" onClick={onClose} aria-label="Close post preview" className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-white"><X size={18} /></button></header>
 
       <div className="flex flex-wrap justify-end gap-2 border-b border-slate-100 px-5 py-3 dark:border-slate-800 sm:px-6">{activePost.status === "failed" && <button type="button" disabled={busy} className={button} onClick={() => void retryPost()}><RotateCcw size={13} />Retry</button>}{["published", "failed", "cancelled"].includes(activePost.status) && <button type="button" disabled={busy} className={button} onClick={() => void archivePost()}><Archive size={13} />Archive</button>}{canEdit && !editing && <button type="button" disabled={busy} title="Publish this post immediately" className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-[11px] font-bold text-indigo-700 transition hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-indigo-900 dark:bg-indigo-950/50 dark:text-indigo-200" onClick={() => void publishNow()}>{busy ? <LoaderCircle size={13} className="animate-spin" /> : <Send size={13} />}Post now</button>}{editing ? <><button type="button" disabled={busy} className={button} onClick={() => discardEdits()}><X size={13} />Cancel edit</button><button type="button" disabled={busy || !scheduledAt || content.length > characterLimit} className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-indigo-600 via-purple-600 to-blue-600 px-3 py-2 text-[11px] font-bold text-white shadow-md shadow-indigo-500/20 disabled:cursor-not-allowed disabled:opacity-40" onClick={() => void saveChanges()}>{busy ? <LoaderCircle size={13} className="animate-spin" /> : <Check size={13} />}Save changes</button></> : <button type="button" disabled={!canEdit} title={canEdit ? "Edit this account’s post" : "Only draft and scheduled posts can be edited"} className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-indigo-600 via-purple-600 to-blue-600 px-3 py-2 text-[11px] font-bold text-white shadow-md shadow-indigo-500/20 disabled:cursor-not-allowed disabled:opacity-40" onClick={() => { setEditing(true); setTab("details"); }}><Pencil size={13} />Edit</button>}<button type="button" disabled={busy || !canDelete} className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 px-3 py-2 text-[11px] font-bold text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-rose-900 dark:text-rose-300 dark:hover:bg-rose-950/40" onClick={() => setConfirmDelete(true)}><Trash2 size={13} />Delete</button></div>
 
       <div role="tablist" aria-label="Select post account" className="w-full max-w-full min-h-[54px] touch-pan-x overflow-x-auto overflow-y-hidden border-b border-slate-100 py-2 [scrollbar-width:thin] [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 dark:border-slate-800 dark:[&::-webkit-scrollbar-thumb]:bg-slate-600">
         <div className="flex min-w-max flex-row items-center gap-2 whitespace-nowrap px-5 sm:px-6">{channelOptions.map((channel) => {
         const selected = activeChannelOption.key === channel.key;
-        return <button key={channel.key} type="button" role="tab" aria-selected={selected} onClick={() => setActiveChannel(channel.key)} className={`channel-pill shrink-0 ${selected ? "channel-pill-active" : ""}`} style={{ "--channel-color": channel.brand }} title={`${channel.label} · ${channel.accountName}`}>
+        return <button key={channel.key} type="button" role="tab" aria-selected={selected} onClick={() => setActiveChannel(channel.key)} className={`sc-pill shrink-0 ${selected ? "sc-pill-on" : ""}`} style={{ "--channel-color": channel.brand }} title={`${channel.label} · ${channel.accountName}`}>
           <span className="channel-icon" style={{ color: channel.brand }}><ModalChannelIcon platform={channel.platform} mark={channel.mark} /></span>
           <span>{channel.label}</span>
           <span className={`max-w-36 truncate text-[10px] font-medium ${selected ? "text-slate-600 dark:text-slate-200" : "text-slate-400"}`}>{channel.accountName}</span>
@@ -1126,7 +1191,7 @@ function ScheduledPostModal({ post, accounts, authorName, request, onRefresh, on
           <div className="grid gap-4 sm:grid-cols-2"><label className="block"><span className="mb-2 flex items-center gap-2 text-xs font-bold"><Tag size={14} className="text-indigo-500" />Tags</span><select disabled={!editing} value={tag} onChange={(event) => setTag(event.target.value)} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs outline-none focus:border-indigo-400 disabled:opacity-75 dark:border-slate-700 dark:bg-slate-950"><option value="">No tag</option>{[...new Set([...(Array.isArray(activeMetadata.tags) ? activeMetadata.tags : []), "Campaign", "Evergreen", "Product launch", "Behind the scenes"])].filter(Boolean).map((value) => <option key={value} value={value}>{value}</option>)}</select></label><label className="block"><span className="mb-2 flex items-center gap-2 text-xs font-bold"><ShieldCheck size={14} className="text-indigo-500" />Privacy</span><select disabled={!editing} value={privacy} onChange={(event) => setPrivacy(event.target.value)} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs outline-none focus:border-indigo-400 disabled:opacity-75 dark:border-slate-700 dark:bg-slate-950"><option>Public</option><option>Followers</option><option>Only me</option></select></label></div>
           <p className="text-[10px] text-slate-400">Caption, hashtags, tags, and settings save to this account’s post only. Publishing status is managed by the publishing service.</p>
           {editing && <div className="sticky bottom-0 z-10 -mx-1 flex justify-end gap-2 border-t border-slate-100 bg-white/95 px-1 py-3 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95"><button type="button" className={button} onClick={() => discardEdits()}>Cancel</button><button type="button" disabled={busy || !scheduledAt || content.length > characterLimit} className={primary} onClick={() => void saveChanges()}>{busy ? <LoaderCircle size={14} className="animate-spin" /> : <Check size={14} />}Save changes</button></div>}
-        </div> : <section className="mx-auto max-w-lg"><div className="mb-4"><h3 className="font-display text-sm font-extrabold">Team notes · {activeChannelOption.accountName}</h3><p className="mt-1 text-xs text-slate-500">These internal notes are attached only to this account’s scheduled post.</p></div>{commentsLoading ? <div className="grid min-h-32 place-items-center text-xs text-slate-400"><LoaderCircle className="animate-spin" size={18} /></div> : comments.length ? <div className="mb-5 space-y-4">{comments.map((comment) => { const name = comment.author_name || "Workspace member"; return <article key={comment.id} className="flex gap-3"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-gradient-to-br from-indigo-600 to-purple-600 text-[11px] font-extrabold text-white">{name.slice(0, 1).toUpperCase()}</span><div className="min-w-0 flex-1 rounded-2xl bg-slate-50 px-4 py-3 dark:bg-slate-800/70"><div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1"><p className="text-xs font-extrabold">{name}</p><time className="text-[10px] text-slate-400">{new Date(comment.created_at).toLocaleString()}</time></div><p className="mt-2 whitespace-pre-wrap text-xs leading-5 text-slate-700 dark:text-slate-200">{comment.body}</p></div></article>; })}</div> : <div className="mb-5 rounded-2xl border border-dashed border-slate-200 py-10 text-center dark:border-slate-700"><span className="mx-auto grid h-10 w-10 place-items-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300"><MessageSquareText size={17} /></span><p className="mt-3 text-xs font-bold">No notes for this account yet</p><p className="mt-1 text-[11px] text-slate-400">Leave feedback specific to {activeChannelOption.label}.</p></div>}<form onSubmit={addComment} className="rounded-2xl border border-slate-200 p-3 focus-within:border-indigo-300 dark:border-slate-700 dark:focus-within:border-indigo-700"><textarea value={commentText} onChange={(event) => setCommentText(event.target.value)} rows={3} maxLength={5000} placeholder={`Internal note for ${activeChannelOption.label}…`} className="w-full resize-y bg-transparent px-1 py-1 text-xs leading-5 outline-none placeholder:text-slate-400" /><div className="mt-2 flex items-center justify-between"><span className="text-[10px] text-slate-400">Private workspace note</span><button type="submit" disabled={commentBusy || !commentText.trim()} className={primary}>{commentBusy ? <LoaderCircle size={14} className="animate-spin" /> : <Send size={14} />}Add note</button></div></form></section>}
+        </div> : <section className="mx-auto max-w-lg"><div className="mb-4"><h3 className=" text-sm font-extrabold">Team notes · {activeChannelOption.accountName}</h3><p className="mt-1 text-xs text-slate-500">These internal notes are attached only to this account’s scheduled post.</p></div>{commentsLoading ? <div className="grid min-h-32 place-items-center text-xs text-slate-400"><LoaderCircle className="animate-spin" size={18} /></div> : comments.length ? <div className="mb-5 space-y-4">{comments.map((comment) => { const name = comment.author_name || "Workspace member"; return <article key={comment.id} className="flex gap-3"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-gradient-to-br from-indigo-600 to-purple-600 text-[11px] font-extrabold text-white">{name.slice(0, 1).toUpperCase()}</span><div className="min-w-0 flex-1 rounded-2xl bg-slate-50 px-4 py-3 dark:bg-slate-800/70"><div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1"><p className="text-xs font-extrabold">{name}</p><time className="text-[10px] text-slate-400">{new Date(comment.created_at).toLocaleString()}</time></div><p className="mt-2 whitespace-pre-wrap text-xs leading-5 text-slate-700 dark:text-slate-200">{comment.body}</p></div></article>; })}</div> : <div className="mb-5 rounded-2xl border border-dashed border-slate-200 py-10 text-center dark:border-slate-700"><span className="mx-auto grid h-10 w-10 place-items-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300"><MessageSquareText size={17} /></span><p className="mt-3 text-xs font-bold">No notes for this account yet</p><p className="mt-1 text-[11px] text-slate-400">Leave feedback specific to {activeChannelOption.label}.</p></div>}<form onSubmit={addComment} className="rounded-2xl border border-slate-200 p-3 focus-within:border-indigo-300 dark:border-slate-700 dark:focus-within:border-indigo-700"><textarea value={commentText} onChange={(event) => setCommentText(event.target.value)} rows={3} maxLength={5000} placeholder={`Internal note for ${activeChannelOption.label}…`} className="w-full resize-y bg-transparent px-1 py-1 text-xs leading-5 outline-none placeholder:text-slate-400" /><div className="mt-2 flex items-center justify-between"><span className="text-[10px] text-slate-400">Private workspace note</span><button type="submit" disabled={commentBusy || !commentText.trim()} className={primary}>{commentBusy ? <LoaderCircle size={14} className="animate-spin" /> : <Send size={14} />}Add note</button></div></form></section>}
       </div>
       <footer className="flex items-center justify-between border-t border-slate-100 px-5 py-3 text-[10px] text-slate-400 dark:border-slate-800 sm:px-6"><span>Post ID · {String(activePost.id).slice(0, 8)}</span><span>Workspace content · private</span></footer>
     </section>
@@ -1137,7 +1202,7 @@ function ScheduledPostModal({ post, accounts, authorName, request, onRefresh, on
           <div className="flex items-start gap-3">
             <span className="mt-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-rose-600 text-white shadow-md shadow-rose-500/25"><Trash2 size={18} /></span>
             <div className="min-w-0">
-              <h3 id="delete-post-title" className="font-display text-base font-extrabold text-slate-900 dark:text-white">Delete this post?</h3>
+              <h3 id="delete-post-title" className=" text-base font-extrabold text-slate-900 dark:text-white">Delete this post?</h3>
               <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">{activeChannelOption?.accountName || "This channel"} · {activeChannelOption?.label || "channel"}</p>
             </div>
           </div>

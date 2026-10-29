@@ -266,9 +266,9 @@ export default function LivePreview({ accounts = [], channelInfo, caption, uploa
     case "pinterest": renderer = <PinterestPreview account={account} caption={safeCaption} title={safeTitle} mediaItems={mediaItems} destinationUrl={destinationUrl} board={destinationBoard} />; break;
     default: renderer = <FacebookPreview account={account} caption={safeCaption} mediaItems={mediaItems} mediaLayout={mediaLayout} />;
   }
-  return <section className="surface-card h-auto min-w-0 p-4 sm:p-5">
-    <header className="flex items-start justify-between gap-3"><div><span className="eyebrow">LIVE PREVIEW</span><h2 className="mt-1 font-display text-lg font-extrabold tracking-tight">See it in the wild</h2></div><div className="flex rounded-lg border border-slate-200 bg-slate-50 p-0.5 dark:border-slate-700 dark:bg-slate-800"><button type="button" aria-pressed={device === "mobile"} onClick={() => setDevice("mobile")} className={`device-button ${device === "mobile" ? "device-button-active" : ""}`} title="Mobile preview">▯</button><button type="button" aria-pressed={device === "desktop"} onClick={() => setDevice("desktop")} className={`device-button ${device === "desktop" ? "device-button-active" : ""}`} title="Desktop preview">▱</button></div></header>
-    <nav className="preview-tabs" aria-label="Preview social accounts">
+  return <section className="card h-auto min-w-0 p-4 sm:p-5">
+    <header className="flex items-start justify-between gap-3"><div><span className="xs muted sc-eyebrow">LIVE PREVIEW</span><h2 className="mt-1  text-lg font-extrabold tracking-tight">See it in the wild</h2></div><div className="flex rounded-lg border border-slate-200 bg-slate-50 p-0.5 dark:border-slate-700 dark:bg-slate-800"><button type="button" aria-pressed={device === "mobile"} onClick={() => setDevice("mobile")} className={`sc-seg-btn ${device === "mobile" ? "active" : ""}`} title="Mobile preview">▯</button><button type="button" aria-pressed={device === "desktop"} onClick={() => setDevice("desktop")} className={`sc-seg-btn ${device === "desktop" ? "active" : ""}`} title="Desktop preview">▱</button></div></header>
+    <nav className="seg" aria-label="Preview social accounts">
       {safeAccounts.length ? (
         safeAccounts.map((item) => {
           const data = platformStyles[item.platform];
@@ -309,7 +309,7 @@ export default function LivePreview({ accounts = [], channelInfo, caption, uploa
               key={item.id}
               onClick={() => setPreviewId?.(item.id)}
               aria-selected={active}
-              className={`preview-tab ${active ? "preview-tab-active" : ""}`}
+              className={`sc-seg-btn ${active ? "active" : ""}`}
             >
               <span className="inline-flex items-center gap-2">
                 <AccountAvatar

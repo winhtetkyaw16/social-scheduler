@@ -73,6 +73,7 @@ def _providers() -> dict[str, _ProviderOAuth]:
     youtube_secret = os.getenv("YOUTUBE_CLIENT_SECRET", "") or ""
     tiktok_key = os.getenv("TIKTOK_CLIENT_KEY", "") or ""
     tiktok_secret = os.getenv("TIKTOK_CLIENT_SECRET", "") or ""
+    tiktok_redirect = os.getenv("TIKTOK_REDIRECT_URI") or config.TIKTOK_REDIRECT_URI
     pinterest_id = os.getenv("PINTEREST_CLIENT_ID", "") or ""
     pinterest_secret = os.getenv("PINTEREST_CLIENT_SECRET", "") or ""
     threads_id = os.getenv("THREADS_CLIENT_ID", "") or ""
@@ -182,8 +183,9 @@ def _providers() -> dict[str, _ProviderOAuth]:
             token_url="https://open.tiktokapis.com/v2/oauth/token/",
             client_id=tiktok_key,
             client_secret=tiktok_secret,
-            redirect_uri=config.TIKTOK_REDIRECT_URI,
+            redirect_uri=tiktok_redirect,
             scopes=("user.info.basic", "video.publish", "video.upload"),
+            # Hex SHA-256 PKCE is applied in start_oauth; RFC 7636 base64url would be rejected.
             use_pkce=False,
             missing_env=tuple(
                 name
@@ -249,10 +251,24 @@ def _require_provider(platform: str) -> _ProviderOAuth:
     return provider
 
 
+# TikTok Login Kit: unreserved characters, length 43–128.
+# https://developers.tiktok.com/doc/login-kit-desktop
+_TIKTOK_PKCE_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
+_TIKTOK_CODE_VERIFIER_LENGTH = 64
+
+
 def _pkce_pair() -> tuple[str, str]:
+    """RFC 7636 S256 pair (base64url challenge) used by X and YouTube."""
     verifier = secrets.token_urlsafe(64)
     digest = sha256(verifier.encode()).digest()
     challenge = base64.urlsafe_b64encode(digest).decode().rstrip("=")
+    return verifier, challenge
+
+
+def _tiktok_pkce_pair() -> tuple[str, str]:
+    """TikTok S256 pair. Challenge is lowercase hex SHA-256, not base64url."""
+    verifier = "".join(secrets.choice(_TIKTOK_PKCE_ALPHABET) for _ in range(_TIKTOK_CODE_VERIFIER_LENGTH))
+    challenge = sha256(verifier.encode("ascii")).hexdigest()
     return verifier, challenge
 
 
@@ -360,7 +376,11 @@ def start_oauth(platform: str, user_id: UUID, return_to: str | None = None) -> d
         params["access_type"] = "offline"
         params["include_granted_scopes"] = "true"
         params["prompt"] = "consent"
-    if provider.use_pkce:
+    if provider.platform == "tiktok":
+        verifier, challenge = _tiktok_pkce_pair()
+        params["code_challenge"] = challenge
+        params["code_challenge_method"] = "S256"
+    elif provider.use_pkce:
         verifier, challenge = _pkce_pair()
         params["code_challenge"] = challenge
         params["code_challenge_method"] = "S256"
@@ -440,6 +460,12 @@ def _exchange_code(provider: _ProviderOAuth, code: str, verifier: str | None) ->
     if provider.auth_style == "tiktok":
         data["client_key"] = provider.client_id
         data["client_secret"] = provider.client_secret
+        if not verifier:
+            raise HTTPException(
+                status_code=400,
+                detail="The TikTok authorization session is missing its verifier.",
+            )
+        data["code_verifier"] = verifier
     elif provider.auth_style == "basic":
         data["client_id"] = provider.client_id
         if provider.platform == "x":

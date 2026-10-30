@@ -21,11 +21,6 @@ const PREVIEW_CHANNELS = {
   pinterest: { label: "Pinterest", brand: "#BD081C", mark: "p" },
 };
 
-function ModalChannelIcon({ platform, mark, size = 17 }) {
-  const Icon = { instagram: Instagram, linkedin: Linkedin, youtube: Youtube }[platform];
-  return Icon ? <Icon size={size} /> : <span className="inline-grid min-w-[17px] place-items-center font-extrabold leading-none" style={{ fontSize: platform === "x" ? size : size - 2 }}>{mark}</span>;
-}
-
 const TABS = [
   { id: "calendar", label: "Calendar", icon: CalendarDays },
   { id: "posts", label: "Posts", icon: List },
@@ -47,6 +42,7 @@ const DEFAULT_QUEUE_SLOTS = [
   ...[0, 1, 2, 3, 4].flatMap((weekday) => ["09:00", "12:30", "17:00"].map((time_local) => ({ weekday, time_local }))),
   ...[5, 6].flatMap((weekday) => ["10:00", "16:00"].map((time_local) => ({ weekday, time_local }))),
 ];
+const hideBrokenImg = (event) => { event.currentTarget.style.display = "none"; };
 const card = "rounded-3xl border border-slate-200/80 bg-white/85 shadow-[0_12px_36px_rgba(21,32,66,.045)] backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/80";
 const button = "inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800";
 const primary = "inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 via-purple-600 to-blue-600 px-4 py-2.5 text-xs font-bold text-white shadow-lg shadow-indigo-500/20 transition hover:-translate-y-0.5 hover:shadow-indigo-500/30 disabled:opacity-50";
@@ -151,10 +147,11 @@ function PostsListView({ posts, accounts = [], request, onSelectPost, onRefresh,
             <div className="txt">{post.content || "Untitled post"}</div>
             {failed && (post.last_error_message || post.last_error_code) && <div className="xs" style={{ color: "var(--error)", marginTop: 6 }} title={post.last_error_message || post.last_error_code}>⚠ {post.last_error_code ? `${post.last_error_code}: ` : ""}{post.last_error_message || "Publish failed"}</div>}
           </div>
-          {post.media_urls?.[0] && <img className="thumb" src={post.media_urls[0]} alt="" style={{ objectFit: "cover" }} />}
+          {post.media_urls?.[0] && <img className="thumb" src={post.media_urls[0]} alt="" style={{ objectFit: "cover" }} onError={hideBrokenImg} />}
           <div className="row" style={{ gap: 6 }}>
             <button type="button" className="btn btn-sm btn-ghost" onClick={() => onSelectPost?.(post)}>Open</button>
             {failed && <button type="button" className="btn btn-sm btn-secondary" disabled={!!busyId} onClick={() => void retryPost(post.id)}>{busyId === post.id ? <LoaderCircle size={13} className="animate-spin" /> : <RotateCcw size={13} />}Retry</button>}
+            <RowDelete post={post} accounts={accounts} request={request} onRefresh={onRefresh} />
           </div>
         </div>;
       })}
@@ -162,7 +159,7 @@ function PostsListView({ posts, accounts = [], request, onSelectPost, onRefresh,
   </div>;
 }
 
-function MonthCalendar({ posts, accounts = [], onCreatePost, onSelectPost, request, onRefresh, onList, platformFilter = "all", setPlatformFilter, filters = null, initialView = "month" }) {
+function MonthCalendar({ posts, accounts = [], onCreatePost, onSelectPost, request, onRefresh, onList, platformFilter = "all", setPlatformFilter, filters = null, initialView = "month", onEditPost, onDuplicatePost }) {
   const safePosts = Array.isArray(posts) ? posts.filter(Boolean) : [];
   const [view, setView] = useState(initialView);
   const [cursor, setCursor] = useState(() => new Date());
@@ -256,14 +253,8 @@ function MonthCalendar({ posts, accounts = [], onCreatePost, onSelectPost, reque
     onCreatePost?.(date instanceof Date ? date : undefined);
   }
 
-  useEffect(() => {
-    if (!(dayDetail instanceof Date)) return undefined;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    function onKeyDown(event) { if (event.key === "Escape" && !busyId) setDayDetail(null); }
-    window.addEventListener("keydown", onKeyDown);
-    return () => { document.body.style.overflow = previousOverflow; window.removeEventListener("keydown", onKeyDown); };
-  }, [dayDetail, busyId]);
+  function openDay(date, anchorEl) { setDayDetail({ date, key: dateKey(date), anchor: anchorEl || null }); }
+  const closeDay = React.useCallback(() => setDayDetail(null), []);
 
   function dropProps(date, key) {
     return {
@@ -292,7 +283,7 @@ function MonthCalendar({ posts, accounts = [], onCreatePost, onSelectPost, reque
         event.dataTransfer.setData("text/plain", String(post.id));
       },
       onDragEnd: () => { setDraggingId(""); setDragOverKey(""); },
-      onClick: (event) => { event.stopPropagation(); onSelectPost?.(post); },
+      onClick: (event) => { event.stopPropagation(); onSelectPost?.(post, event.currentTarget); },
     };
   }
   const platformsInUse = [...new Set((Array.isArray(accounts) ? accounts : []).filter((a) => a?.is_active !== false).map((a) => a.platform).filter(Boolean))];
@@ -333,13 +324,13 @@ function MonthCalendar({ posts, accounts = [], onCreatePost, onSelectPost, reque
           {dayPosts.slice(0, postLimit).map((post) => {
             const account = accountById.get(post.connected_account_id);
             const m = meta(account?.platform);
-            return <div key={post.id} role="button" tabIndex={0} {...dragProps(post)} onKeyDown={(e) => { if (e.key === "Enter") onSelectPost?.(post); }}
+            return <div key={post.id} role="button" tabIndex={0} {...dragProps(post)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); onSelectPost?.(post, e.currentTarget); } }}
               aria-label={`Open post: ${post.content || "Untitled post"}`}
               className={`chip ${m.chip} ${post.status === "failed" ? "failed" : ""}`}
               style={{ cursor: canDragPost(post) ? "grab" : "pointer", opacity: draggingId === String(post.id) || busyId === String(post.id) ? .5 : 1, ...(m.chip ? null : { borderColor: chColor(account?.platform) }) }}
               title={`${account?.account_name || ""} · ${post.status}`}><b>{fmtTime24(postPlacementAt(post))}</b>{postTitle(post)}</div>;
           })}
-          {dayPosts.length > postLimit && <span role="button" className="xs subtle" style={{ cursor: "pointer" }} onClick={(e) => { e.stopPropagation(); setDayDetail(date); }}>+{dayPosts.length - postLimit} more</span>}
+          {dayPosts.length > postLimit && <span role="button" tabIndex={0} aria-haspopup="dialog" aria-expanded={dayDetail?.key === dateKey(date)} className="xs dp-more" onClick={(e) => { e.stopPropagation(); openDay(date, e.currentTarget); }} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); openDay(date, e.currentTarget); } }}>+{dayPosts.length - postLimit} more</span>}
         </div>;
       })}
     </div> : <div className="week">
@@ -357,75 +348,18 @@ function MonthCalendar({ posts, accounts = [], onCreatePost, onSelectPost, reque
             {inHour.slice(0, 1).map((post) => {
               const account = accountById.get(post.connected_account_id);
               const m = meta(account?.platform);
-              return <div key={post.id} role="button" tabIndex={0} {...dragProps(post)} className={`ev ${m.ev}`} style={{ cursor: canDragPost(post) ? "grab" : "pointer", ...(post.status === "failed" ? { background: "var(--error-soft)", borderColor: "var(--error)" } : null), ...(m.ev ? null : { borderColor: chColor(account?.platform) }) }}>
-                <div className="row" style={{ gap: 6 }}><Ch platform={account?.platform} /><b>{fmtTime24(postPlacementAt(post))}</b>{inHour.length > 1 && <span className="xs subtle" role="button" onClick={(e) => { e.stopPropagation(); setDayDetail(d); }}>+{inHour.length - 1}</span>}</div>{postTitle(post)}</div>;
+              return <div key={post.id} role="button" tabIndex={0} {...dragProps(post)} className={`ev ${m.ev} ${post.status === "failed" ? "failed" : ""}`} style={{ cursor: canDragPost(post) ? "grab" : "pointer", ...(m.ev ? null : { borderColor: chColor(account?.platform) }) }}>
+                <div className="row" style={{ gap: 6 }}><Ch platform={account?.platform} /><b>{fmtTime24(postPlacementAt(post))}</b>{inHour.length > 1 && <span className="xs subtle" role="button" tabIndex={0} onClick={(e) => { e.stopPropagation(); openDay(d, e.currentTarget); }} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); openDay(d, e.currentTarget); } }}>+{inHour.length - 1}</span>}</div>{postTitle(post)}</div>;
             })}
           </div>;
         })}
       </React.Fragment>)}
     </div>}
     <p className="xs subtle">Click a day to compose · drag a post to another day to reschedule · click a post to open it</p>
-    {dayDetail instanceof Date && (() => {
-      const detailKey = dateKey(dayDetail);
-      const detailPosts = (grouped.get(detailKey) || []).slice().sort((a, b) => new Date(postPlacementAt(a) || 0) - new Date(postPlacementAt(b) || 0));
-      const detailLabel = new Intl.DateTimeFormat(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" }).format(dayDetail);
-      function closeDayDetail() { setDayDetail(null); }
-      return createPortal(<div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/25 p-0 backdrop-blur-[2px] sm:items-center sm:p-4" onMouseDown={(event) => { if (event.target === event.currentTarget && !busyId) closeDayDetail(); }} role="presentation">
-        <section role="dialog" aria-modal="true" aria-labelledby="day-detail-title" className="flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-t-[28px] border border-white/70 bg-white text-slate-900 shadow-[0_32px_100px_rgba(15,23,42,.20)] dark:border-slate-700 dark:bg-slate-900 dark:text-white sm:rounded-[28px]">
-          <header className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-4 dark:border-slate-800 sm:px-6">
-            <div className="min-w-0">
-              <span className="text-[10px] font-extrabold uppercase tracking-[.16em] text-indigo-500">Day schedule</span>
-              <h2 id="day-detail-title" className="mt-1  text-lg font-extrabold">{detailLabel}</h2>
-              <p className="mt-1 text-xs text-slate-500">{detailPosts.length} post{detailPosts.length === 1 ? "" : "s"} · click one to open</p>
-            </div>
-            <button type="button" onClick={closeDayDetail} aria-label="Close day schedule" className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-white"><X size={18} /></button>
-          </header>
-          <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
-            {detailPosts.length ? <ul className="space-y-2">
-              {detailPosts.map((post) => {
-                const account = accountById.get(post.connected_account_id);
-                const when = postPlacementAt(post);
-                const failed = post.status === "failed";
-                const draggable = canDragPost(post);
-                const isBusy = busyId === String(post.id);
-                return <li key={post.id}>
-                  <button
-                    type="button"
-                    draggable={draggable && !busyId}
-                    onDragStart={(event) => {
-                      if (!draggable) { event.preventDefault(); return; }
-                      setDraggingId(String(post.id));
-                      setError("");
-                      event.dataTransfer.effectAllowed = "move";
-                      event.dataTransfer.setData("application/x-socialstudio-post", JSON.stringify({ id: post.id }));
-                      event.dataTransfer.setData("text/plain", String(post.id));
-                    }}
-                    onDragEnd={() => { setDraggingId(""); setDragOverKey(""); }}
-                    onClick={() => { closeDayDetail(); onSelectPost?.(post); }}
-                    className={`flex w-full gap-3 rounded-2xl border p-3 text-left transition focus:outline-none focus:ring-2 focus:ring-indigo-500 ${failed ? "border-rose-300 bg-rose-50/90 dark:border-rose-800 dark:bg-rose-950/40" : "border-slate-200 bg-white hover:border-indigo-300 dark:border-slate-700 dark:bg-slate-950 dark:hover:border-indigo-700"} ${isBusy ? "opacity-70" : ""} ${draggable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"}`}
-                  >
-                    {post.media_urls?.[0] ? <img src={post.media_urls[0]} alt="" className="h-14 w-14 shrink-0 rounded-xl object-cover" loading="lazy" /> : <span className="grid h-14 w-14 shrink-0 place-items-center rounded-xl bg-slate-100 text-slate-500 dark:bg-slate-800"><FileText size={18} /></span>}
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="inline-flex items-center gap-1 text-[11px] font-bold"><Clock3 size={11} />{when ? new Date(when).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "—"}</span>
-                        <span className="truncate text-[11px] font-semibold capitalize text-slate-500">{account?.account_name || account?.platform || "Account"}</span>
-                        <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${statusChipClass(post.status)}`}>{post.status === "published" && post.provider_post_id ? "published" : post.status === "published" ? "unconfirmed" : post.status}</span>
-                      </div>
-                      <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-800 dark:text-slate-100">{post.content || "Untitled post"}</p>
-                      {failed && post.last_error_message && <p className="mt-1 line-clamp-2 text-[10px] font-semibold text-rose-700 dark:text-rose-300">{post.last_error_message}</p>}
-                    </div>
-                  </button>
-                </li>;
-              })}
-            </ul> : <p className="py-10 text-center text-xs text-slate-400">No posts on this day.</p>}
-          </div>
-          <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 px-5 py-3 dark:border-slate-800 sm:px-6">
-            <button type="button" className={button} onClick={closeDayDetail}>Close</button>
-            <button type="button" className={primary} onClick={() => { const date = dayDetail; closeDayDetail(); openComposerForDay(date); }}><Plus size={14} />Create on this day</button>
-          </footer>
-        </section>
-      </div>, document.body);
-    })()}
+    {dayDetail?.date instanceof Date && <RenderErrorBoundary scope="Day schedule" compact><DayPopover date={dayDetail.date} anchor={dayDetail.anchor}
+      posts={(grouped.get(dayDetail.key) || []).slice().sort((a, b) => new Date(postPlacementAt(a) || 0) - new Date(postPlacementAt(b) || 0))}
+      accounts={accounts} request={request} onRefresh={onRefresh} onClose={closeDay} onNewPost={openComposerForDay}
+      onEdit={onEditPost} onDuplicate={onDuplicatePost} /></RenderErrorBoundary>}
   </div>;
 }
 
@@ -575,7 +509,7 @@ function DraftsView({ request, accounts = [], authorName, onCreatePost, onOpenDr
           const busy = busyId === draft.id;
           const plats = draftPlatforms(draft);
           return <div key={draft.id} className="card" style={{ overflow: "hidden" }}>
-            {draft.media_urls?.[0] ? <img src={draft.media_urls[0]} alt="" style={{ height: 120, width: "100%", objectFit: "cover", display: "block" }} /> : <div style={{ height: 120, display: "grid", placeItems: "center", background: "var(--surface-2)" }} className="xs subtle">Text only</div>}
+            {draft.media_urls?.[0] ? <img src={draft.media_urls[0]} alt="" style={{ height: 120, width: "100%", objectFit: "cover", display: "block" }} onError={hideBrokenImg} /> : <div style={{ height: 120, display: "grid", placeItems: "center", background: "var(--surface-2)" }} className="xs subtle">Text only</div>}
             <div className="card-pad col" style={{ gap: 10 }}>
               <b className="sm" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{draft.content || "Untitled draft"}</b>
               <div className="row" style={{ gap: 4 }}>{plats.length ? plats.map((pl) => <Ch key={pl} platform={pl} />) : <span className="xs subtle">{accountSummary(draft)}</span>}<span className="badge nodot" style={{ marginLeft: "auto", textTransform: "capitalize" }}>{String(draft.status || "draft").replaceAll("_", " ")}</span></div>
@@ -682,13 +616,13 @@ function ApprovalsView({ request, onRefresh, accounts = [] }) {
     {loading ? <div className="card card-pad col"><div className="skel" style={{ height: 56 }} /><div className="skel" style={{ height: 56 }} /></div> : !items.length ? <div className="card"><Empty art="✅" title="Nothing waiting for review" text="When someone submits a draft for approval it shows up here." /></div> :
       <div className="grid" style={{ gridTemplateColumns: "minmax(0,1fr) minmax(0,1.3fr)", alignItems: "start" }}>
         <div className="card">{items.map((item) => <div key={item.id} className="post" role="button" style={{ cursor: "pointer", background: selected?.id === item.id ? "var(--primary-soft)" : undefined }} onClick={() => setSelectedId(item.id)}>
-          {item.media_urls?.[0] ? <img className="thumb" src={item.media_urls[0]} alt="" style={{ width: 36, height: 36, objectFit: "cover" }} /> : <Avatar name={titleOf(item)} size={36} />}
+          {item.media_urls?.[0] ? <img className="thumb" src={item.media_urls[0]} alt="" style={{ width: 36, height: 36, objectFit: "cover" }} onError={hideBrokenImg} /> : <Avatar name={titleOf(item)} size={36} />}
           <div className="body"><b className="sm">{titleOf(item)}</b><div className="xs subtle">Submitted {ago(item.updated_at)}</div><div className="row" style={{ gap: 4, marginTop: 6 }}>{platsOf(item).map((pl) => <Ch key={pl} platform={pl} />)}<span className="badge b-warning">Pending</span></div></div>
         </div>)}</div>
         {selected && <div className="card">
           <div className="card-head"><div><b>{titleOf(selected)}</b><div className="xs subtle">Submitted {ago(selected.updated_at)}{selected.scheduled_at ? ` · for ${ago(selected.scheduled_at)}` : ""}{platsOf(selected).length ? ` · ${platsOf(selected).map((p) => meta(p).label).join(", ")}` : ""}</div></div><span className="badge b-warning">Pending review</span></div>
           <div style={{ padding: 20 }} className="col">
-            <div className="pv"><p style={{ whiteSpace: "pre-wrap" }}>{selected.content || "Untitled post"}</p>{selected.media_urls?.[0] && <img className="img" src={selected.media_urls[0]} alt="" style={{ objectFit: "cover", width: "100%" }} />}</div>
+            <div className="pv"><p style={{ whiteSpace: "pre-wrap" }}>{selected.content || "Untitled post"}</p>{selected.media_urls?.[0] && <img className="img" src={selected.media_urls[0]} alt="" style={{ objectFit: "cover", width: "100%" }} onError={hideBrokenImg} />}</div>
             <label className="label" htmlFor="approval-comment">Feedback</label>
             <textarea id="approval-comment" className="input" rows="2" placeholder="Leave feedback (sent with your decision)…" value={comment} onChange={(e) => setComment(e.target.value)} style={{ height: "auto", padding: 10 }} />
             <div className="row" style={{ justifyContent: "flex-end" }}>
@@ -809,8 +743,9 @@ function QueueView({ request, accounts = [], posts = [], onCreatePost, onSelectP
         <div className="time">{t.replace(/\s?(AM|PM)/i, "")}<span>{(t.match(/AM|PM/i) || [""])[0]}</span></div>
         <ScAccountAvatar account={acc} size={36} />
         <div className="body"><div className="row" style={{ gap: 8, marginBottom: 4 }}><b className="sm">{acc?.account_name || acc?.platform || "Account"}</b><StatusBadge status={p.status} post={p} /></div><div className="txt">{p.content || "Untitled post"}</div>{p.status === "failed" && (p.last_error_message || p.last_error_code) && <div className="xs" style={{ color: "var(--error)", marginTop: 6 }}>⚠ {p.last_error_code ? `${p.last_error_code}: ` : ""}{p.last_error_message}</div>}</div>
-        {p.media_urls?.[0] && <img className="thumb" src={p.media_urls[0]} alt="" style={{ objectFit: "cover" }} />}
-        {p.status === "failed" ? <button type="button" className="btn btn-sm btn-secondary" disabled={!!retrying} onClick={() => void retry(p.id)}>{retrying === p.id ? <LoaderCircle size={13} className="animate-spin" /> : <RotateCcw size={13} />}Retry</button> : <button type="button" className="btn btn-sm btn-ghost btn-icon" aria-label="Open post" onClick={() => onSelectPost?.(p)}><svg className="ico" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /></svg></button>}
+        {p.media_urls?.[0] && <img className="thumb" src={p.media_urls[0]} alt="" style={{ objectFit: "cover" }} onError={hideBrokenImg} />}
+        <div className="row" style={{ gap: 6 }}>{p.status === "failed" ? <button type="button" className="btn btn-sm btn-secondary" disabled={!!retrying} onClick={() => void retry(p.id)}>{retrying === p.id ? <LoaderCircle size={13} className="animate-spin" /> : <RotateCcw size={13} />}Retry</button> : <button type="button" className="btn btn-sm btn-ghost btn-icon" aria-label="Open post" onClick={() => onSelectPost?.(p)}><svg className="ico" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /></svg></button>}
+        <RowDelete post={p} accounts={accounts} request={request} onRefresh={onRefresh} /></div>
       </div>; })}
     </div>))}
     {showSettings && <section className="space-y-4">
@@ -886,7 +821,13 @@ export default function PublishSection({ request, posts = [], accounts = [], aut
   const safeAccounts = Array.isArray(accounts) ? accounts.filter(Boolean) : [];
   const active = view;
   const [selectedPost, setSelectedPost] = useState(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [popoverAnchor, setPopoverAnchor] = useState(null);
+  const [editingPost, setEditingPost] = useState(null);
+  const closePopover = React.useCallback(() => { setSelectedPost(null); setPopoverAnchor(null); }, []);
+  function duplicatePost(post, account) {
+    closePopover();
+    onOpenDraft?.({ content: post.content || "", media_urls: Array.isArray(post.media_urls) ? post.media_urls : [], metadata: { caption: post.content || "", selectedIds: account?.id ? [account.id] : [], sharedMediaUrls: Array.isArray(post.media_urls) ? post.media_urls : [] } });
+  }
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterPlatform, setFilterPlatform] = useState("all");
   const [filterAccountId, setFilterAccountId] = useState("all");
@@ -900,7 +841,7 @@ export default function PublishSection({ request, posts = [], accounts = [], aut
   );
   const failedCount = useMemo(() => safePosts.filter((post) => post.status === "failed").length, [safePosts]);
   const scheduledCount = useMemo(() => safePosts.filter((post) => ["scheduled", "queued", "publishing"].includes(post.status)).length, [safePosts]);
-  function openPost(post) {
+  function openPost(post, anchor) {
     // Publishing currently stores one scheduled row per connected account. Group
     // matching rows so the modal can preview each target channel together.
     if (!post || typeof post !== "object") return;
@@ -912,20 +853,21 @@ export default function PublishSection({ request, posts = [], accounts = [], aut
       return account ? { ...variant, preview_platform: account.platform, preview_account_name: account.account_name } : null;
     }).filter(Boolean);
     setSelectedPost({ ...post, channel_posts: channelPosts });
-    setIsModalOpen(true);
+    setPopoverAnchor(anchor && anchor.nodeType === 1 ? anchor : null);
   }
   const calendarHead = <PageHead title="Calendar" sub="Drag posts to reschedule. Click an empty day to create.">
     <button type="button" onClick={() => onCreatePost?.()} className="btn btn-primary"><Plus size={15} />New post</button>
   </PageHead>;
   const statusOnly = <PublishFilterBar accounts={safeAccounts} status={filterStatus} setStatus={setFilterStatus} platform={filterPlatform} accountId={filterAccountId} setAccountId={setFilterAccountId} />;
   return <>
-    {(active === "calendar" || active === "week") && <>{calendarHead}<MonthCalendar key={active} initialView={active === "week" ? "week" : "month"} posts={calendarPosts} accounts={safeAccounts} onCreatePost={onCreatePost} onSelectPost={openPost} request={request} onRefresh={onRefresh} onList={() => onNavigate?.("posts")} platformFilter={filterPlatform} setPlatformFilter={setFilterPlatform} filters={statusOnly} /></>}
+    {(active === "calendar" || active === "week") && <>{calendarHead}<MonthCalendar onEditPost={(p) => setEditingPost(p)} onDuplicatePost={duplicatePost} key={active} initialView={active === "week" ? "week" : "month"} posts={calendarPosts} accounts={safeAccounts} onCreatePost={onCreatePost} onSelectPost={openPost} request={request} onRefresh={onRefresh} onList={() => onNavigate?.("posts")} platformFilter={filterPlatform} setPlatformFilter={setFilterPlatform} filters={statusOnly} /></>}
     {active === "posts" && <>{calendarHead}<PostsListView posts={safePosts} accounts={safeAccounts} request={request} onSelectPost={openPost} onRefresh={onRefresh} status={filterStatus} setStatus={setFilterStatus} platform={filterPlatform} setPlatform={setFilterPlatform} accountId={filterAccountId} setAccountId={setFilterAccountId} headerExtra={<Seg value="list" onChange={(v) => v !== "list" && onNavigate?.(v === "week" ? "week" : "calendar")} options={[["month", "Month"], ["week", "Week"], ["list", "List"]]} />} /></>}
     {active === "queue" && <QueueView request={request} accounts={safeAccounts} posts={safePosts} onCreatePost={onCreatePost} onSelectPost={openPost} onRefresh={onRefresh} initialTab={initialQueueTab} />}
     {active === "drafts" && <DraftsView request={request} accounts={safeAccounts} authorName={authorName} localDrafts={localDrafts} onUpdateLocalDraft={onUpdateLocalDraft} onRemoveLocalDraft={onRemoveLocalDraft} onCreatePost={onCreatePost} onOpenDraft={onOpenDraft} onRefresh={onRefresh} />}
     {active === "library" && <LibraryView request={request} onUseAsset={onUseAsset} />}
     {active === "approvals" && <ApprovalsView request={request} onRefresh={onRefresh} accounts={safeAccounts} />}
-    {isModalOpen && selectedPost && <RenderErrorBoundary scope="Post details modal" compact><ScheduledPostModal post={selectedPost} accounts={safeAccounts} authorName={authorName} request={request} onRefresh={onRefresh} onClose={() => { setIsModalOpen(false); setSelectedPost(null); }} /></RenderErrorBoundary>}
+    {selectedPost && <RenderErrorBoundary scope="Post popover" compact><PostPopover post={selectedPost} anchor={popoverAnchor} accounts={safeAccounts} request={request} onRefresh={onRefresh} onClose={closePopover} onEdit={(p) => { closePopover(); setEditingPost(p); }} onDuplicate={duplicatePost} /></RenderErrorBoundary>}
+    {editingPost && <RenderErrorBoundary scope="Edit post" compact><PostEditModal post={editingPost} accounts={safeAccounts} request={request} onRefresh={onRefresh} onClose={() => setEditingPost(null)} /></RenderErrorBoundary>}
   </>;
 }
 
@@ -955,286 +897,487 @@ export function formatScheduledLocal(value) {
   }
 }
 
-function NativePostPreview({ platform, accountName, authorName, content, mediaUrl, title, timestamp, format, account }) {
-  const key = String(platform || "facebook").toLowerCase();
-  const normalized = key === "twitter" ? "x" : key;
-  const config = PREVIEW_CHANNELS[normalized] || PREVIEW_CHANNELS.facebook;
-  const isVideo = /\.(mp4|mov|webm|m4v|ogv)(\?|$)/i.test(mediaUrl || "");
-  const caption = content || "Your post caption will appear here.";
-  const stamp = timestamp ? new Date(timestamp).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "Just now";
-  const name = accountName || authorName || "Your page";
-  const profileAccount = account && typeof account === "object"
-    ? account
-    : { account_name: name, platform: normalized };
-  const fallbackMedia = <div className="grid h-full min-h-40 place-items-center bg-gradient-to-br from-indigo-100 via-purple-100 to-blue-100 text-indigo-500 dark:from-indigo-950 dark:via-purple-950/70 dark:to-blue-950"><Image size={28} /></div>;
-  const media = mediaUrl ? (isVideo ? <video src={mediaUrl} controls className="h-full w-full bg-black object-contain" /> : <img src={mediaUrl} alt={title || "Post media"} className="h-full w-full object-cover" />) : fallbackMedia;
-  const avatarNode = <AccountAvatar account={profileAccount} size={40} showBadge={false} />;
-  const actions = (labels) => <div className="flex items-center justify-between border-t border-slate-100 px-4 py-3 text-[11px] font-semibold text-slate-500 dark:border-slate-800 dark:text-slate-400">{labels.map(([Icon, label]) => <span key={label} className="inline-flex items-center gap-1.5"><Icon size={15} />{label}</span>)}</div>;
-
-  if (normalized === "youtube") return <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-950">
-    <div className={`relative aspect-video overflow-hidden bg-slate-950 ${/short/i.test(format || "") ? "mx-auto max-w-[230px] rounded-xl" : ""}`}>{media}<span className="pointer-events-none absolute inset-0 grid place-items-center"><span className="grid h-12 w-12 place-items-center rounded-full bg-black/60 text-white"><Play size={22} fill="currentColor" /></span></span><span className="absolute bottom-2 right-2 rounded bg-black/75 px-1.5 py-1 text-[9px] font-bold text-white">{/short/i.test(format || "") ? "SHORT" : "PREVIEW"}</span></div>
-    <div className="flex gap-3 p-4">{avatarNode}<div className="min-w-0 flex-1"><h3 className="line-clamp-2 text-sm font-extrabold">{title || caption.slice(0, 80) || "Untitled video"}</h3><p className="mt-1 text-[10px] text-slate-500">{name} · 0 views · {stamp}</p><p className="mt-3 line-clamp-2 whitespace-pre-wrap text-xs leading-5 text-slate-600 dark:text-slate-300">{caption}</p></div></div>
-  </article>;
-
-  if (normalized === "tiktok") return <article className="relative mx-auto aspect-[9/16] max-h-[620px] w-full max-w-[330px] overflow-hidden rounded-[28px] bg-black text-white shadow-xl ring-1 ring-white/10">{mediaUrl ? (isVideo ? <video src={mediaUrl} controls className="absolute inset-0 h-full w-full object-cover" /> : <img src={mediaUrl} alt={title || "TikTok post"} className="absolute inset-0 h-full w-full object-cover" />) : <div className="absolute inset-0 bg-gradient-to-br from-indigo-900 via-slate-950 to-purple-950" />}<div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/25" /><div className="absolute left-4 right-14 top-5 flex justify-between text-xs font-bold"><span>Following</span><span className="text-white/60">|</span><span>For You</span></div><div className="absolute bottom-5 left-4 right-14"><p className="text-xs font-extrabold">@{name.replaceAll(" ", "").toLowerCase()}</p><p className="mt-2 line-clamp-4 whitespace-pre-wrap text-xs leading-5">{caption}</p><p className="mt-2 text-[10px] text-white/70">♪ Original sound · {stamp}</p></div><div className="absolute bottom-24 right-3 flex flex-col items-center gap-4 text-[9px]"><span className="inline-flex rounded-full ring-2 ring-white">{avatarNode}</span><Heart size={23} /><MessageCircle size={22} /><Bookmark size={20} /><Share2 size={20} /></div></article>;
-
-  if (normalized === "instagram") return <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-950">
-    <header className="flex items-center gap-3 p-3">{avatarNode}<div className="min-w-0 flex-1"><p className="truncate text-xs font-extrabold">{name.replaceAll(" ", "").toLowerCase()}</p><p className="text-[10px] text-slate-500">{/reel|video/i.test(format || "") ? "Original audio" : stamp}</p></div><MoreHorizontal size={18} /></header>
-    <div className={`overflow-hidden bg-slate-100 dark:bg-slate-900 ${/story/i.test(format || "") ? "aspect-[9/16] max-h-[480px]" : "aspect-square"}`}>{media}</div>
-    <div className="p-3"><div className="flex items-center gap-4"><Heart size={20} /><MessageCircle size={20} /><Send size={19} className="-rotate-12" /><Bookmark size={19} className="ml-auto" /></div><p className="mt-3 text-[11px] font-extrabold">0 likes</p><p className="mt-1 whitespace-pre-wrap text-xs leading-5"><b className="mr-1">{name.replaceAll(" ", "").toLowerCase()}</b>{caption}</p><p className="mt-2 text-[9px] uppercase text-slate-400">{stamp}</p></div>
-  </article>;
-
-  if (normalized === "x") return <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-950"><div className="flex gap-3">{avatarNode}<div className="min-w-0 flex-1"><p className="text-xs font-extrabold">{name} <span className="font-normal text-slate-500">@{name.replaceAll(" ", "").toLowerCase()} · {stamp}</span></p><p className="mt-2 whitespace-pre-wrap text-sm leading-6">{caption}</p>{mediaUrl && <div className="mt-3 max-h-80 overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800">{media}</div>}<div className="mt-4 flex max-w-sm justify-between text-slate-500"><MessageCircle size={16} /><Share2 size={16} /><Heart size={16} /><Bookmark size={16} /></div></div></div></article>;
-
-  if (normalized === "linkedin") return <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-950"><header className="flex items-center gap-3 p-4">{avatarNode}<div className="min-w-0 flex-1"><p className="truncate text-xs font-extrabold">{name}</p><p className="text-[10px] text-slate-500">SocialCastly workspace · {stamp}</p></div><MoreHorizontal size={18} /></header><p className="whitespace-pre-wrap px-4 pb-4 text-xs leading-5">{caption}</p>{mediaUrl && <div className="max-h-80 overflow-hidden border-y border-slate-100 dark:border-slate-800">{media}</div>}<div className="px-4 py-2 text-[10px] text-slate-500">♡ 0 reactions · Be the first to react</div>{actions([[ThumbsUp, "Like"], [MessageCircle, "Comment"], [Share2, "Repost"], [Send, "Send"]])}</article>;
-
-  if (normalized === "pinterest") return <article className="mx-auto max-w-sm overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-950"><div className="relative max-h-[520px] overflow-hidden rounded-t-2xl">{mediaUrl ? media : fallbackMedia}<button type="button" className="absolute right-3 top-3 rounded-full bg-rose-600 px-4 py-2 text-xs font-extrabold text-white">Save</button></div><div className="p-4"><h3 className="text-sm font-extrabold">{title || caption.slice(0, 80) || "Untitled pin"}</h3><p className="mt-2 line-clamp-4 whitespace-pre-wrap text-xs leading-5">{caption}</p><div className="mt-4 flex items-center gap-2">{avatarNode}<div><p className="text-xs font-bold">{name}</p><p className="text-[10px] text-slate-500">{stamp}</p></div></div></div></article>;
-
-  return <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-950"><header className="flex items-center gap-3 p-4">{avatarNode}<div className="min-w-0 flex-1"><p className="text-xs font-extrabold">{name}</p><p className="text-[10px] text-slate-500">{stamp} · Public</p></div><MoreHorizontal size={18} /></header><p className="whitespace-pre-wrap px-4 pb-4 text-xs leading-5">{caption}</p>{mediaUrl ? <div className="max-h-[380px] overflow-hidden">{media}</div> : <div className="grid h-44 place-items-center bg-gradient-to-br from-indigo-50 via-purple-50 to-blue-50 text-indigo-500 dark:from-indigo-950 dark:via-purple-950/60 dark:to-blue-950"><Image size={28} /></div>}{actions([[ThumbsUp, "Like"], [MessageCircle, "Comment"], [Share2, "Share"]])}</article>;
+const NETWORK_LABELS = { facebook: "Facebook", instagram: "Instagram", linkedin: "LinkedIn", x: "X", twitter: "X", threads: "Threads", youtube: "YouTube", pinterest: "Pinterest", tiktok: "TikTok" };
+const POPOVER_W = 320;
+function postNetwork(post, accounts) {
+  const account = (accounts || []).find((a) => a.id === post?.connected_account_id);
+  const platform = String(account?.platform || post?.preview_platform || "").toLowerCase();
+  return NETWORK_LABELS[platform] || account?.platform || "the network";
+}
+function willRemoteDelete(post) { return Boolean(post?.provider_post_id) && !String(post.provider_post_id).startsWith("inbox:"); }
+function deleteCopy(post, network) {
+  return willRemoteDelete(post)
+    ? `It's removed from SocialCastly and also deleted from ${network}. If ${network} rejects the delete, the post stays here.`
+    : `It's removed from SocialCastly only. Nothing was published, so nothing changes on ${network}.`;
 }
 
-function ScheduledPostModal({ post, accounts, authorName, request, onRefresh, onClose }) {
-  const safePost = post && typeof post === "object" ? post : {};
-  const safeAccounts = Array.isArray(accounts) ? accounts.filter((item) => item && typeof item === "object") : [];
-  const [tab, setTab] = useState("preview");
-  const [editing, setEditing] = useState(false);
-  const [channelPosts, setChannelPosts] = useState(() => Array.isArray(safePost.channel_posts) && safePost.channel_posts.some((item) => item && typeof item === "object") ? safePost.channel_posts.filter((item) => item && typeof item === "object") : [safePost]);
-  const [content, setContent] = useState(typeof safePost.content === "string" ? safePost.content : "");
-  const [scheduledAt, setScheduledAt] = useState(toLocalInputValue(safePost.scheduled_at));
-  const [tag, setTag] = useState(Array.isArray(safePost.post_metadata?.tags) && typeof safePost.post_metadata.tags[0] === "string" ? safePost.post_metadata.tags[0] : "");
-  const [hashtags, setHashtags] = useState(Array.isArray(safePost.post_metadata?.hashtags) ? safePost.post_metadata.hashtags.filter((item) => typeof item === "string").join(" ") : "");
-  const [privacy, setPrivacy] = useState(typeof safePost.post_metadata?.privacy === "string" ? safePost.post_metadata.privacy : "Public");
-  const [confirmDelete, setConfirmDelete] = useState(false);
+/** Inline delete confirmation (title, one line, Cancel, red Delete). Uses DELETE /posts/:id (remote-first when published). */
+function DeleteConfirm({ post, network, busy, onCancel, onConfirm }) {
+  return <div className="pp-confirm" role="group" aria-labelledby={`pp-del-${post.id}`}>
+    <b className="sm" id={`pp-del-${post.id}`}>Delete this post?</b>
+    <p className="sm muted">{deleteCopy(post, network)}</p>
+    <div className="row" style={{ gap: 6, justifyContent: "flex-end", marginTop: 4 }}>
+      <button type="button" className="btn btn-sm btn-secondary" disabled={busy} onClick={onCancel} autoFocus>Cancel</button>
+      <button type="button" className="btn btn-sm btn-danger" disabled={busy} onClick={onConfirm}>{busy && <LoaderCircle size={13} className="animate-spin" />}Delete</button>
+    </div>
+  </div>;
+}
+
+/** Compact trash button for list rows; opens the same inline confirm in a small card under the row actions. */
+function RowDelete({ post, accounts, request, onRefresh }) {
+  const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [comments, setComments] = useState([]);
-  const [commentsLoading, setCommentsLoading] = useState(false);
-  const [commentText, setCommentText] = useState("");
-  const [commentBusy, setCommentBusy] = useState(false);
-  const metadata = safePost.post_metadata && typeof safePost.post_metadata === "object" && !Array.isArray(safePost.post_metadata) ? safePost.post_metadata : {};
-  const channelOptions = useMemo(() => {
-    return (Array.isArray(channelPosts) ? channelPosts : []).filter((variant) => variant && typeof variant === "object").map((variant) => {
-      const account = safeAccounts.find((item) => item.id === variant.connected_account_id);
-      const platform = String(variant.preview_platform || account?.platform || "facebook").toLowerCase();
-      const normalized = platform === "twitter" ? "x" : platform;
-      const brand = PREVIEW_CHANNELS[normalized] || PREVIEW_CHANNELS.facebook;
-      return { key: String(account?.id || variant.id), post: variant, platform: normalized, label: brand.label, mark: brand.mark, brand: brand.brand, accountName: variant.preview_account_name || account?.account_name || brand.label, account: account || { account_name: variant.preview_account_name || brand.label, platform: normalized } };
-    });
-  }, [safeAccounts, channelPosts]);
-  const [activeChannel, setActiveChannel] = useState(() => channelOptions[0]?.key || String(safePost.id || "unknown"));
-  const activeChannelOption = channelOptions.find((channel) => channel.key === activeChannel) || channelOptions[0];
-  const activePost = activeChannelOption?.post || safePost;
-  const activeMetadata = activePost.post_metadata && typeof activePost.post_metadata === "object" && !Array.isArray(activePost.post_metadata) ? activePost.post_metadata : {};
-  const mediaUrl = activePost.media_urls?.[0] || "";
-  const previewTitle = activePost.title || activeMetadata.title || "";
-  const previewTimestamp = activePost.published_at || activePost.scheduled_at || activePost.created_at;
-  const displayAuthor = activePost.author_name || authorName || "Workspace member";
-  const canEdit = ["draft", "scheduled"].includes(activePost.status);
-  const canDelete = activePost.status !== "publishing";
-  const PLATFORM_DELETE_LABELS = {
-    facebook: "Facebook",
-    instagram: "Instagram",
-    linkedin: "LinkedIn",
-    x: "X",
-    twitter: "X",
-    threads: "Threads",
-    youtube: "YouTube",
-    pinterest: "Pinterest",
-    tiktok: "TikTok",
-  };
-  const willRemoteDelete = Boolean(activePost.provider_post_id) && !String(activePost.provider_post_id).startsWith("inbox:");
-  const remoteDeletePlatformLabel = PLATFORM_DELETE_LABELS[activeChannelOption?.platform] || (activeChannelOption?.label || "the social network");
-  const siblingChannels = channelOptions.filter((channel) => channel.key !== (activeChannelOption?.key) && channel.post?.id !== activePost.id);
-  const characterLimit = Math.min(({ x: 280, instagram: 2200, linkedin: 3000, pinterest: 500, youtube: 5000 })[activeChannelOption?.platform] || 63206, 10000);
-
+  const ref = React.useRef(null);
   useEffect(() => {
-    if (channelOptions.some((channel) => channel.key === activeChannel)) return;
-    setActiveChannel(channelOptions[0]?.key || String(safePost.id || "unknown"));
-  }, [activeChannel, channelOptions, safePost.id]);
+    if (!open) return undefined;
+    const onDown = (e) => { if (!busy && ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const onKey = (e) => { if (e.key === "Escape" && !busy) setOpen(false); };
+    document.addEventListener("mousedown", onDown); window.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("mousedown", onDown); window.removeEventListener("keydown", onKey); };
+  }, [open, busy]);
+  if (post.status === "publishing") return null;
+  async function confirm() {
+    setBusy(true); setError("");
+    try { await request(`/posts/${post.id}`, { method: "DELETE" }); setOpen(false); await onRefresh?.(); }
+    catch (e) { setError(e.message || "Could not delete."); } finally { setBusy(false); }
+  }
+  return <span ref={ref} style={{ position: "relative", display: "inline-flex" }}>
+    <button type="button" className="btn btn-sm btn-ghost btn-icon" aria-label="Delete post" title="Delete" aria-expanded={open} onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }} style={{ color: "var(--error)" }}><Trash2 size={14} /></button>
+    {open && <div className="pop" role="dialog" aria-label="Delete post" style={{ position: "absolute", right: 0, top: 36, width: 280, zIndex: 30, gap: 8 }} onClick={(e) => e.stopPropagation()}>
+      {error && <div className="pp-err" role="alert"><span className="grow">{error}</span></div>}
+      <DeleteConfirm post={post} network={postNetwork(post, accounts)} busy={busy} onCancel={() => setOpen(false)} onConfirm={() => void confirm()} />
+    </div>}
+  </span>;
+}
 
-  useEffect(() => {
-    setContent(typeof activePost.content === "string" ? activePost.content : "");
-    setScheduledAt(toLocalInputValue(activePost.scheduled_at));
-    setTag(Array.isArray(activeMetadata.tags) && typeof activeMetadata.tags[0] === "string" ? activeMetadata.tags[0] : "");
-    setHashtags(Array.isArray(activeMetadata.hashtags) ? activeMetadata.hashtags.join(" ") : "");
-    setPrivacy(activeMetadata.privacy || "Public");
-    setEditing(false);
-    setConfirmDelete(false);
-    setCommentText("");
-    setComments([]);
-    setError("");
-  }, [activePost.id]);
+const POPOVER_GAP = 12;
 
+function popTime(value) {
+  if (!value) return "";
+  try { return new Date(value).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric" }) + " · " + new Date(value).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }); }
+  catch { return String(value); }
+}
+
+function postPermalink(post) {
+  const m = post?.post_metadata && typeof post.post_metadata === "object" ? post.post_metadata : {};
+  const url = m.permalink || m.permalink_url || m.post_url || m.url;
+  return typeof url === "string" && /^https?:\/\//i.test(url) ? url : "";
+}
+
+function useIsMobile() {
+  const query = "(max-width: 767px)";
+  const [mobile, setMobile] = useState(() => typeof window !== "undefined" && window.matchMedia?.(query).matches);
   useEffect(() => {
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    function onKeyDown(event) {
-      if (event.key !== "Escape" || busy) return;
+    const mq = window.matchMedia?.(query);
+    if (!mq) return undefined;
+    const on = () => setMobile(mq.matches);
+    mq.addEventListener?.("change", on);
+    return () => mq.removeEventListener?.("change", on);
+  }, []);
+  return mobile;
+}
+
+/** Compact post summary anchored to the clicked calendar post (bottom sheet on mobile). */
+function PostPopover({ post, anchor, accounts, request, onRefresh, onClose, onEdit, onDuplicate, inline = false }) {
+  const mobile = useIsMobile();
+  const [current, setCurrent] = useState(post);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [busy, setBusy] = useState("");
+  const [error, setError] = useState("");
+  const [pos, setPos] = useState(null);
+  const [dragY, setDragY] = useState(0);
+  const popRef = React.useRef(null);
+  const dragStart = React.useRef(null);
+  useEffect(() => { setCurrent(post); setConfirmDelete(false); setMenuOpen(false); setError(""); }, [post?.id]);
+
+  const account = (accounts || []).find((a) => a.id === current.connected_account_id);
+  const platform = String(account?.platform || current.preview_platform || "").toLowerCase();
+  const network = NETWORK_LABELS[platform] || account?.platform || "the network";
+  const channelName = account?.account_name ? `${network} · ${account.account_name}` : network;
+  const mediaUrl = Array.isArray(current.media_urls) ? current.media_urls[0] : "";
+  const isVideo = /\.(mp4|mov|webm|m4v|ogv)(\?|$)/i.test(mediaUrl || "");
+  const published = current.status === "published";
+    const permalink = published ? postPermalink(current) : "";
+  const canArchive = ["published", "failed", "cancelled"].includes(current.status);
+  const canDelete = current.status !== "publishing";
+  const canEdit = ["draft", "scheduled"].includes(current.status); // PATCH only accepts draft/scheduled
+  const timeText = current.status === "draft" ? "No time set" : popTime(published ? (current.published_at || current.scheduled_at) : current.scheduled_at);
+
+  // Highlight the clicked post and return focus to it on close.
+  useEffect(() => {
+    if (!anchor) return undefined;
+    const prevOutline = anchor.style.outline; const prevOffset = anchor.style.outlineOffset;
+    anchor.style.outline = "2px solid var(--primary)"; anchor.style.outlineOffset = "1px";
+    return () => { anchor.style.outline = prevOutline; anchor.style.outlineOffset = prevOffset; try { anchor.focus({ preventScroll: true }); } catch { /* detached */ } };
+  }, [anchor]);
+
+  // Position beside the anchor; flip sides / open upward near edges.
+  React.useLayoutEffect(() => {
+    if (mobile || inline) { setPos(null); return undefined; }
+    function place() {
+      const el = popRef.current; if (!el) return;
+      const h = el.offsetHeight; const vw = window.innerWidth; const vh = window.innerHeight;
+      if (!anchor || !anchor.isConnected) { setPos({ left: Math.max(8, (vw - POPOVER_W) / 2), top: Math.max(8, (vh - h) / 2), side: "none" }); return; }
+      const r = anchor.getBoundingClientRect();
+      let side = r.right + POPOVER_GAP + POPOVER_W <= vw - 8 ? "right" : r.left - POPOVER_GAP - POPOVER_W >= 8 ? "left" : "below";
+      let left; let top; let arrow;
+      if (side === "below") {
+        left = Math.min(Math.max(8, r.left + r.width / 2 - POPOVER_W / 2), vw - POPOVER_W - 8);
+        top = r.bottom + POPOVER_GAP;
+        if (top + h > vh - 8) { side = "above"; top = Math.max(8, r.top - POPOVER_GAP - h); }
+        arrow = Math.min(Math.max(16, r.left + r.width / 2 - left), POPOVER_W - 16);
+      } else {
+        left = side === "right" ? r.right + POPOVER_GAP : r.left - POPOVER_GAP - POPOVER_W;
+        top = r.top + r.height / 2 - 28;
+        if (top + h > vh - 8) top = Math.max(8, vh - 8 - h);
+        if (top < 8) top = 8;
+        arrow = Math.min(Math.max(14, r.top + r.height / 2 - top), h - 14);
+      }
+      setPos({ left, top, side, arrow });
+    }
+    place();
+    window.addEventListener("resize", place); window.addEventListener("scroll", place, true);
+    return () => { window.removeEventListener("resize", place); window.removeEventListener("scroll", place, true); };
+  }, [anchor, mobile, inline, confirmDelete, menuOpen, current.status, error]);
+
+  // Focus in, Esc and outside click close.
+  useEffect(() => { const t = setTimeout(() => popRef.current?.querySelector("[data-autofocus]")?.focus?.() || popRef.current?.focus(), 0); return () => clearTimeout(t); }, [post?.id]);
+  useEffect(() => {
+    function onKey(e) {
+      if (e.key !== "Escape" || busy) return;
+      e.stopPropagation();
+      if (menuOpen) { setMenuOpen(false); return; }
       if (confirmDelete) { setConfirmDelete(false); return; }
+      if (inline) return; // day popover owns Esc
       onClose();
     }
-    window.addEventListener("keydown", onKeyDown);
-    return () => { document.body.style.overflow = previousOverflow; window.removeEventListener("keydown", onKeyDown); };
-  }, [busy, confirmDelete, onClose]);
+    function onDown(e) {
+      if (inline || busy || !popRef.current || popRef.current.contains(e.target)) return;
+      if (anchor && anchor.contains(e.target)) return;
+      if (mobile) return; // backdrop handles it
+      onClose();
+    }
+    window.addEventListener("keydown", onKey, true); document.addEventListener("mousedown", onDown, true);
+    return () => { window.removeEventListener("keydown", onKey, true); document.removeEventListener("mousedown", onDown, true); };
+  }, [busy, menuOpen, confirmDelete, onClose, anchor, mobile, inline]);
 
-  useEffect(() => {
-    if (tab !== "comments") return undefined;
-    let active = true;
-    setCommentsLoading(true);
-    setComments([]);
-    request(`/publish/posts/${activePost.id}/comments`)
-      .then((items) => { if (active) setComments(Array.isArray(items) ? items : []); })
-      .catch((e) => { if (active) setError(e.message); })
-      .finally(() => { if (active) setCommentsLoading(false); });
-    return () => { active = false; };
-  }, [tab, activePost.id, request]);
-
-  async function saveChanges() {
-    setBusy(true); setError("");
-    try {
-      const metadataUpdate = { ...activeMetadata, tags: tag ? [tag] : [], hashtags: hashtags.split(/\s+/).map((item) => item.trim()).filter(Boolean), privacy };
-      const updated = await request(`/posts/${activePost.id}`, { method: "PATCH", body: JSON.stringify({ content, scheduled_at: new Date(scheduledAt).toISOString(), post_metadata: metadataUpdate }) });
-      setChannelPosts((current) => current.map((item) => item.id === activePost.id ? { ...item, ...updated } : item));
-      setEditing(false);
-      await onRefresh?.();
-    } catch (e) { setError(e.message); } finally { setBusy(false); }
+  async function retry() {
+    setBusy("retry"); setError("");
+    try { const updated = await request(`/posts/${current.id}/retry`, { method: "POST" }); if (updated && typeof updated === "object") setCurrent((c) => ({ ...c, ...updated })); await onRefresh?.(); }
+    catch (e) { setError(e.message || "Retry failed."); } finally { setBusy(""); }
+  }
+  async function archive() {
+    setMenuOpen(false); setBusy("archive"); setError("");
+    try { await request(`/posts/${current.id}/archive`, { method: "POST" }); await onRefresh?.(); onClose(); }
+    catch (e) { setError(e.message || "Could not archive."); setBusy(""); }
+  }
+  async function remove() {
+    setBusy("delete"); setError("");
+    try { await request(`/posts/${current.id}`, { method: "DELETE" }); await onRefresh?.(); onClose(); }
+    catch (e) { setError(e.message || "Could not delete."); setBusy(""); }
   }
 
-  async function deletePost() {
-    setBusy(true); setError("");
-    try { await request(`/posts/${activePost.id}`, { method: "DELETE" }); await onRefresh?.(); onClose(); }
-    catch (e) { setError(e.message); setBusy(false); }
-  }
-
-  async function retryPost() {
-    setBusy(true); setError("");
-    try {
-      const updated = await request(`/posts/${activePost.id}/retry`, { method: "POST" });
-      setChannelPosts((current) => current.map((item) => item.id === activePost.id ? { ...item, ...updated } : item));
-      await onRefresh?.();
-    } catch (e) { setError(e.message); }
-    finally { setBusy(false); }
-  }
-
-  async function archivePost() {
-    setBusy(true); setError("");
-    try {
-      const updated = await request(`/posts/${activePost.id}/archive`, { method: "POST" });
-      setChannelPosts((current) => current.map((item) => item.id === activePost.id ? { ...item, ...updated } : item));
-      await onRefresh?.();
-    } catch (e) { setError(e.message); }
-    finally { setBusy(false); }
-  }
-
-  function discardEdits() {
-    setContent(activePost.content || "");
-    setScheduledAt(toLocalInputValue(activePost.scheduled_at));
-    setHashtags(Array.isArray(activeMetadata.hashtags) ? activeMetadata.hashtags.join(" ") : "");
-    setTag(activeMetadata.tags?.[0] || "");
-    setPrivacy(activeMetadata.privacy || "Public");
-    setEditing(false);
-  }
-
-  async function publishNow() {
-    setBusy(true); setError("");
-    try {
-      const updated = await request(`/posts/${activePost.id}/publish-now`, { method: "POST" });
-      setChannelPosts((current) => current.map((item) => item.id === activePost.id ? { ...item, ...updated } : item));
-      setEditing(false);
-      await onRefresh?.();
-    } catch (e) { setError(e.message); }
-    finally { setBusy(false); }
-  }
-
-  async function addComment(event) {
-    event.preventDefault();
-    const body = commentText.trim();
-    if (!body) return;
-    setCommentBusy(true); setError("");
-    try {
-      await request(`/publish/posts/${activePost.id}/comments`, { method: "POST", body: JSON.stringify({ body }) });
-      setCommentText("");
-      const items = await request(`/publish/posts/${activePost.id}/comments`);
-      setComments(Array.isArray(items) ? items : []);
-    } catch (e) { setError(e.message); }
-    finally { setCommentBusy(false); }
-  }
-
-  return createPortal(<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/20 p-4 backdrop-blur-[2px]" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy && !commentBusy && !confirmDelete) onClose(); }}>
-    <section role="dialog" aria-modal="true" aria-labelledby="scheduled-post-title" className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-[28px] border border-white/70 bg-white text-slate-900 shadow-[0_32px_100px_rgba(15,23,42,.20)] dark:border-slate-700 dark:bg-slate-900 dark:text-white">
-      <header className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800 sm:px-6"><div className="flex min-w-0 items-center gap-3"><AccountAvatar account={activeChannelOption.account || { account_name: activeChannelOption.accountName, platform: activeChannelOption.platform }} size={40} showBadge={false} /><div className="min-w-0"><div className="flex items-center gap-2"><h2 id="scheduled-post-title" className=" text-base font-extrabold">Post details</h2><span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[9px] font-bold capitalize text-indigo-700 dark:bg-indigo-950/70 dark:text-indigo-200">{activePost.status}</span></div><p className="truncate text-xs text-slate-500 dark:text-slate-400">{activeChannelOption.accountName} · {displayAuthor}</p></div></div><button type="button" onClick={onClose} aria-label="Close post preview" className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-white"><X size={18} /></button></header>
-
-      <div className="flex flex-wrap justify-end gap-2 border-b border-slate-100 px-5 py-3 dark:border-slate-800 sm:px-6">{activePost.status === "failed" && <button type="button" disabled={busy} className={button} onClick={() => void retryPost()}><RotateCcw size={13} />Retry</button>}{["published", "failed", "cancelled"].includes(activePost.status) && <button type="button" disabled={busy} className={button} onClick={() => void archivePost()}><Archive size={13} />Archive</button>}{canEdit && !editing && <button type="button" disabled={busy} title="Publish this post immediately" className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-[11px] font-bold text-indigo-700 transition hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-indigo-900 dark:bg-indigo-950/50 dark:text-indigo-200" onClick={() => void publishNow()}>{busy ? <LoaderCircle size={13} className="animate-spin" /> : <Send size={13} />}Post now</button>}{editing ? <><button type="button" disabled={busy} className={button} onClick={() => discardEdits()}><X size={13} />Cancel edit</button><button type="button" disabled={busy || !scheduledAt || content.length > characterLimit} className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-indigo-600 via-purple-600 to-blue-600 px-3 py-2 text-[11px] font-bold text-white shadow-md shadow-indigo-500/20 disabled:cursor-not-allowed disabled:opacity-40" onClick={() => void saveChanges()}>{busy ? <LoaderCircle size={13} className="animate-spin" /> : <Check size={13} />}Save changes</button></> : <button type="button" disabled={!canEdit} title={canEdit ? "Edit this account’s post" : "Only draft and scheduled posts can be edited"} className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-indigo-600 via-purple-600 to-blue-600 px-3 py-2 text-[11px] font-bold text-white shadow-md shadow-indigo-500/20 disabled:cursor-not-allowed disabled:opacity-40" onClick={() => { setEditing(true); setTab("details"); }}><Pencil size={13} />Edit</button>}<button type="button" disabled={busy || !canDelete} className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 px-3 py-2 text-[11px] font-bold text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-rose-900 dark:text-rose-300 dark:hover:bg-rose-950/40" onClick={() => setConfirmDelete(true)}><Trash2 size={13} />Delete</button></div>
-
-      <div role="tablist" aria-label="Select post account" className="w-full max-w-full min-h-[54px] touch-pan-x overflow-x-auto overflow-y-hidden border-b border-slate-100 py-2 [scrollbar-width:thin] [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 dark:border-slate-800 dark:[&::-webkit-scrollbar-thumb]:bg-slate-600">
-        <div className="flex min-w-max flex-row items-center gap-2 whitespace-nowrap px-5 sm:px-6">{channelOptions.map((channel) => {
-        const selected = activeChannelOption.key === channel.key;
-        return <button key={channel.key} type="button" role="tab" aria-selected={selected} onClick={() => setActiveChannel(channel.key)} className={`sc-pill shrink-0 ${selected ? "sc-pill-on" : ""}`} style={{ "--channel-color": channel.brand }} title={`${channel.label} · ${channel.accountName}`}>
-          <span className="channel-icon" style={{ color: channel.brand }}><ModalChannelIcon platform={channel.platform} mark={channel.mark} /></span>
-          <span>{channel.label}</span>
-          <span className={`max-w-36 truncate text-[10px] font-medium ${selected ? "text-slate-600 dark:text-slate-200" : "text-slate-400"}`}>{channel.accountName}</span>
-          <span className="channel-state-dot" />
-        </button>;
-      })}</div>
-      </div>
-
-      <div role="tablist" aria-label="Scheduled post information" className="flex gap-5 border-b border-slate-100 px-5 dark:border-slate-800 sm:px-6">{[{ id: "preview", label: "Preview" }, { id: "details", label: "Details" }, { id: "comments", label: "Internal comments" }].map(({ id, label }) => <button type="button" role="tab" aria-selected={tab === id} key={id} onClick={() => setTab(id)} className={`border-b-2 px-1 py-3 text-xs font-bold transition ${tab === id ? "border-indigo-600 text-indigo-700 dark:border-purple-400 dark:text-purple-200" : "border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white"}`}>{label}</button>)}</div>
-
-      <div className="min-h-0 flex-1 overflow-y-auto scroll-smooth p-5 sm:p-6">
-        {error && <p role="alert" className="mb-4 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200">{error}</p>}
-        {tab === "preview" ? <div className="mx-auto max-w-md"><NativePostPreview platform={activeChannelOption.platform} accountName={activeChannelOption.accountName} authorName={displayAuthor} content={activePost.content || ""} mediaUrl={mediaUrl} title={previewTitle} timestamp={previewTimestamp} format={activePost.post_format || activeMetadata.format || "Post"} account={activeChannelOption.account} /></div> : tab === "details" ? <div className="mx-auto max-w-lg space-y-5">
-          <div className="flex flex-wrap items-center gap-2"><span className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-[11px] font-bold text-indigo-700 dark:border-indigo-900 dark:bg-indigo-950/60 dark:text-indigo-200">{activeChannelOption.accountName} · {activeChannelOption.label}</span><span className="rounded-full bg-slate-100 px-3 py-1.5 text-[10px] font-bold capitalize text-slate-600 dark:bg-slate-800 dark:text-slate-300">{activePost.status === "published" && activePost.provider_post_id ? "published" : activePost.status === "published" ? "unconfirmed" : activePost.status}</span></div>
-          <div className="rounded-xl bg-slate-50 px-3 py-3 text-xs leading-5 dark:bg-slate-800/70"><p>Provider post: {activePost.provider_post_id || "Not confirmed"}</p><p>Attempts: {activePost.attempt_count ?? 0}{activePost.latest_execution_outcome ? ` · last log ${activePost.latest_execution_outcome}` : ""}</p>{activePost.last_error_message && <p className="text-rose-600 dark:text-rose-300">{activePost.last_error_code ? `${activePost.last_error_code}: ` : ""}{activePost.last_error_message}</p>}</div>
-          <label className="block"><span className="mb-2 flex items-center gap-2 text-xs font-bold"><Clock3 size={14} className="text-indigo-500" />Scheduled time</span>{editing ? <input type="datetime-local" value={scheduledAt} onChange={(event) => setScheduledAt(event.target.value)} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-950" /> : <div className="rounded-xl bg-slate-50 px-3 py-3 text-sm dark:bg-slate-800/70">{formatScheduledLocal(activePost.scheduled_at)}</div>}</label>
-          <label className="block"><span className="mb-2 flex items-center justify-between gap-2 text-xs font-bold"><span className="flex items-center gap-2"><MessageSquareText size={14} className="text-indigo-500" />Caption for {activeChannelOption.label}</span><span className={`font-medium ${content.length > characterLimit ? "text-rose-500" : "text-slate-400"}`}>{content.length.toLocaleString()} / {characterLimit.toLocaleString()}</span></span>{editing ? <textarea rows={5} maxLength={characterLimit} value={content} onChange={(event) => setContent(event.target.value)} className="w-full resize-y rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm leading-6 outline-none focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-950" /> : <div className="whitespace-pre-wrap rounded-xl bg-slate-50 px-3 py-3 text-sm leading-6 dark:bg-slate-800/70">{activePost.content || "No caption added."}</div>}</label>
-          <label className="block"><span className="mb-2 flex items-center gap-2 text-xs font-bold"><Tag size={14} className="text-indigo-500" />Targeted hashtags</span>{editing ? <input value={hashtags} onChange={(event) => setHashtags(event.target.value)} placeholder="#brand #campaign" className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs outline-none focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-950" /> : <div className="rounded-xl bg-slate-50 px-3 py-3 text-xs dark:bg-slate-800/70">{hashtags || "No platform-specific hashtags"}</div>}</label>
-          <div className="grid gap-4 sm:grid-cols-2"><label className="block"><span className="mb-2 flex items-center gap-2 text-xs font-bold"><Tag size={14} className="text-indigo-500" />Tags</span><select disabled={!editing} value={tag} onChange={(event) => setTag(event.target.value)} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs outline-none focus:border-indigo-400 disabled:opacity-75 dark:border-slate-700 dark:bg-slate-950"><option value="">No tag</option>{[...new Set([...(Array.isArray(activeMetadata.tags) ? activeMetadata.tags : []), "Campaign", "Evergreen", "Product launch", "Behind the scenes"])].filter(Boolean).map((value) => <option key={value} value={value}>{value}</option>)}</select></label><label className="block"><span className="mb-2 flex items-center gap-2 text-xs font-bold"><ShieldCheck size={14} className="text-indigo-500" />Privacy</span><select disabled={!editing} value={privacy} onChange={(event) => setPrivacy(event.target.value)} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs outline-none focus:border-indigo-400 disabled:opacity-75 dark:border-slate-700 dark:bg-slate-950"><option>Public</option><option>Followers</option><option>Only me</option></select></label></div>
-          <p className="text-[10px] text-slate-400">Caption, hashtags, tags, and settings save to this account’s post only. Publishing status is managed by the publishing service.</p>
-          {editing && <div className="sticky bottom-0 z-10 -mx-1 flex justify-end gap-2 border-t border-slate-100 bg-white/95 px-1 py-3 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95"><button type="button" className={button} onClick={() => discardEdits()}>Cancel</button><button type="button" disabled={busy || !scheduledAt || content.length > characterLimit} className={primary} onClick={() => void saveChanges()}>{busy ? <LoaderCircle size={14} className="animate-spin" /> : <Check size={14} />}Save changes</button></div>}
-        </div> : <section className="mx-auto max-w-lg"><div className="mb-4"><h3 className=" text-sm font-extrabold">Team notes · {activeChannelOption.accountName}</h3><p className="mt-1 text-xs text-slate-500">These internal notes are attached only to this account’s scheduled post.</p></div>{commentsLoading ? <div className="grid min-h-32 place-items-center text-xs text-slate-400"><LoaderCircle className="animate-spin" size={18} /></div> : comments.length ? <div className="mb-5 space-y-4">{comments.map((comment) => { const name = comment.author_name || "Workspace member"; return <article key={comment.id} className="flex gap-3"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-gradient-to-br from-indigo-600 to-purple-600 text-[11px] font-extrabold text-white">{name.slice(0, 1).toUpperCase()}</span><div className="min-w-0 flex-1 rounded-2xl bg-slate-50 px-4 py-3 dark:bg-slate-800/70"><div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1"><p className="text-xs font-extrabold">{name}</p><time className="text-[10px] text-slate-400">{new Date(comment.created_at).toLocaleString()}</time></div><p className="mt-2 whitespace-pre-wrap text-xs leading-5 text-slate-700 dark:text-slate-200">{comment.body}</p></div></article>; })}</div> : <div className="mb-5 rounded-2xl border border-dashed border-slate-200 py-10 text-center dark:border-slate-700"><span className="mx-auto grid h-10 w-10 place-items-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300"><MessageSquareText size={17} /></span><p className="mt-3 text-xs font-bold">No notes for this account yet</p><p className="mt-1 text-[11px] text-slate-400">Leave feedback specific to {activeChannelOption.label}.</p></div>}<form onSubmit={addComment} className="rounded-2xl border border-slate-200 p-3 focus-within:border-indigo-300 dark:border-slate-700 dark:focus-within:border-indigo-700"><textarea value={commentText} onChange={(event) => setCommentText(event.target.value)} rows={3} maxLength={5000} placeholder={`Internal note for ${activeChannelOption.label}…`} className="w-full resize-y bg-transparent px-1 py-1 text-xs leading-5 outline-none placeholder:text-slate-400" /><div className="mt-2 flex items-center justify-between"><span className="text-[10px] text-slate-400">Private workspace note</span><button type="submit" disabled={commentBusy || !commentText.trim()} className={primary}>{commentBusy ? <LoaderCircle size={14} className="animate-spin" /> : <Send size={14} />}Add note</button></div></form></section>}
-      </div>
-      <footer className="flex items-center justify-between border-t border-slate-100 px-5 py-3 text-[10px] text-slate-400 dark:border-slate-800 sm:px-6"><span>Post ID · {String(activePost.id).slice(0, 8)}</span><span>Workspace content · private</span></footer>
-    </section>
-
-    {confirmDelete && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-[1px]" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) setConfirmDelete(false); }} role="presentation">
-      <div role="alertdialog" aria-modal="true" aria-labelledby="delete-post-title" aria-describedby="delete-post-desc" className="w-full max-w-md overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_28px_80px_rgba(15,23,42,.28)] dark:border-slate-700 dark:bg-slate-900">
-        <div className="border-b border-rose-100 bg-rose-50/80 px-5 py-4 dark:border-rose-900/50 dark:bg-rose-950/40">
-          <div className="flex items-start gap-3">
-            <span className="mt-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-rose-600 text-white shadow-md shadow-rose-500/25"><Trash2 size={18} /></span>
-            <div className="min-w-0">
-              <h3 id="delete-post-title" className=" text-base font-extrabold text-slate-900 dark:text-white">Delete this post?</h3>
-              <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">{activeChannelOption?.accountName || "This channel"} · {activeChannelOption?.label || "channel"}</p>
-            </div>
-          </div>
-        </div>
-        <div id="delete-post-desc" className="space-y-3 px-5 py-4 text-sm leading-6 text-slate-700 dark:text-slate-200">
-          {willRemoteDelete ? (
-            <>
-              <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-3 text-xs font-semibold text-rose-800 dark:border-rose-900 dark:bg-rose-950/50 dark:text-rose-100">
-                Deleting will also remove this post from <span className="font-extrabold">{remoteDeletePlatformLabel}</span>
-                {remoteDeletePlatformLabel === "Facebook" ? " (your Facebook Page/feed)" : ""}.
-                It will disappear from Social Studio and from {remoteDeletePlatformLabel}.
-              </p>
-              <p className="text-xs text-slate-500 dark:text-slate-400">If {remoteDeletePlatformLabel} rejects the delete, the post stays here so nothing is lost silently.</p>
-            </>
-          ) : (
-            <p className="text-xs text-slate-600 dark:text-slate-300">This permanently removes the post from Social Studio. It was not confirmed on a social network, so nothing is removed elsewhere.</p>
-          )}
-          {siblingChannels.length > 0 && (
-            <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-[11px] text-slate-600 dark:border-slate-700 dark:bg-slate-800/70 dark:text-slate-300">
-              Other channels in this group stay untouched: {siblingChannels.map((c) => c.accountName || c.label).join(", ")}. Delete each channel separately if you also want those network posts removed.
-            </p>
-          )}
-          {error && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200">{error}</p>}
-        </div>
-        <div className="flex justify-end gap-2 border-t border-slate-100 px-5 py-3 dark:border-slate-800">
-          <button type="button" disabled={busy} className={button} onClick={() => setConfirmDelete(false)}>Cancel</button>
-          <button type="button" disabled={busy} className="inline-flex items-center gap-1.5 rounded-xl bg-rose-600 px-3.5 py-2 text-[11px] font-bold text-white shadow-md shadow-rose-500/20 transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50" onClick={() => void deletePost()}>
-            {busy ? <LoaderCircle size={13} className="animate-spin" /> : <Trash2 size={13} />}
-            {willRemoteDelete ? `Delete from app & ${remoteDeletePlatformLabel}` : "Delete permanently"}
-          </button>
-        </div>
+  const icoClock = <svg className="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>;
+  const body = <>
+    <div className="pp-head">
+      <Ch platform={platform} />
+      <span className="pp-ch" id="pp-title">{channelName}</span>
+      <StatusBadge status={current.status} post={current} />
+      <button type="button" className="pp-x" aria-label="Close" onClick={onClose} data-autofocus>×</button>
+    </div>
+    <div className="pp-time">{icoClock}{timeText || "No time set"}</div>
+    <div className="pp-body">
+      <p className="pp-cap">{current.content || postTitle(current)}</p>
+      {mediaUrl && (isVideo ? <video className="pp-thumb" src={mediaUrl} muted style={{ objectFit: "cover" }} /> : <img className="pp-thumb" src={mediaUrl} alt="" style={{ objectFit: "cover" }} onError={hideBrokenImg} />)}
+    </div>
+    {current.status === "failed" && <div className="pp-err" role="status">
+      <svg className="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path d="M12 8v4M12 16h.01" /></svg>
+      <span className="grow pp-err-msg" title={current.last_error_message || ""}>{current.last_error_message || `${network} rejected this post.`}</span>
+      <button type="button" className="pp-link" style={{ background: "none", border: 0, padding: 0 }} disabled={!!busy} onClick={() => void retry()}>{busy === "retry" ? <LoaderCircle size={14} className="animate-spin" /> : <svg className="ico" viewBox="0 0 24 24"><path d="M1 4v6h6M23 20v-6h-6" /><path d="M20.5 9A9 9 0 0 0 5.6 5.6L1 10m22 4l-4.6 4.4A9 9 0 0 1 3.5 15" /></svg>}Retry</button>
+      {canDelete && <button type="button" className="pp-link" style={{ background: "none", border: 0, padding: 0 }} disabled={!!busy} onClick={() => { setMenuOpen(false); setConfirmDelete(true); }}><Trash2 size={14} />Delete</button>}
+    </div>}
+    {permalink && <div className="pp-meta"><span /><a className="pp-link" href={permalink} target="_blank" rel="noreferrer">View on {network}<svg className="ico" viewBox="0 0 24 24"><path d="M7 17L17 7M8 7h9v9" /></svg></a></div>}
+    {error && <div className="pp-err" role="alert"><span className="grow">{error}</span></div>}
+    {confirmDelete ? <DeleteConfirm post={current} network={network} busy={busy === "delete"} onCancel={() => setConfirmDelete(false)} onConfirm={() => void remove()} /> : <div className="pp-foot">
+      <span className="xs subtle">ID {String(current.id || "").slice(0, 8)}</span>
+      <div className="row" style={{ gap: 6, position: "relative" }}>
+        {(canArchive || canDelete) && <button type="button" className="btn btn-sm btn-secondary btn-icon" aria-label="More actions" aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen((v) => !v)}><svg className="ico" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /></svg></button>}
+        {menuOpen && <div className="pp-menu" role="menu" style={mobile ? { top: "auto", bottom: 40 } : undefined}>
+          {canArchive && <a role="menuitem" tabIndex={0} href="#" onClick={(e) => { e.preventDefault(); void archive(); }}><Archive size={15} />Archive</a>}
+          {canDelete && <a role="menuitem" tabIndex={0} href="#" className="danger" onClick={(e) => { e.preventDefault(); setMenuOpen(false); setConfirmDelete(true); }}><Trash2 size={15} />Delete…</a>}
+        </div>}
+        {published
+          ? <button type="button" className="btn btn-sm btn-primary" disabled={!!busy} onClick={() => onDuplicate(current, account)}><Copy size={14} />Duplicate</button>
+          : canEdit && <button type="button" className="btn btn-sm btn-primary" disabled={!!busy} onClick={() => onEdit(current)}><Pencil size={14} />Edit</button>}
       </div>
     </div>}
+  </>;
+
+  if (inline) return <div ref={popRef} className="dp-detail" role="group" aria-labelledby="pp-title">{body}</div>;
+  if (mobile) {
+    const start = (e) => { dragStart.current = e.touches?.[0]?.clientY ?? null; };
+    const move = (e) => { if (dragStart.current == null) return; setDragY(Math.max(0, (e.touches?.[0]?.clientY ?? 0) - dragStart.current)); };
+    const end = () => { if (dragY > 80 && !busy) onClose(); else setDragY(0); dragStart.current = null; };
+    return createPortal(<div className="scd sc-pop-layer" style={{ position: "fixed", inset: 0, zIndex: 70 }}>
+      <div style={{ position: "absolute", inset: 0, background: "rgba(15,23,42,.45)" }} onClick={() => !busy && onClose()} />
+      <div ref={popRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="pp-title" className="pop sheet pp-sheet"
+        style={{ position: "fixed", transform: `translateY(${dragY}px)`, transition: dragStart.current == null ? "transform .2s" : "none" }}
+        onTouchStart={start} onTouchMove={move} onTouchEnd={end}>{body}</div>
+    </div>, document.body);
+  }
+  const arrowStyle = pos && pos.side !== "none" ? (pos.side === "right" ? { left: -6, top: pos.arrow - 5, borderLeft: "1px solid var(--border)", borderBottom: "1px solid var(--border)" }
+    : pos.side === "left" ? { right: -6, top: pos.arrow - 5, borderRight: "1px solid var(--border)", borderTop: "1px solid var(--border)" }
+    : pos.side === "below" ? { top: -6, left: pos.arrow - 5, borderLeft: "1px solid var(--border)", borderTop: "1px solid var(--border)" }
+    : { bottom: -6, left: pos.arrow - 5, borderRight: "1px solid var(--border)", borderBottom: "1px solid var(--border)" }) : null;
+  return createPortal(<div className="scd sc-pop-layer" style={{ position: "fixed", inset: 0, zIndex: 70, pointerEvents: "none" }}>
+    <div ref={popRef} tabIndex={-1} role="dialog" aria-modal="false" aria-labelledby="pp-title" className="pop"
+      style={{ position: "fixed", left: pos?.left ?? -9999, top: pos?.top ?? 0, pointerEvents: "auto", visibility: pos ? "visible" : "hidden" }}>
+      {arrowStyle && <span aria-hidden="true" style={{ position: "absolute", width: 10, height: 10, background: "var(--surface)", transform: "rotate(45deg)", ...arrowStyle }} />}
+      {body}
+    </div>
+  </div>, document.body);
+}
+
+/** Existing edit flow (caption, schedule, hashtags, tags, privacy, Save, Post now). */
+function PostEditModal({ post, accounts, request, onRefresh, onClose }) {
+  const safePost = post && typeof post === "object" ? post : {};
+  const account = (accounts || []).find((a) => a.id === safePost.connected_account_id);
+  const platform = String(account?.platform || "facebook").toLowerCase();
+  const network = NETWORK_LABELS[platform] || platform;
+  const md = safePost.post_metadata && typeof safePost.post_metadata === "object" && !Array.isArray(safePost.post_metadata) ? safePost.post_metadata : {};
+  const [content, setContent] = useState(typeof safePost.content === "string" ? safePost.content : "");
+  const [scheduledAt, setScheduledAt] = useState(toLocalInputValue(safePost.scheduled_at));
+  const [tag, setTag] = useState(Array.isArray(md.tags) && typeof md.tags[0] === "string" ? md.tags[0] : "");
+  const [hashtags, setHashtags] = useState(Array.isArray(md.hashtags) ? md.hashtags.filter((x) => typeof x === "string").join(" ") : "");
+  const [privacy, setPrivacy] = useState(typeof md.privacy === "string" ? md.privacy : "Public");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const characterLimit = Math.min(({ x: 280, instagram: 2200, linkedin: 3000, pinterest: 500, youtube: 5000 })[platform] || 63206, 10000);
+  const canPostNow = ["draft", "scheduled"].includes(safePost.status);
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape" && !busy) onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [busy, onClose]);
+  async function save() {
+    setBusy(true); setError("");
+    try {
+      const post_metadata = { ...md, tags: tag ? [tag] : [], hashtags: hashtags.split(/\s+/).map((x) => x.trim()).filter(Boolean), privacy };
+      await request(`/posts/${safePost.id}`, { method: "PATCH", body: JSON.stringify({ content, scheduled_at: new Date(scheduledAt).toISOString(), post_metadata }) });
+      await onRefresh?.(); onClose();
+    } catch (e) { setError(e.message); setBusy(false); }
+  }
+  async function publishNow() {
+    setBusy(true); setError("");
+    try { await request(`/posts/${safePost.id}/publish-now`, { method: "POST" }); await onRefresh?.(); onClose(); }
+    catch (e) { setError(e.message); setBusy(false); }
+  }
+  return createPortal(<div className="scd"><div className="modal-wrap" style={{ position: "fixed", zIndex: 80 }} onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}>
+    <div className="modal" role="dialog" aria-modal="true" aria-labelledby="edit-post-title" style={{ padding: 20, maxWidth: 520, width: "100%" }}>
+      <div className="row between" style={{ marginBottom: 14 }}><div className="row" style={{ gap: 8, minWidth: 0 }}><Ch platform={platform} size="md" /><h3 id="edit-post-title" style={{ margin: 0 }}>Edit post · {network}{account?.account_name ? ` · ${account.account_name}` : ""}</h3></div><button type="button" className="pp-x" aria-label="Close" onClick={onClose}>×</button></div>
+      {error && <div role="alert" className="alert error sm" style={{ marginBottom: 12 }}>{error}</div>}
+      <div className="col" style={{ gap: 12 }}>
+        <label className="col" style={{ gap: 6 }}><span className="sm" style={{ fontWeight: 600 }}>Scheduled time</span><input className="input" type="datetime-local" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} /></label>
+        <label className="col" style={{ gap: 6 }}><span className="row between sm" style={{ fontWeight: 600 }}>Caption<span className="xs subtle" style={{ color: content.length > characterLimit ? "var(--error)" : undefined }}>{content.length.toLocaleString()} / {characterLimit.toLocaleString()}</span></span><textarea className="input" rows={5} value={content} onChange={(e) => setContent(e.target.value)} style={{ resize: "vertical", minHeight: 110, height: "auto", padding: "10px 12px" }} /></label>
+        <label className="col" style={{ gap: 6 }}><span className="sm" style={{ fontWeight: 600 }}>Hashtags</span><input className="input" value={hashtags} placeholder="#brand #campaign" onChange={(e) => setHashtags(e.target.value)} /></label>
+        <div className="row" style={{ gap: 12 }}>
+          <label className="col grow" style={{ gap: 6 }}><span className="sm" style={{ fontWeight: 600 }}>Tag</span><select className="input" value={tag} onChange={(e) => setTag(e.target.value)}><option value="">No tag</option>{[...new Set([...(Array.isArray(md.tags) ? md.tags : []), "Campaign", "Evergreen", "Product launch", "Behind the scenes"])].filter(Boolean).map((v) => <option key={v} value={v}>{v}</option>)}</select></label>
+          <label className="col grow" style={{ gap: 6 }}><span className="sm" style={{ fontWeight: 600 }}>Privacy</span><select className="input" value={privacy} onChange={(e) => setPrivacy(e.target.value)}><option>Public</option><option>Followers</option><option>Only me</option></select></label>
+        </div>
+      </div>
+      <div className="row" style={{ gap: 8, justifyContent: "flex-end", marginTop: 18 }}>
+        <button type="button" className="btn btn-secondary" disabled={busy} onClick={onClose}>Cancel</button>
+        {canPostNow && <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => void publishNow()}><Send size={14} />Post now</button>}
+        <button type="button" className="btn btn-primary" disabled={busy || !scheduledAt || content.length > characterLimit} onClick={() => void save()}>{busy ? <LoaderCircle size={14} className="animate-spin" /> : <Check size={14} />}Save changes</button>
+      </div>
+    </div>
+  </div></div>, document.body);
+}
+
+const DAY_W = 340;
+const DOT = { scheduled: "#64748B", published: "#5B8A72", failed: "#B4646A", pending: "#A88A55", draft: "#94A3B8" };
+function dayDotKey(post) {
+  const s = post?.status;
+  if (s === "published") return post.provider_post_id ? "published" : "pending";
+  if (s === "failed" || s === "scheduled" || s === "draft") return s;
+  if (["queued", "publishing", "pending", "changes_requested"].includes(s)) return "pending";
+  return "draft";
+}
+function dayTime(post) {
+  const v = postPlacementAt(post);
+  if (!v) return "";
+  try { return new Date(v).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }); } catch { return ""; }
+}
+
+/** "+N more" day popover: list of the day's posts; a row swaps to that post's details in place (bottom sheet on mobile). */
+function DayPopover({ date, posts, anchor, accounts, request, onRefresh, onClose, onNewPost, onEdit, onDuplicate }) {
+  const mobile = useIsMobile();
+  const [overrides, setOverrides] = useState({});
+  const [selectedId, setSelectedId] = useState(null);
+  const [retrying, setRetrying] = useState(false);
+  const [error, setError] = useState("");
+  const [pos, setPos] = useState(null);
+  const [dragY, setDragY] = useState(0);
+  const popRef = React.useRef(null);
+  const listRef = React.useRef(null);
+  const scrollRef = React.useRef(0);
+  const lastRowRef = React.useRef(null);
+  const dragStart = React.useRef(null);
+  const items = posts.map((p) => (overrides[p.id] ? { ...p, ...overrides[p.id] } : p));
+  const selected = selectedId != null ? items.find((p) => String(p.id) === String(selectedId)) : null;
+  const dateLabel = date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  const countLabel = `${items.length} post${items.length === 1 ? "" : "s"}`;
+  const failedPosts = items.filter((p) => p.status === "failed");
+  const counts = {};
+  items.forEach((p) => { const k = dayDotKey(p); counts[k] = (counts[k] || 0) + 1; });
+  const summary = ["published", "scheduled", "pending", "draft", "failed"].filter((k) => counts[k]).map((k) => `${counts[k]} ${k}`).join(" · ");
+
+  // Outline the "+N more" trigger while open; return focus on close.
+  useEffect(() => {
+    if (!anchor) return undefined;
+    const o = anchor.style.outline; const off = anchor.style.outlineOffset;
+    anchor.style.outline = "2px solid var(--text)"; anchor.style.outlineOffset = "1px";
+    return () => { anchor.style.outline = o; anchor.style.outlineOffset = off; try { anchor.focus({ preventScroll: true }); } catch { /* detached */ } };
+  }, [anchor]);
+
+  React.useLayoutEffect(() => {
+    if (mobile) { setPos(null); return undefined; }
+    function place() {
+      const el = popRef.current; if (!el) return;
+      const h = el.offsetHeight; const vw = window.innerWidth; const vh = window.innerHeight;
+      if (!anchor || !anchor.isConnected) { setPos({ left: Math.max(8, (vw - DAY_W) / 2), top: Math.max(8, (vh - h) / 2), side: "none" }); return; }
+      const cell = anchor.closest?.(".cell") || anchor;
+      const r = cell.getBoundingClientRect(); const a = anchor.getBoundingClientRect();
+      let side = r.left - POPOVER_GAP - DAY_W >= 8 ? "left" : r.right + POPOVER_GAP + DAY_W <= vw - 8 ? "right" : "below";
+      let left; let top; let arrow;
+      if (side === "below") {
+        left = Math.min(Math.max(8, a.left + a.width / 2 - DAY_W / 2), vw - DAY_W - 8);
+        top = a.bottom + POPOVER_GAP;
+        if (top + h > vh - 8) { side = "above"; top = Math.max(8, a.top - POPOVER_GAP - h); }
+        arrow = Math.min(Math.max(16, a.left + a.width / 2 - left), DAY_W - 16);
+      } else {
+        left = side === "right" ? r.right + POPOVER_GAP : r.left - POPOVER_GAP - DAY_W;
+        top = a.top + a.height / 2 - h + 40;
+        if (top + h > vh - 8) top = Math.max(8, vh - 8 - h);
+        if (top < 8) top = 8;
+        arrow = Math.min(Math.max(14, a.top + a.height / 2 - top), h - 14);
+      }
+      setPos({ left, top, side, arrow });
+    }
+    place();
+    window.addEventListener("resize", place); window.addEventListener("scroll", place, true);
+    return () => { window.removeEventListener("resize", place); window.removeEventListener("scroll", place, true); };
+  }, [anchor, mobile, selectedId, items.length, error]);
+
+  // Restore list scroll + row focus when coming back from details; focus first row on open.
+  React.useLayoutEffect(() => {
+    if (selectedId != null) return;
+    if (listRef.current) listRef.current.scrollTop = scrollRef.current;
+    const t = setTimeout(() => {
+      const row = lastRowRef.current != null ? listRef.current?.querySelector(`[data-row-id="${lastRowRef.current}"]`) : null;
+      (row || popRef.current?.querySelector(".pp-x") || popRef.current)?.focus?.({ preventScroll: true });
+    }, 0);
+    return () => clearTimeout(t);
+  }, [selectedId]);
+
+  useEffect(() => {
+    function onKey(e) {
+      if (e.key !== "Escape" || retrying) return;
+      // Inner post details handle Esc for their own "…" menu / delete confirm.
+      if (popRef.current?.querySelector(".pp-menu, .pp-confirm")) return;
+      e.stopPropagation(); onClose();
+    }
+    function onDown(e) {
+      if (mobile || retrying || !popRef.current || popRef.current.contains(e.target)) return;
+      if (anchor && anchor.contains(e.target)) return;
+      onClose();
+    }
+    window.addEventListener("keydown", onKey, true); document.addEventListener("mousedown", onDown, true);
+    return () => { window.removeEventListener("keydown", onKey, true); document.removeEventListener("mousedown", onDown, true); };
+  }, [onClose, anchor, mobile, retrying]);
+
+  function openRow(post) { scrollRef.current = listRef.current?.scrollTop || 0; lastRowRef.current = String(post.id); setSelectedId(post.id); }
+  function rowKey(e, post) {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openRow(post); return; }
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+    e.preventDefault();
+    const rows = [...(listRef.current?.querySelectorAll(".dp-row") || [])];
+    const i = rows.indexOf(e.currentTarget);
+    rows[Math.min(rows.length - 1, Math.max(0, i + (e.key === "ArrowDown" ? 1 : -1)))]?.focus();
+  }
+  async function retryAll() {
+    setRetrying(true); setError("");
+    let failures = 0;
+    for (const p of failedPosts) {
+      try {
+        const updated = await request(`/posts/${p.id}/retry`, { method: "POST" });
+        setOverrides((o) => ({ ...o, [p.id]: updated && typeof updated === "object" ? updated : { status: "queued" } }));
+      } catch { failures += 1; }
+    }
+    if (failures) setError(`${failures} post${failures === 1 ? "" : "s"} could not be retried.`);
+    setRetrying(false);
+    await onRefresh?.();
+  }
+
+  const head = <div className="dp-head">
+    <b id="dp-title">{dateLabel}</b><span className="dp-count">{countLabel}</span>
+    <button type="button" className="pp-x" aria-label="Close" onClick={onClose}>×</button>
+  </div>;
+  let prevTime = null;
+  const list = <>
+    {head}
+    <div className="dp-sum"><span>{summary || "No posts"}</span>{failedPosts.length > 0 && <button type="button" className="pp-link dp-retry" disabled={retrying} onClick={() => void retryAll()}>{retrying ? "Retrying…" : "Retry all failed"}</button>}</div>
+    {error && <div className="dp-err" role="alert" title={error}>{error}</div>}
+    <div className="dp-list" ref={listRef} role="list" aria-labelledby="dp-title">
+      {items.map((post) => {
+        const account = (accounts || []).find((a) => a.id === post.connected_account_id);
+        const t = dayTime(post); const showT = t !== prevTime; prevTime = t;
+        const key = dayDotKey(post);
+        return <div key={post.id} data-row-id={String(post.id)} role="listitem" tabIndex={0} className="dp-row" onClick={() => openRow(post)} onKeyDown={(e) => rowKey(e, post)} aria-label={`${t} ${account?.account_name || ""} ${post.status}`}>
+          <span className="dp-t">{showT ? t : ""}</span>
+          <Ch platform={account?.platform || post.preview_platform} />
+          <div className="dp-main">
+            <div className="dp-l1"><b title={account?.account_name || ""}>{account?.account_name || account?.platform || "Account"}</b><span className="dp-cap">{post.content || postTitle(post)}</span></div>
+            {post.status === "failed" && <div className="dp-err" title={post.last_error_message || ""}>{post.last_error_message || "Publishing failed"}</div>}
+          </div>
+          <span className="dp-dot" style={{ background: DOT[key] }} title={key} aria-hidden="true" />
+        </div>;
+      })}
+    </div>
+    <div className="dp-foot"><button type="button" className="btn btn-primary dp-new" onClick={() => { onClose(); onNewPost?.(date); }}><Plus size={15} />New post on this day</button></div>
+  </>;
+  const detail = selected && <>
+    <button type="button" className="dp-back" onClick={() => setSelectedId(null)} aria-label="Back to day list"><ArrowLeft size={14} />{dateLabel} · {countLabel}</button>
+    <RenderErrorBoundary scope="Post details" compact><PostPopover inline post={selected} anchor={null} accounts={accounts} request={request}
+      onRefresh={async () => { await onRefresh?.(); }} onClose={() => setSelectedId(null)}
+      onEdit={(p) => { onClose(); onEdit?.(p); }} onDuplicate={(p, acc) => { onClose(); onDuplicate?.(p, acc); }} /></RenderErrorBoundary>
+  </>;
+  const content = selected ? detail : list;
+
+  if (mobile) {
+    const start = (e) => { dragStart.current = e.touches?.[0]?.clientY ?? null; };
+    const move = (e) => { if (dragStart.current == null) return; setDragY(Math.max(0, (e.touches?.[0]?.clientY ?? 0) - dragStart.current)); };
+    const end = () => { if (dragY > 80 && !retrying) onClose(); else setDragY(0); dragStart.current = null; };
+    return createPortal(<div className="scd sc-pop-layer" style={{ position: "fixed", inset: 0, zIndex: 70 }}>
+      <div style={{ position: "absolute", inset: 0, background: "rgba(15,23,42,.45)" }} onClick={() => !retrying && onClose()} />
+      <div ref={popRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="dp-title" className="pop sheet dpop"
+        style={{ position: "fixed", transform: `translateY(${dragY}px)`, transition: dragStart.current == null ? "transform .2s" : "none" }}>
+        <div className="dp-grab" onTouchStart={start} onTouchMove={move} onTouchEnd={end} aria-hidden="true" />
+        {content}
+      </div>
+    </div>, document.body);
+  }
+  const arrowStyle = pos && pos.side !== "none" ? (pos.side === "right" ? { left: -6, top: pos.arrow - 5, borderLeft: "1px solid var(--border)", borderBottom: "1px solid var(--border)" }
+    : pos.side === "left" ? { right: -6, top: pos.arrow - 5, borderRight: "1px solid var(--border)", borderTop: "1px solid var(--border)" }
+    : pos.side === "below" ? { top: -6, left: pos.arrow - 5, borderLeft: "1px solid var(--border)", borderTop: "1px solid var(--border)" }
+    : { bottom: -6, left: pos.arrow - 5, borderRight: "1px solid var(--border)", borderBottom: "1px solid var(--border)" }) : null;
+  return createPortal(<div className="scd sc-pop-layer" style={{ position: "fixed", inset: 0, zIndex: 70, pointerEvents: "none" }}>
+    <div ref={popRef} tabIndex={-1} role="dialog" aria-modal="false" aria-labelledby="dp-title" className="pop dpop"
+      style={{ position: "fixed", width: DAY_W, left: pos?.left ?? -9999, top: pos?.top ?? 0, pointerEvents: "auto", visibility: pos ? "visible" : "hidden" }}>
+      {arrowStyle && <span aria-hidden="true" style={{ position: "absolute", width: 10, height: 10, background: "var(--surface)", transform: "rotate(45deg)", ...arrowStyle }} />}
+      {content}
+    </div>
   </div>, document.body);
 }

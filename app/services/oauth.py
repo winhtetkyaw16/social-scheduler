@@ -784,3 +784,77 @@ def _threads_identity(access_token: str) -> dict:
     if avatar:
         identity["avatar_url"] = avatar
     return identity
+
+
+# --- OAuth access-token refresh (refresh_token grant) -------------------------------------
+
+_REFRESHABLE = {"x", "linkedin", "youtube", "tiktok", "pinterest"}
+REFRESH_LEEWAY_SECONDS = 5 * 60
+
+
+def _utc(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+
+
+def token_needs_refresh(account, leeway_seconds: int = REFRESH_LEEWAY_SECONDS) -> bool:
+    exp = _utc(getattr(account, "token_expires_at", None))
+    return exp is not None and exp - datetime.now(timezone.utc) <= timedelta(seconds=leeway_seconds)
+
+
+def refresh_account_token(db: Session, account, *, force: bool = False) -> bool:
+    """Refresh a short-lived OAuth access token in place. Returns True when refreshed.
+
+    Never logs or returns token values. Raises HTTPException when the provider rejects it.
+    """
+    if account.platform not in _REFRESHABLE or not account.refresh_token_ciphertext:
+        return False
+    if not force and not token_needs_refresh(account):
+        return False
+    provider = _providers().get(account.platform)
+    if provider is None or provider.missing_env:
+        return False
+    refresh_token = decrypt_token(account.refresh_token_ciphertext)
+    data: dict[str, str] = {"grant_type": "refresh_token", "refresh_token": refresh_token}
+    auth = None
+    if provider.auth_style == "tiktok":
+        data["client_key"] = provider.client_id
+        data["client_secret"] = provider.client_secret
+    elif provider.platform in ("x", "pinterest"):
+        data["client_id"] = provider.client_id
+        auth = (provider.client_id, provider.client_secret)
+    else:
+        data["client_id"] = provider.client_id
+        data["client_secret"] = provider.client_secret
+    try:
+        response = httpx.post(
+            provider.token_url,
+            data=data,
+            auth=auth,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            timeout=30.0,
+        )
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"Could not reach {account.platform} to refresh the token.") from exc
+    if response.is_error:
+        raise HTTPException(
+            status_code=401,
+            detail=f"{account.platform} rejected the token refresh (HTTP {response.status_code}). Reconnect the account.",
+        )
+    payload = response.json()
+    if account.platform == "tiktok" and isinstance(payload.get("data"), dict):
+        payload = payload["data"]
+    access_token = payload.get("access_token")
+    if not isinstance(access_token, str) or not access_token:
+        raise HTTPException(status_code=502, detail=f"{account.platform} did not return a refreshed access token.")
+    account.access_token_ciphertext = encrypt_token(access_token)
+    new_refresh = payload.get("refresh_token")
+    if isinstance(new_refresh, str) and new_refresh:
+        account.refresh_token_ciphertext = encrypt_token(new_refresh)  # X rotates refresh tokens
+    expires_in = payload.get("expires_in")
+    account.token_expires_at = (
+        datetime.now(timezone.utc) + timedelta(seconds=int(expires_in)) if expires_in else None
+    )
+    db.commit()
+    return True

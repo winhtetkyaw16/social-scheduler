@@ -124,6 +124,13 @@ def publish_post_task(post_id: str) -> dict[str, str]:
         db.add(log)
         db.commit()
         try:
+            try:
+                from app.services.oauth import refresh_account_token
+
+                if refresh_account_token(db, account):
+                    db.refresh(account)
+            except Exception as exc:  # fall through; publish will surface the auth error
+                logger.warning("Token refresh failed for account %s: %s", account.id, getattr(exc, "detail", type(exc).__name__))
             result = publish(
                 account.platform,
                 decrypt_token(account.access_token_ciphertext),

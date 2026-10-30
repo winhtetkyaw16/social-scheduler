@@ -117,7 +117,9 @@ def upsert_oauth_account(
     )
     resolved_type = account_type or default_account_type(platform)
     expires_at = _as_utc(token_expires_at)
+    connected_at = datetime.now(timezone.utc).isoformat()
     if existing is None:
+        extra_metadata = {**(extra_metadata or {}), "connected_at": connected_at}
         return create_account(
             db,
             user_id,
@@ -144,8 +146,9 @@ def upsert_oauth_account(
     existing.token_expires_at = expires_at
     existing.scopes = [scope.strip() for scope in scopes]
     existing.is_active = True
-    if extra_metadata is not None:
-        existing.extra_metadata = extra_metadata
+    base_meta = extra_metadata if extra_metadata is not None else (existing.extra_metadata or {})
+    # Record the (re)connect time so channel health ignores failures from before it.
+    existing.extra_metadata = {**base_meta, "connected_at": connected_at}
     db.commit()
     db.refresh(existing)
     return existing

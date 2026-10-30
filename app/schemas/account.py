@@ -1,6 +1,6 @@
 """Pydantic input and output contracts for connected accounts."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -24,6 +24,13 @@ def _can_publish(platform: str, account_type: str) -> bool:
     return True
 
 
+
+
+def _utc(value: datetime | None) -> datetime | None:
+    """DB (SQLite) returns naive UTC; tag it so clients don't parse it as local time."""
+    if value is None:
+        return None
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
 
 class AccountCreate(BaseModel):
     """Validated provider credentials and metadata used to connect an account."""
@@ -109,6 +116,7 @@ class AccountRead(BaseModel):
     is_active: bool
     can_publish: bool = False
     created_at: datetime
+    has_refresh_token: bool = False
     extra_metadata: dict = Field(default_factory=dict)
     avatar_url: str | None = None
 
@@ -125,11 +133,12 @@ class AccountRead(BaseModel):
             account_type=account_type,
             account_type_label=account_type_label(platform, account_type),
             parent_account_id=getattr(account, "parent_account_id", None),
-            token_expires_at=account.token_expires_at,
+            token_expires_at=_utc(account.token_expires_at),
             scopes=list(account.scopes or []),
+            has_refresh_token=bool(getattr(account, "refresh_token_ciphertext", None)),
             is_active=bool(account.is_active),
             can_publish=_can_publish(platform, account_type),
-            created_at=account.created_at,
+            created_at=_utc(account.created_at),
             extra_metadata=meta,
             avatar_url=extract_avatar_url(meta),
         )

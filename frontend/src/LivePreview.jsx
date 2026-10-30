@@ -1,17 +1,19 @@
 import { useEffect, useRef, useState } from "react";
+import { ChannelTile } from "./sc/ui.jsx";
 import {
   Bookmark, CheckCircle2, ChevronLeft, ChevronRight, Heart, Link2, MessageCircle,
   MoreHorizontal, Play, Send, Share2, ThumbsUp,
 } from "lucide-react";
 import { AccountAvatar } from "./ManageAccounts.jsx";
 import InstagramGridPlanner from "./InstagramGridPlanner.jsx";
-import facebookPng from "./assets/facebook.png";
-import instagramPng from "./assets/instagram.png";
-import linkedinPng from "./assets/linkedin.png";
-import pinterestPng from "./assets/pinterest.png";
-import tiktokPng from "./assets/tiktok.png";
-import xPng from "./assets/x.png";
-import youtubePng from "./assets/youtube.png";
+import facebookPng from "./assets/logos/facebook.svg";
+import instagramPng from "./assets/logos/instagram.svg";
+import linkedinPng from "./assets/logos/linkedin.svg";
+import pinterestPng from "./assets/logos/pinterest.svg";
+import tiktokPng from "./assets/logos/tiktok.svg";
+import xPng from "./assets/logos/x.svg";
+import youtubePng from "./assets/logos/youtube.svg";
+import threadsPng from "./assets/logos/threads.svg";
 
 const platformStyles = {
   facebook: { label: "Facebook", color: "#1877F2", logo: facebookPng },
@@ -21,6 +23,7 @@ const platformStyles = {
   linkedin: { label: "LinkedIn", color: "#0A66C2", logo: linkedinPng },
   tiktok: { label: "TikTok", color: "#111827", logo: tiktokPng },
   pinterest: { label: "Pinterest", color: "#BD081C", logo: pinterestPng },
+  threads: { label: "Threads", color: "#111827", logo: threadsPng },
 };
 const PLATFORM_MEDIA_LAYOUTS = {
   facebook: ["Grid", "Carousel / Swipe", "Stacked"],
@@ -40,16 +43,7 @@ function useMediaUrls(files) {
 }
 
 function PreviewChannelBrandImage({ channelId, size = 24 }) {
-  const logo = platformStyles[channelId]?.logo || facebookPng;
-  const pad = size <= 16 ? 1 : size <= 20 ? 1.5 : 3;
-  return (
-    <div
-      className="flex shrink-0 items-center justify-center overflow-hidden rounded-full aspect-square bg-white"
-      style={{ width: size, height: size, padding: pad, backgroundColor: "#fff" }}
-    >
-      <img src={logo} alt="" aria-hidden="true" className="block h-full w-full object-contain" />
-    </div>
-  );
+  return <ChannelTile platform={channelId} size={size} />;
 }
 
 function Avatar({ account, name, size = "h-10 w-10" }) {

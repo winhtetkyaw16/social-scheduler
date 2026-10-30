@@ -1,15 +1,17 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { ChannelTile } from "./sc/ui.jsx";
 import { createPortal } from "react-dom";
 import { ChevronDown, Expand, Facebook, Globe2, GripVertical, Hash, Instagram, Link2, Linkedin, MapPin, MessageCircle, Pencil, Settings2, Shrink, Smile, Sparkles, Video, X, Youtube } from "lucide-react";
 import EmojiPicker from "./EmojiPicker.jsx";
 import { AccountAvatar } from "./ManageAccounts.jsx";
-import facebookPng from "./assets/facebook.png";
-import instagramPng from "./assets/instagram.png";
-import linkedinPng from "./assets/linkedin.png";
-import pinterestPng from "./assets/pinterest.png";
-import tiktokPng from "./assets/tiktok.png";
-import xPng from "./assets/x.png";
-import youtubePng from "./assets/youtube.png";
+import facebookPng from "./assets/logos/facebook.svg";
+import instagramPng from "./assets/logos/instagram.svg";
+import linkedinPng from "./assets/logos/linkedin.svg";
+import pinterestPng from "./assets/logos/pinterest.svg";
+import tiktokPng from "./assets/logos/tiktok.svg";
+import xPng from "./assets/logos/x.svg";
+import youtubePng from "./assets/logos/youtube.svg";
+import threadsPng from "./assets/logos/threads.svg";
 
 const CHANNEL_UI = {
   facebook: { label: "Facebook", brand: "#1877F2", mark: "f" },
@@ -30,35 +32,15 @@ const FORMAT_SUPPORT = {
   pinterest: [{ value: "Post", label: "Pin" }, { value: "Reel / Video", label: "Video Pin" }],
 };
 
-const BRAND_PNGS = { facebook: facebookPng, instagram: instagramPng, linkedin: linkedinPng, pinterest: pinterestPng, tiktok: tiktokPng, x: xPng, youtube: youtubePng };
+const BRAND_PNGS = { facebook: facebookPng, instagram: instagramPng, linkedin: linkedinPng, pinterest: pinterestPng, tiktok: tiktokPng, x: xPng, youtube: youtubePng, threads: threadsPng };
 
 function BrandIcon({ platform }) {
-  const logo = BRAND_PNGS[platform] || facebookPng;
-
-  return (
-    <div className="relative flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full aspect-square bg-white">
-      <img
-        src={logo}
-        alt=""
-        aria-hidden="true"
-        className="absolute h-[100%] w-[100%] max-w-none scale-100 object-cover"
-      />
-    </div>
-  );
+  return <ChannelTile platform={platform} size={28} />;
 }
 
 /** Brand logo thumb for AccountAvatar badge (Buffer: profile + platform mark). */
 function LocalChannelBrandImage({ channelId, size = 24 }) {
-  const logo = BRAND_PNGS[channelId] || facebookPng;
-  const pad = size <= 16 ? 1 : size <= 20 ? 1.5 : 3;
-  return (
-    <div
-      className="flex shrink-0 items-center justify-center overflow-hidden rounded-full aspect-square bg-white"
-      style={{ width: size, height: size, padding: pad, backgroundColor: "#fff" }}
-    >
-      <img src={logo} alt="" aria-hidden="true" className="block h-full w-full object-contain" />
-    </div>
-  );
+  return <ChannelTile platform={channelId} size={size} />;
 }
 
 function ChannelFileThumb({ file, onRemove, onEdit, onDragStart, onDragOver, onDrop }) {

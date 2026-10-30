@@ -35,6 +35,7 @@ function resolveAvatarUrl(account) {
 }
 
 /** Circular profile photo (or initials) with platform brand badge bottom-right. */
+const failedSinceConnect = (account, posts) => { const c = Date.parse(account.extra_metadata?.connected_at || account.created_at || 0) || 0; return posts.some((post) => post.connected_account_id === account.id && post.status === "failed" && (Date.parse(post.updated_at || post.created_at) || 0) >= c); };
 export function AccountAvatar({ account, ChannelBrandImage, size = 36, badgeScale = 0.42, showBadge = true }) {
   const [broken, setBroken] = useState(false);
   const url = resolveAvatarUrl(account);
@@ -232,12 +233,12 @@ export default function ManageAccounts({
   const health = (account) => {
     if (!account.is_active) return ["Disconnected", ""];
     const exp = account.token_expires_at ? new Date(account.token_expires_at) : null;
-    if (exp && exp < new Date()) return ["Token expired", "b-error"];
-    if (exp && exp - Date.now() < 7 * DAY) return [`Reconnect in ${Math.max(1, Math.ceil((exp - Date.now()) / DAY))} days`, "b-warning"];
-    if (posts.some((post) => post.connected_account_id === account.id && post.status === "failed")) return ["Publish errors", "b-error"];
+    if (exp && exp < new Date() && !account.has_refresh_token) return ["Token expired", "b-error"];
+    if (exp && !account.has_refresh_token && exp - Date.now() < 7 * DAY) return [`Reconnect in ${Math.max(1, Math.ceil((exp - Date.now()) / DAY))} days`, "b-warning"];
+    if (failedSinceConnect(account, posts)) return ["Publish errors", "b-error"];
     return ["Healthy", "b-success"];
   };
-  const expiring = sorted.filter((account) => account.is_active && account.token_expires_at && new Date(account.token_expires_at) - Date.now() < 7 * DAY);
+  const expiring = sorted.filter((account) => account.is_active && !account.has_refresh_token && account.token_expires_at && new Date(account.token_expires_at) - Date.now() < 7 * DAY);
   const posts30 = (account) => posts.filter((post) => post.connected_account_id === account.id && post.status !== "draft" && Date.now() - new Date(post.published_at || post.scheduled_at || post.created_at) < 30 * DAY).length;
   const ownerInitials = (ownerName || "You").split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase();
   const desc = { x: "Threads & text", linkedin: "Profiles & pages", instagram: "Business accounts", facebook: "Pages", youtube: "Channel uploads", tiktok: "Creator accounts", pinterest: "Boards & pins", threads: "Text posts" };

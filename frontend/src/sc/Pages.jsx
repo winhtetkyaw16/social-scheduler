@@ -28,17 +28,18 @@ function PostRow({ post, account, onOpen, onRetry }) {
     <AccountAvatar account={account} size={36} />
     <div className="body"><div className="row" style={{ gap: 8, marginBottom: 4 }}><b className="sm">{account?.account_name || account?.platform || "Account"}</b><StatusBadge status={post.status} post={post} /></div><div className="txt">{post.content || "Untitled post"}</div>
       {post.status === "failed" && post.last_error_message && <div className="xs" style={{ color: "var(--error)", marginTop: 6 }}>⚠ {post.last_error_code ? `${post.last_error_code}: ` : ""}{post.last_error_message}</div>}</div>
-    {post.media_urls?.[0] && <img className="thumb" src={post.media_urls[0]} alt="" style={{ objectFit: "cover" }} />}
+    {post.media_urls?.[0] && <img className="thumb" src={post.media_urls[0]} alt="" style={{ objectFit: "cover" }} onError={(e) => { e.currentTarget.style.display = "none"; }} />}
     {post.status === "failed" && onRetry ? <button type="button" className="btn btn-sm btn-secondary" onClick={() => onRetry(post.id)}>{I.retry}Retry</button> : <button type="button" className="btn btn-sm btn-ghost btn-icon" aria-label="More" onClick={onOpen}>{I.more}</button>}
   </div>;
 }
 
+const failedSinceConnect = (account, posts) => { const c = Date.parse(account.extra_metadata?.connected_at || account.created_at || 0) || 0; return posts.some((post) => post.connected_account_id === account.id && post.status === "failed" && (Date.parse(post.updated_at || post.created_at) || 0) >= c); };
 function healthOf(account, posts) {
   if (account.is_active === false) return ["Paused", ""];
   const exp = account.token_expires_at ? new Date(account.token_expires_at) : null;
-  if (exp && exp < new Date()) return ["Token expired", "b-error"];
-  if (exp && exp - Date.now() < 7 * DAY) return [`Token expires in ${Math.max(1, Math.ceil((exp - Date.now()) / DAY))}d`, "b-warning"];
-  const recentFail = posts.some((p) => p.connected_account_id === account.id && p.status === "failed");
+  if (exp && exp < new Date() && !account.has_refresh_token) return ["Token expired", "b-error"];
+  if (exp && !account.has_refresh_token && exp - Date.now() < 7 * DAY) return [`Token expires in ${Math.max(1, Math.ceil((exp - Date.now()) / DAY))}d`, "b-warning"];
+  const recentFail = failedSinceConnect(account, posts);
   if (recentFail) return ["Has failed posts", "b-error"];
   return ["Healthy", "b-success"];
 }
@@ -48,10 +49,10 @@ function WeekBars({ posts, accounts, start, days = 7 }) {
   const acc = new Map(accounts.map((a) => [a.id, a]));
   const cols = Array.from({ length: days }, (_, i) => { const d = new Date(start); d.setDate(d.getDate() + i); return d; });
   const counts = cols.map((d) => plats.map((pl) => posts.filter((p) => { const w = when(p); if (!w) return false; const x = new Date(w); return x.toDateString() === d.toDateString() && acc.get(p.connected_account_id)?.platform === pl; }).length));
-  const max = Math.max(1, ...counts.flat());
+  const max = Math.max(1, ...counts.map((c) => c.reduce((x, y) => x + y, 0)));
   return <div className="card chart-card"><div className="row between"><h2>Posts this week</h2><div className="legend">{plats.map((pl) => <span key={pl} style={{ "--c": chColor(pl) }}>{meta(pl).label}</span>)}</div></div>
     {counts.flat().every((n) => n === 0) ? <div className="xs subtle" style={{ padding: "40px 0", textAlign: "center" }}>No posts scheduled or published this week yet.</div> :
-      <div className="bars">{cols.map((d, i) => <div key={i}>{plats.map((pl, j) => <i key={pl} title={`${meta(pl).label}: ${counts[i][j]}`} style={{ height: `${Math.max(counts[i][j] ? 6 : 2, (counts[i][j] / max) * 120)}px`, background: chColor(pl), opacity: counts[i][j] ? 1 : .25 }} />)}<span className="lbl">{d.toLocaleDateString([], { weekday: "short" })}</span></div>)}</div>}
+      <div className="bars wb-bars">{cols.map((d, i) => { const tot = counts[i].reduce((x, y) => x + y, 0); return <div key={i} className="wb-col" title={`${d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })}: ${tot} post${tot === 1 ? "" : "s"}`}><div className="wb-plot">{tot === 0 ? <i className="wb-empty" /> : plats.map((pl, j) => counts[i][j] ? <i key={pl} title={`${meta(pl).label}: ${counts[i][j]}`} style={{ height: `${(counts[i][j] / max) * 100}%`, background: chColor(pl) }} /> : null)}</div><span className="lbl">{d.toLocaleDateString([], { weekday: "short" })}</span></div>; })}</div>}
   </div>;
 }
 
@@ -143,7 +144,7 @@ export function Analytics({ posts, accounts }) {
         <div className="xs subtle" style={{ marginTop: 8 }}>Mon–Fri · 6 AM – 10 PM ({Intl.DateTimeFormat().resolvedOptions().timeZone}) · from your published posts</div>
       </div>
       <div className="card"><div className="card-head"><h2>Recently published</h2></div>
-        {recent.length ? <table className="table"><thead><tr><th>Post</th><th>Published</th><th>Provider</th></tr></thead><tbody>{recent.map((p) => { const a = acc.get(p.connected_account_id); return <tr key={p.id}><td><div className="row">{p.media_urls?.[0] ? <img className="thumb" src={p.media_urls[0]} alt="" style={{ objectFit: "cover" }} /> : null}<div><div className="sm">{postTitle(p)}</div><div className="row xs subtle" style={{ gap: 6 }}><Ch platform={a?.platform} />{a?.account_name}</div></div></div></td><td className="sm">{fmtDay(p.published_at)}</td><td>{p.provider_post_id ? <span className="badge b-success nodot">Confirmed</span> : <span className="badge b-warning nodot">Unconfirmed</span>}</td></tr>; })}</tbody></table> : <Empty art="📊" title="No published posts yet" text="Once posts go live, they'll show up here." />}
+        {recent.length ? <table className="table"><thead><tr><th>Post</th><th>Published</th><th>Provider</th></tr></thead><tbody>{recent.map((p) => { const a = acc.get(p.connected_account_id); return <tr key={p.id}><td><div className="row">{p.media_urls?.[0] ? <img className="thumb" src={p.media_urls[0]} alt="" style={{ objectFit: "cover" }} onError={(e) => { e.currentTarget.style.display = "none"; }} /> : null}<div><div className="sm">{postTitle(p)}</div><div className="row xs subtle" style={{ gap: 6 }}><Ch platform={a?.platform} />{a?.account_name}</div></div></div></td><td className="sm">{fmtDay(p.published_at)}</td><td>{p.provider_post_id ? <span className="badge b-success nodot">Confirmed</span> : <span className="badge b-warning nodot">Unconfirmed</span>}</td></tr>; })}</tbody></table> : <Empty art="📊" title="No published posts yet" text="Once posts go live, they'll show up here." />}
       </div>
     </div>
   </>;

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ChannelTile } from "./sc/ui.jsx";
 import { createPortal } from "react-dom";
 import { createRoot } from "react-dom/client";
 import PublishSection, { toLocalInputValue } from "./PublishSection.jsx";
@@ -15,14 +16,14 @@ import {
   MessagesSquare, Moon, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Plus, Send, Share2, GripVertical, Pencil,
   Settings2, Shrink, Smile, Sparkles, Sun, Target, ThumbsUp, Upload, Users, Video, WandSparkles, X as XIcon, Youtube,
 } from "lucide-react";
-import facebookPng from "./assets/facebook.png";
-import instagramPng from "./assets/instagram.png";
-import linkedinPng from "./assets/linkedin.png";
-import pinterestPng from "./assets/pinterest.png";
-import tiktokPng from "./assets/tiktok.png";
-import xPng from "./assets/x.png";
-import youtubePng from "./assets/youtube.png";
-import threadsPng from "./assets/threads.png";
+import facebookPng from "./assets/logos/facebook.svg";
+import instagramPng from "./assets/logos/instagram.svg";
+import linkedinPng from "./assets/logos/linkedin.svg";
+import pinterestPng from "./assets/logos/pinterest.svg";
+import tiktokPng from "./assets/logos/tiktok.svg";
+import xPng from "./assets/logos/x.svg";
+import youtubePng from "./assets/logos/youtube.svg";
+import threadsPng from "./assets/logos/threads.svg";
 import lockupLight from "./assets/brand/socialcastly-lockup-light.png";
 import lockupDark from "./assets/brand/socialcastly-lockup-dark.png";
 import "./theme/tokens.css";
@@ -359,24 +360,7 @@ function MediaThumb({ file, onRemove, onEdit, onDragStart, onDragOver, onDrop })
 
 const CHANNEL_BRAND_PNGS = { facebook: facebookPng, instagram: instagramPng, linkedin: linkedinPng, pinterest: pinterestPng, tiktok: tiktokPng, x: xPng, youtube: youtubePng, threads: threadsPng };
 function ChannelBrandImage({ channelId, size = 24 }) {
-  const channel = CHANNELS.find((item) => item.id === channelId);
-  const source = CHANNEL_BRAND_PNGS[channelId] || facebookPng;
-  const pad = size <= 16 ? 1 : size <= 20 ? 1.5 : 4;
-
-  return (
-    <div
-      className="flex shrink-0 items-center justify-center overflow-hidden rounded-full aspect-square bg-white shadow-sm ring-1 ring-slate-200/80"
-      style={{ width: size, height: size, padding: pad, backgroundColor: "#fff" }}
-    >
-      <img
-        src={source}
-        alt=""
-        aria-hidden="true"
-        title={channel?.label || "Social channel"}
-        className="block h-full w-full transform-none object-contain"
-      />
-    </div>
-  );
+  return <ChannelTile platform={channelId} size={size} />;
 }
 
 function ScheduleControls({ mode, setMode, date, setDate, time, setTime, timeZone, setTimeZone, selectedAccounts = [] }) {

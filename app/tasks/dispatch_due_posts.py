@@ -13,6 +13,8 @@ from app.tasks.publish_post import publish_post_task
 
 logger = logging.getLogger(__name__)
 
+STALE_PUBLISHING_SECONDS = 15 * 60
+
 
 @celery_app.task(name="app.tasks.dispatch_due_posts.dispatch_due_posts")
 def dispatch_due_posts(batch_size: int = 100) -> int:
@@ -21,6 +23,25 @@ def dispatch_due_posts(batch_size: int = 100) -> int:
     try:
         now = datetime.now(timezone.utc)
         stale_queued_before = now - timedelta(seconds=max(10, SCHEDULER_POLL_SECONDS * 2))
+        # A worker that died mid-publish leaves the row in "publishing" forever.
+        # Mark it failed (not re-queued: the provider may have accepted it) so
+        # the user can review and Retry explicitly.
+        stale_publishing_before = now - timedelta(seconds=STALE_PUBLISHING_SECONDS)
+        for stuck in db.scalars(
+            select(ScheduledPost).where(
+                (ScheduledPost.status == "publishing")
+                & (ScheduledPost.provider_post_id.is_(None))
+                & (ScheduledPost.updated_at <= stale_publishing_before)
+            )
+        ).all():
+            stuck.status = "failed"
+            stuck.last_error_code = "publish_interrupted"
+            stuck.last_error_message = (
+                "Publishing was interrupted before the provider confirmed it. "
+                "Check the account, then Retry."
+            )
+            logger.warning("Marked stale publishing post %s as failed", stuck.id)
+        db.commit()
         due_schedule = (ScheduledPost.status == "scheduled") & (ScheduledPost.scheduled_at <= now)
         stale_queued = (
             (ScheduledPost.status == "queued")

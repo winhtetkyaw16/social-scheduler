@@ -3,6 +3,8 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
+import re
+
 import httpx
 
 from app.core.exceptions import ProviderConfigurationError
@@ -51,8 +53,8 @@ def provider_request(
     except httpx.RequestError as exc:
         raise RuntimeError("Could not connect to the social platform") from exc
     if response.is_error:
-        # Do not persist provider response bodies: they may include private diagnostics.
-        raise ProviderHTTPError(response.status_code)
+        # Keep only a short, redacted summary of the provider's error (title/detail/type).
+        raise ProviderHTTPError(response.status_code, provider_error_summary(response))
     return response
 
 
@@ -76,6 +78,52 @@ def provider_delete(
 class ProviderHTTPError(RuntimeError):
     """Provider returned an HTTP error status."""
 
-    def __init__(self, status_code: int):
+    def __init__(self, status_code: int, detail: str | None = None):
         self.status_code = status_code
-        super().__init__(f"Provider returned HTTP {status_code}")
+        self.detail = detail or None
+        message = f"Provider returned HTTP {status_code}"
+        super().__init__(f"{message}: {detail}" if detail else message)
+
+
+_SECRET_PATTERNS = (
+    re.compile(r"(?i)bearer\s+[A-Za-z0-9._~+/=-]+"),
+    re.compile(r"(?i)(access_token|refresh_token|client_secret|token|code)=[^&\s\"']+"),
+    re.compile(r"[A-Za-z0-9_-]{40,}"),
+)
+
+
+def _redact(text: str) -> str:
+    for pattern in _SECRET_PATTERNS:
+        text = pattern.sub("[redacted]", text)
+    return text
+
+
+def provider_error_summary(response: httpx.Response, limit: int = 400) -> str | None:
+    """Summarize a provider error body (X: title/detail/type/errors) without secrets."""
+    parts: list[str] = []
+    try:
+        body = response.json()
+    except Exception:
+        body = None
+    if isinstance(body, dict):
+        for key in ("title", "detail", "reason", "error", "error_description", "message"):
+            value = body.get(key)
+            if isinstance(value, dict):
+                value = value.get("message") or value.get("code")
+            if isinstance(value, (str, int)) and str(value) and str(value) not in parts:
+                parts.append(str(value))
+        problem_type = body.get("type")
+        if isinstance(problem_type, str) and problem_type:
+            parts.append(f"type={problem_type.rsplit('/', 1)[-1]}")
+        errors = body.get("errors")
+        if isinstance(errors, list):
+            for item in errors[:3]:
+                if isinstance(item, dict):
+                    msg = item.get("message") or item.get("detail") or item.get("title")
+                    if msg and str(msg) not in parts:
+                        parts.append(str(msg))
+    elif response.text:
+        parts.append(response.text.strip()[:200])
+    if not parts:
+        return None
+    return _redact(" | ".join(parts))[:limit]

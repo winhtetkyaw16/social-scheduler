@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 
 import base64
+import logging
 import json
 import secrets
 from dataclasses import dataclass
@@ -21,6 +22,8 @@ from sqlalchemy.orm import Session
 from app.core import config
 from dotenv import load_dotenv
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 _ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
 
@@ -634,6 +637,12 @@ def _authorized_get(url: str, access_token: str, *, params: dict | None = None, 
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=502, detail="Could not reach the provider to read the account profile.") from exc
     if response.is_error:
+        logger.warning(
+            "Provider profile request failed: url=%s status=%s body=%s",
+            url,
+            response.status_code,
+            (response.text or "")[:300],
+        )
         raise HTTPException(status_code=502, detail="The provider refused the account profile request.")
     body = response.json()
     if not isinstance(body, dict):
@@ -724,20 +733,39 @@ def _facebook_identity(access_token: str) -> dict:
     return identity
 
 
+YOUTUBE_NO_CHANNEL_DETAIL = (
+    "This Google account has no YouTube channel. Create a channel at youtube.com, then connect again."
+)
+
+
 def _youtube_identity(access_token: str) -> dict:
-    body = _authorized_get("https://www.googleapis.com/oauth2/v3/userinfo", access_token)
-    account_id = body.get("sub")
-    if not account_id:
-        raise HTTPException(status_code=502, detail="Google did not return a user id.")
+    # YouTube scopes do not include openid/email/profile, so identify by the user's channel.
+    body = _authorized_get(
+        "https://www.googleapis.com/youtube/v3/channels",
+        access_token,
+        params={"part": "snippet", "mine": "true"},
+    )
+    items = [item for item in (body.get("items") or []) if isinstance(item, dict) and item.get("id")]
+    if not items:
+        raise HTTPException(status_code=422, detail=YOUTUBE_NO_CHANNEL_DETAIL)
+    channel = items[0]
+    snippet = channel.get("snippet") if isinstance(channel.get("snippet"), dict) else {}
     identity = {
-        "id": str(account_id),
-        "name": str(body.get("name") or body.get("email") or "YouTube login")[:255],
-        "account_type": "login",
-        "email": body.get("email"),
+        "id": str(channel["id"]),
+        "name": str(snippet.get("title") or "YouTube channel")[:255],
+        "account_type": "channel",
     }
-    avatar = _normalize_avatar_url(body.get("picture"))
-    if avatar:
-        identity["avatar_url"] = avatar
+    handle = snippet.get("customUrl")
+    if handle:
+        identity["username"] = str(handle)
+        identity["custom_url"] = str(handle)
+    thumbs = snippet.get("thumbnails") if isinstance(snippet.get("thumbnails"), dict) else {}
+    for size in ("high", "medium", "default"):
+        thumb = thumbs.get(size) if isinstance(thumbs.get(size), dict) else None
+        avatar = _normalize_avatar_url(thumb.get("url")) if thumb else None
+        if avatar:
+            identity["avatar_url"] = avatar
+            break
     return identity
 
 

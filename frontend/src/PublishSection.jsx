@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Ch, meta, chColor, Seg, Tabs, PageHead, Avatar, Empty, StatusBadge, fmtTime, fmtTime24, fmtDay, postTitle, AccountAvatar as ScAccountAvatar } from "./sc/ui.jsx";
 import { createPortal } from "react-dom";
 import RenderErrorBoundary from "./RenderErrorBoundary.jsx";
+import { PostRowMenu, DeletePostModal, deleteCopy } from "./sc/PostActions.jsx";
 import { AccountAvatar } from "./ManageAccounts.jsx";
 import {
   Archive, ArrowLeft, ArrowRight, Bookmark, CalendarDays, Check, Clock3, Copy, FileText, Filter, Heart, Image, LayoutGrid, List, RotateCcw,
@@ -105,7 +106,7 @@ function PublishFilterBar({ accounts = [], status, setStatus, platform, setPlatf
   </div>;
 }
 
-function PostsListView({ posts, accounts = [], request, onSelectPost, onRefresh, status, setStatus, platform, setPlatform, accountId, setAccountId, headerExtra = null }) {
+function PostsListView({ posts, accounts = [], request, onSelectPost, onEditPost, onDeletePost, onRefresh, status, setStatus, platform, setPlatform, accountId, setAccountId, headerExtra = null }) {
   const safeAccounts = Array.isArray(accounts) ? accounts : [];
   const filtered = useMemo(
     () => filterPublishPosts(posts, safeAccounts, { status, platform, accountId })
@@ -151,7 +152,7 @@ function PostsListView({ posts, accounts = [], request, onSelectPost, onRefresh,
           <div className="row" style={{ gap: 6 }}>
             <button type="button" className="btn btn-sm btn-ghost" onClick={() => onSelectPost?.(post)}>Open</button>
             {failed && <button type="button" className="btn btn-sm btn-secondary" disabled={!!busyId} onClick={() => void retryPost(post.id)}>{busyId === post.id ? <LoaderCircle size={13} className="animate-spin" /> : <RotateCcw size={13} />}Retry</button>}
-            <RowDelete post={post} accounts={accounts} request={request} onRefresh={onRefresh} />
+            <PostRowMenu post={post} onEdit={(p) => (onEditPost || onSelectPost)?.(p)} onDelete={onDeletePost} />
           </div>
         </div>;
       })}
@@ -641,7 +642,7 @@ function EmptyState({ icon: Icon, title, text, action, onClick }) {
 }
 
 
-function QueueView({ request, accounts = [], posts = [], onCreatePost, onSelectPost, onRefresh, initialTab }) {
+function QueueView({ request, accounts = [], posts = [], onCreatePost, onSelectPost, onEditPost, onDeletePost, onRefresh, initialTab }) {
   const [qTab, setQTab] = useState(initialTab || "scheduled");
   const [chanFilter, setChanFilter] = useState("all");
   const [showSettings, setShowSettings] = useState(false);
@@ -744,8 +745,8 @@ function QueueView({ request, accounts = [], posts = [], onCreatePost, onSelectP
         <ScAccountAvatar account={acc} size={36} />
         <div className="body"><div className="row" style={{ gap: 8, marginBottom: 4 }}><b className="sm">{acc?.account_name || acc?.platform || "Account"}</b><StatusBadge status={p.status} post={p} /></div><div className="txt">{p.content || "Untitled post"}</div>{p.status === "failed" && (p.last_error_message || p.last_error_code) && <div className="xs" style={{ color: "var(--error)", marginTop: 6 }}>⚠ {p.last_error_code ? `${p.last_error_code}: ` : ""}{p.last_error_message}</div>}</div>
         {p.media_urls?.[0] && <img className="thumb" src={p.media_urls[0]} alt="" style={{ objectFit: "cover" }} onError={hideBrokenImg} />}
-        <div className="row" style={{ gap: 6 }}>{p.status === "failed" ? <button type="button" className="btn btn-sm btn-secondary" disabled={!!retrying} onClick={() => void retry(p.id)}>{retrying === p.id ? <LoaderCircle size={13} className="animate-spin" /> : <RotateCcw size={13} />}Retry</button> : <button type="button" className="btn btn-sm btn-ghost btn-icon" aria-label="Open post" onClick={() => onSelectPost?.(p)}><svg className="ico" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /></svg></button>}
-        <RowDelete post={p} accounts={accounts} request={request} onRefresh={onRefresh} /></div>
+        <div className="row" style={{ gap: 6 }}>{p.status === "failed" ? <button type="button" className="btn btn-sm btn-secondary" disabled={!!retrying} onClick={() => void retry(p.id)}>{retrying === p.id ? <LoaderCircle size={13} className="animate-spin" /> : <RotateCcw size={13} />}Retry</button> : null}
+        <PostRowMenu post={p} onEdit={(x) => (onEditPost || onSelectPost)?.(x)} onDelete={onDeletePost} /></div>
       </div>; })}
     </div>))}
     {showSettings && <section className="space-y-4">
@@ -816,7 +817,7 @@ function QueueView({ request, accounts = [], posts = [], onCreatePost, onSelectP
   </div>;
 }
 
-export default function PublishSection({ request, posts = [], accounts = [], authorName, localDrafts = [], onUpdateLocalDraft, onRemoveLocalDraft, onCreatePost, onOpenDraft, onUseAsset, onRefresh, view = "calendar", onNavigate, initialQueueTab }) {
+export default function PublishSection({ request, posts = [], accounts = [], authorName, localDrafts = [], onUpdateLocalDraft, onRemoveLocalDraft, onCreatePost, onOpenDraft, onUseAsset, onRefresh, view = "calendar", onNavigate, initialQueueTab, initialOpenPostId, onPostDeleted }) {
   const safePosts = Array.isArray(posts) ? posts.filter(Boolean) : [];
   const safeAccounts = Array.isArray(accounts) ? accounts.filter(Boolean) : [];
   const active = view;
@@ -855,18 +856,37 @@ export default function PublishSection({ request, posts = [], accounts = [], aut
     setSelectedPost({ ...post, channel_posts: channelPosts });
     setPopoverAnchor(anchor && anchor.nodeType === 1 ? anchor : null);
   }
+  // Row "⋯" menu: Edit opens the edit modal when the post is editable (PATCH accepts draft/scheduled), otherwise the details popover.
+  function editPost(post) {
+    if (!post) return;
+    if (["draft", "scheduled"].includes(post.status)) { closePopover(); setEditingPost(post); } else openPost(post);
+  }
+  const [deletingPost, setDeletingPost] = useState(null);
+  async function afterDelete(post, info) {
+    if (selectedPost?.id === post.id) closePopover();
+    if (onPostDeleted) await onPostDeleted(post, info); else await onRefresh?.();
+  }
+  const openedFromNav = React.useRef(null);
+  useEffect(() => {
+    if (!initialOpenPostId || openedFromNav.current === initialOpenPostId) return;
+    const match = safePosts.find((p) => p.id === initialOpenPostId);
+    if (!match) return;
+    openedFromNav.current = initialOpenPostId;
+    editPost(match);
+  }, [initialOpenPostId, safePosts]); // eslint-disable-line react-hooks/exhaustive-deps
   const calendarHead = <PageHead title="Calendar" sub="Drag posts to reschedule. Click an empty day to create.">
     <button type="button" onClick={() => onCreatePost?.()} className="btn btn-primary"><Plus size={15} />New post</button>
   </PageHead>;
   const statusOnly = <PublishFilterBar accounts={safeAccounts} status={filterStatus} setStatus={setFilterStatus} platform={filterPlatform} accountId={filterAccountId} setAccountId={setFilterAccountId} />;
   return <>
     {(active === "calendar" || active === "week") && <>{calendarHead}<MonthCalendar onEditPost={(p) => setEditingPost(p)} onDuplicatePost={duplicatePost} key={active} initialView={active === "week" ? "week" : "month"} posts={calendarPosts} accounts={safeAccounts} onCreatePost={onCreatePost} onSelectPost={openPost} request={request} onRefresh={onRefresh} onList={() => onNavigate?.("posts")} platformFilter={filterPlatform} setPlatformFilter={setFilterPlatform} filters={statusOnly} /></>}
-    {active === "posts" && <>{calendarHead}<PostsListView posts={safePosts} accounts={safeAccounts} request={request} onSelectPost={openPost} onRefresh={onRefresh} status={filterStatus} setStatus={setFilterStatus} platform={filterPlatform} setPlatform={setFilterPlatform} accountId={filterAccountId} setAccountId={setFilterAccountId} headerExtra={<Seg value="list" onChange={(v) => v !== "list" && onNavigate?.(v === "week" ? "week" : "calendar")} options={[["month", "Month"], ["week", "Week"], ["list", "List"]]} />} /></>}
-    {active === "queue" && <QueueView request={request} accounts={safeAccounts} posts={safePosts} onCreatePost={onCreatePost} onSelectPost={openPost} onRefresh={onRefresh} initialTab={initialQueueTab} />}
+    {active === "posts" && <>{calendarHead}<PostsListView posts={safePosts} accounts={safeAccounts} request={request} onSelectPost={openPost} onEditPost={editPost} onDeletePost={setDeletingPost} onRefresh={onRefresh} status={filterStatus} setStatus={setFilterStatus} platform={filterPlatform} setPlatform={setFilterPlatform} accountId={filterAccountId} setAccountId={setFilterAccountId} headerExtra={<Seg value="list" onChange={(v) => v !== "list" && onNavigate?.(v === "week" ? "week" : "calendar")} options={[["month", "Month"], ["week", "Week"], ["list", "List"]]} />} /></>}
+    {active === "queue" && <QueueView request={request} accounts={safeAccounts} posts={safePosts} onCreatePost={onCreatePost} onSelectPost={openPost} onEditPost={editPost} onDeletePost={setDeletingPost} onRefresh={onRefresh} initialTab={initialQueueTab} />}
     {active === "drafts" && <DraftsView request={request} accounts={safeAccounts} authorName={authorName} localDrafts={localDrafts} onUpdateLocalDraft={onUpdateLocalDraft} onRemoveLocalDraft={onRemoveLocalDraft} onCreatePost={onCreatePost} onOpenDraft={onOpenDraft} onRefresh={onRefresh} />}
     {active === "library" && <LibraryView request={request} onUseAsset={onUseAsset} />}
     {active === "approvals" && <ApprovalsView request={request} onRefresh={onRefresh} accounts={safeAccounts} />}
     {selectedPost && <RenderErrorBoundary scope="Post popover" compact><PostPopover post={selectedPost} anchor={popoverAnchor} accounts={safeAccounts} request={request} onRefresh={onRefresh} onClose={closePopover} onEdit={(p) => { closePopover(); setEditingPost(p); }} onDuplicate={duplicatePost} /></RenderErrorBoundary>}
+    {deletingPost && <DeletePostModal post={deletingPost} account={safeAccounts.find((a) => a.id === deletingPost.connected_account_id)} request={request} onClose={() => setDeletingPost(null)} onDeleted={afterDelete} />}
     {editingPost && <RenderErrorBoundary scope="Edit post" compact><PostEditModal post={editingPost} accounts={safeAccounts} request={request} onRefresh={onRefresh} onClose={() => setEditingPost(null)} /></RenderErrorBoundary>}
   </>;
 }
@@ -904,13 +924,6 @@ function postNetwork(post, accounts) {
   const platform = String(account?.platform || post?.preview_platform || "").toLowerCase();
   return NETWORK_LABELS[platform] || account?.platform || "the network";
 }
-function willRemoteDelete(post) { return Boolean(post?.provider_post_id) && !String(post.provider_post_id).startsWith("inbox:"); }
-function deleteCopy(post, network) {
-  return willRemoteDelete(post)
-    ? `It's removed from SocialCastly and also deleted from ${network}. If ${network} rejects the delete, the post stays here.`
-    : `It's removed from SocialCastly only. Nothing was published, so nothing changes on ${network}.`;
-}
-
 /** Inline delete confirmation (title, one line, Cancel, red Delete). Uses DELETE /posts/:id (remote-first when published). */
 function DeleteConfirm({ post, network, busy, onCancel, onConfirm }) {
   return <div className="pp-confirm" role="group" aria-labelledby={`pp-del-${post.id}`}>
@@ -921,34 +934,6 @@ function DeleteConfirm({ post, network, busy, onCancel, onConfirm }) {
       <button type="button" className="btn btn-sm btn-danger" disabled={busy} onClick={onConfirm}>{busy && <LoaderCircle size={13} className="animate-spin" />}Delete</button>
     </div>
   </div>;
-}
-
-/** Compact trash button for list rows; opens the same inline confirm in a small card under the row actions. */
-function RowDelete({ post, accounts, request, onRefresh }) {
-  const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const ref = React.useRef(null);
-  useEffect(() => {
-    if (!open) return undefined;
-    const onDown = (e) => { if (!busy && ref.current && !ref.current.contains(e.target)) setOpen(false); };
-    const onKey = (e) => { if (e.key === "Escape" && !busy) setOpen(false); };
-    document.addEventListener("mousedown", onDown); window.addEventListener("keydown", onKey);
-    return () => { document.removeEventListener("mousedown", onDown); window.removeEventListener("keydown", onKey); };
-  }, [open, busy]);
-  if (post.status === "publishing") return null;
-  async function confirm() {
-    setBusy(true); setError("");
-    try { await request(`/posts/${post.id}`, { method: "DELETE" }); setOpen(false); await onRefresh?.(); }
-    catch (e) { setError(e.message || "Could not delete."); } finally { setBusy(false); }
-  }
-  return <span ref={ref} style={{ position: "relative", display: "inline-flex" }}>
-    <button type="button" className="btn btn-sm btn-ghost btn-icon" aria-label="Delete post" title="Delete" aria-expanded={open} onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }} style={{ color: "var(--error)" }}><Trash2 size={14} /></button>
-    {open && <div className="pop" role="dialog" aria-label="Delete post" style={{ position: "absolute", right: 0, top: 36, width: 280, zIndex: 30, gap: 8 }} onClick={(e) => e.stopPropagation()}>
-      {error && <div className="pp-err" role="alert"><span className="grow">{error}</span></div>}
-      <DeleteConfirm post={post} network={postNetwork(post, accounts)} busy={busy} onCancel={() => setOpen(false)} onConfirm={() => void confirm()} />
-    </div>}
-  </span>;
 }
 
 const POPOVER_GAP = 12;

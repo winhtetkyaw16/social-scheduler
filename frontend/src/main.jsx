@@ -8,6 +8,9 @@ import BioLinkDashboard from "./BioLinkDashboard.jsx";
 import ComposerChannelEditor from "./ComposerChannelEditor.jsx";
 import EmojiPicker from "./EmojiPicker.jsx";
 import RenderErrorBoundary from "./RenderErrorBoundary.jsx";
+import Landing from "./Landing.jsx";
+import ComposerV2 from "./ComposerV2.jsx";
+import "./sc/composer-v2.css";
 import ManageAccounts, { AccountAvatar, DestinationPicker } from "./ManageAccounts.jsx";
 import {
   ArrowDownToLine, ArrowLeft, ArrowRight, AtSign, BarChart3, Bookmark, CalendarDays, Expand,
@@ -292,8 +295,8 @@ function Toast({ toast, onClose }) {
   </div>;
 }
 
-function AuthScreen({ onAuthenticated, dark, toggleTheme, remember, setRemember }) {
-  const [mode, setMode] = useState("login");
+function AuthScreen({ onAuthenticated, dark, toggleTheme, remember, setRemember, initialMode = "login" }) {
+  const [mode, setMode] = useState(initialMode === "signup" ? "signup" : "login");
   const [fields, setFields] = useState({ full_name: "", workspace_name: "", email: "", password: "" });
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -716,7 +719,7 @@ function App() {
   function goToTab(rawTab, opts) {
     let tab = rawTab === "publish" ? "calendar" : rawTab === "insights" ? "analytics" : rawTab;
     if (tab === "billing" || tab === "notifications" || tab === "profile") { setSettingsTab(tab); tab = "settings"; }
-    if (opts?.tab) setNavOpts(opts); else setNavOpts(null);
+    if (opts?.tab || opts?.openPostId) setNavOpts(opts); else setNavOpts(null);
     if (["home", "studio", "accounts", "calendar", "week", "posts", "queue", "drafts", "approvals", "library", "analytics", "media", "team", "settings", "onboarding", "states", "biolink"].includes(tab)) {
       if (["calendar", "week", "posts", "queue", "drafts", "approvals"].includes(tab)) {
         try { localStorage.setItem("social_studio_opened_publish", "1"); } catch { /* Session flag still works. */ }
@@ -878,7 +881,8 @@ function App() {
     setLocalDrafts((current) => current.filter((draft) => draft.id !== draftId));
   }
 
-  async function createPost(event) {
+  async function createPost(event, modeOverride) {
+    const mode = typeof modeOverride === "string" ? modeOverride : scheduleMode;
     event.preventDefault();
     if (!selectedAccounts.length) { notify({ title: "Choose a channel", message: "Select at least one connected social account before publishing." }); return; }
     if (channelWarnings.length) { notify({ title: "Review channel requirements", message: channelWarnings[0].message }); return; }
@@ -888,15 +892,15 @@ function App() {
     if (overLimitAccount) { const overLimitChannel = CHANNELS.find((channel) => channel.id === overLimitAccount.platform); const limit = Math.min(overLimitChannel?.limit || MAX_CHARS, MAX_CHARS); notify({ title: "Caption is too long", message: `${overLimitChannel?.label || "A selected channel"} allows up to ${limit.toLocaleString()} characters.` }); return; }
     let scheduledAt = null;
     let queueByAccount = {};
-    if (scheduleMode !== "queue") {
-      try { scheduledAt = scheduleMode === "now" ? new Date().toISOString() : zonedDateTimeToISO(date, time, timeZone); }
+    if (mode !== "queue") {
+      try { scheduledAt = mode === "now" ? new Date().toISOString() : zonedDateTimeToISO(date, time, timeZone); }
       catch { notify({ title: "Check the schedule", message: "The selected date, time, or timezone is not valid." }); return; }
-      if (!scheduledAt || (scheduleMode === "schedule" && new Date(scheduledAt) <= new Date())) { notify({ title: "Choose a future time", message: "Scheduled publishing needs a time later than now." }); return; }
+      if (!scheduledAt || (mode === "schedule" && new Date(scheduledAt) <= new Date())) { notify({ title: "Choose a future time", message: "Scheduled publishing needs a time later than now." }); return; }
     }
     setSaving(true);
     setUploadBusy(true);
     try {
-      if (scheduleMode === "queue") {
+      if (mode === "queue") {
         const allocated = await authenticatedFetch(`/publish/queue/allocate?timezone=${encodeURIComponent(timeZone || "UTC")}`, {
           method: "POST",
           body: JSON.stringify({ connected_account_ids: selectedAccounts.map((account) => account.id) }),
@@ -916,10 +920,10 @@ function App() {
         const inheritShared = useSharedMediaByAccount[account.id] !== false;
         const customUrls = captionMode === "custom" ? [...(channelMediaUrlsByAccount[account.id] || []), ...(accountFiles.length ? await uploadFiles(accountFiles) : [])] : [];
         const mediaUrls = inheritShared ? [...sharedUrls, ...customUrls] : customUrls;
-        const when = scheduleMode === "queue" ? queueByAccount[account.id] : scheduledAt;
+        const when = mode === "queue" ? queueByAccount[account.id] : scheduledAt;
         return authenticatedFetch("/posts", {
           method: "POST",
-          body: JSON.stringify({ connected_account_id: account.id, content: captionForAccount(account).trim(), media_urls: mediaUrls, scheduled_at: when, idempotency_key: makeIdempotencyKey(), post_metadata: { format: formatForAccount(account), settings: platformSettingsByAccount[account.id] || {}, scheduleMode, ...(account.platform === "pinterest" && platformSettingsByAccount[account.id]?.destination_url ? { destination_url: platformSettingsByAccount[account.id].destination_url } : {}) } }),
+          body: JSON.stringify({ connected_account_id: account.id, content: captionForAccount(account).trim(), media_urls: mediaUrls, scheduled_at: when, idempotency_key: makeIdempotencyKey(), post_metadata: { format: formatForAccount(account), settings: platformSettingsByAccount[account.id] || {}, mode, ...(account.platform === "pinterest" && platformSettingsByAccount[account.id]?.destination_url ? { destination_url: platformSettingsByAccount[account.id].destination_url } : {}) } }),
         });
       }));
       const successCount = results.filter((result) => result.status === "fulfilled").length;
@@ -928,7 +932,7 @@ function App() {
         const createdIds = results.filter((result) => result.status === "fulfilled").map((result) => result.value?.id).filter(Boolean);
         let [accountData, postData] = await Promise.all([authenticatedFetch("/accounts"), authenticatedFetch("/posts")]);
         // Post now finishes in a background worker; poll briefly so the calendar flips to published.
-        if (scheduleMode === "now" && createdIds.length) {
+        if (mode === "now" && createdIds.length) {
           const terminal = new Set(["published", "failed", "cancelled", "archived"]);
           for (let attempt = 0; attempt < 8; attempt += 1) {
             const pending = (Array.isArray(postData) ? postData : []).filter((post) => createdIds.includes(post.id) && !terminal.has(post.status));
@@ -951,7 +955,7 @@ function App() {
           : failedCount
             ? `${publishedCount} published, ${failedCount} failed.${failureMessages.length ? ` ${failureMessages[0]}` : ""}`
             : `${successCount} account${successCount === 1 ? "" : "s"} queued for publishing. Refresh if the status is still updating.`;
-        notify({ title: scheduleMode === "now" ? nowTitle : scheduleMode === "queue" ? "Added to queue" : "Post scheduled", message: scheduleMode === "now" ? nowMessage : `${successCount} account${successCount === 1 ? "" : "s"} ${scheduleMode === "queue" ? "placed in the next free queue slot" : "scheduled for a specific time"}.${failureMessages.length ? ` ${failureMessages.length} account${failureMessages.length === 1 ? "" : "s"} could not be scheduled.` : ""}`, kind: (failureMessages.length || failedCount) ? "error" : "success" });
+        notify({ title: mode === "now" ? nowTitle : mode === "queue" ? "Added to queue" : "Post scheduled", message: mode === "now" ? nowMessage : `${successCount} account${successCount === 1 ? "" : "s"} ${mode === "queue" ? "placed in the next free queue slot" : "scheduled for a specific time"}.${failureMessages.length ? ` ${failureMessages.length} account${failureMessages.length === 1 ? "" : "s"} could not be scheduled.` : ""}`, kind: (failureMessages.length || failedCount) ? "error" : "success" });
       }
       if (!successCount) notify({ title: "Couldn’t create your post", message: failureMessages[0] || "Please try again." });
     } catch (error) { notify({ title: "Couldn’t create your post", message: error.message || "Please try again." }); }
@@ -979,6 +983,12 @@ function App() {
       await loadWorkspace(token);
       notify({ title: "Retry queued", message: "The post will publish again after the provider accepts it.", kind: "success" });
     } catch (error) { notify({ title: "Couldn’t retry", message: error.message }); }
+  }
+
+  async function handlePostDeleted(post, info) {
+    await loadWorkspace(token);
+    void refreshNavCounts();
+    notify({ title: "Post deleted", message: info?.remote ? `Removed from SocialCastly and ${info.network}.` : "It was removed from your queue.", kind: "success" });
   }
 
   async function archiveQueuedPost(postId) {
@@ -1030,7 +1040,13 @@ function App() {
     if (token) void loadWorkspace(token);
   }, [token, loadWorkspace, notify]);
 
-  if (!isLoggedIn || !token) return <><AuthScreen onAuthenticated={handleAuthenticated} dark={dark} toggleTheme={() => setDark((value) => !value)} remember={remember} setRemember={setRemember} /><Toast toast={toast} onClose={() => setToast(null)} /></>;
+  const readAuthView = () => { const v = new URLSearchParams(window.location.search).get("auth"); return v === "login" || v === "signup" ? v : ""; };
+  const [authView, setAuthView] = useState(readAuthView);
+  useEffect(() => { const onPop = () => setAuthView(readAuthView()); window.addEventListener("popstate", onPop); return () => window.removeEventListener("popstate", onPop); }, []);
+  const openAuth = (view) => { const url = new URL(window.location.href); url.searchParams.set("auth", view); url.hash = ""; window.history.pushState({}, "", url.pathname + url.search); setAuthView(view); window.scrollTo(0, 0); };
+
+  if ((!isLoggedIn || !token) && !authView) return <Landing dark={dark} onAuth={openAuth} />;
+  if (!isLoggedIn || !token) return <><AuthScreen key={authView} initialMode={authView} onAuthenticated={handleAuthenticated} dark={dark} toggleTheme={() => setDark((value) => !value)} remember={remember} setRemember={setRemember} /><Toast toast={toast} onClose={() => setToast(null)} /></>;
 
   const navigation = [
     { id: "home", label: "Dashboard", icon: Home },
@@ -1112,8 +1128,8 @@ function App() {
 
         <div className="content">
           {loadError && <div role="alert" className="alert error sm"><span className="grow">{loadError}</span><button type="button" onClick={() => void loadWorkspace()} className="btn btn-sm btn-secondary">Retry</button></div>}
-          {activeTab === "home" ? <RenderErrorBoundary scope="Dashboard"><ScDashboard user={user} accounts={accounts} posts={posts} approvals={approvalItems} goToTab={goToTab} openStudio={openStudio} onRetryPost={retryQueuedPost} /></RenderErrorBoundary>
-          : publishViews.includes(activeTab) ? <RenderErrorBoundary scope="Publish workspace"><PublishSection key={activeTab === "week" || activeTab === "calendar" ? "cal" : activeTab} view={activeTab} initialQueueTab={navOpts?.tab} onNavigate={goToTab} request={authenticatedFetch} posts={posts} accounts={accounts} authorName={user.full_name} localDrafts={localDrafts} onUpdateLocalDraft={updateLocalDraft} onRemoveLocalDraft={removeLocalDraft} onCreatePost={openStudio} onOpenDraft={openSavedDraft} onUseAsset={useLibraryAsset} onRefresh={() => { void loadWorkspace(token); void refreshNavCounts(); }} /></RenderErrorBoundary>
+          {activeTab === "home" ? <RenderErrorBoundary scope="Dashboard"><ScDashboard user={user} accounts={accounts} posts={posts} approvals={approvalItems} goToTab={goToTab} openStudio={openStudio} onRetryPost={retryQueuedPost} request={authenticatedFetch} onOpenPost={(p) => goToTab("posts", { openPostId: p.id })} onPostDeleted={handlePostDeleted} /></RenderErrorBoundary>
+          : publishViews.includes(activeTab) ? <RenderErrorBoundary scope="Publish workspace"><PublishSection key={activeTab === "week" || activeTab === "calendar" ? "cal" : activeTab} view={activeTab} initialQueueTab={navOpts?.tab} initialOpenPostId={navOpts?.openPostId} onPostDeleted={handlePostDeleted} onNavigate={goToTab} request={authenticatedFetch} posts={posts} accounts={accounts} authorName={user.full_name} localDrafts={localDrafts} onUpdateLocalDraft={updateLocalDraft} onRemoveLocalDraft={removeLocalDraft} onCreatePost={openStudio} onOpenDraft={openSavedDraft} onUseAsset={useLibraryAsset} onRefresh={() => { void loadWorkspace(token); void refreshNavCounts(); }} /></RenderErrorBoundary>
           : activeTab === "analytics" ? <RenderErrorBoundary scope="Analytics"><ScAnalytics posts={posts} accounts={accounts} /></RenderErrorBoundary>
           : activeTab === "media" ? <RenderErrorBoundary scope="Media library"><ScMedia request={authenticatedFetch} onUseAsset={useLibraryAsset} /></RenderErrorBoundary>
           : activeTab === "team" ? <ScTeam user={user} accounts={accounts} />
@@ -1121,22 +1137,15 @@ function App() {
           : activeTab === "onboarding" ? <ScOnboarding accounts={accounts} connect={(id) => connect(CHANNELS.find((channel) => channel.id === id))} connectable={[...OAUTH_PLATFORMS]} goToTab={goToTab} dark={dark} />
           : activeTab === "states" ? <ScStates goToTab={goToTab} />
           : activeTab === "biolink" ? <RenderErrorBoundary scope="Bio Link dashboard"><BioLinkDashboard user={user} accounts={accounts} posts={posts} /></RenderErrorBoundary> : activeTab === "accounts" ? <><ManageAccounts posts={posts} ownerName={user.full_name} accounts={accounts} channels={CHANNELS} request={authenticatedFetch} onConnect={connect} onChanged={() => loadWorkspace(token)} ChannelBrandImage={ChannelBrandImage} publishablePlatforms={PUBLISHABLE_PLATFORMS} /></> : <section className="animate-fade-up space-y-4">
-            <div className="page-head"><div><h1>Create post</h1><p className="muted">Write once, tailor for each channel, and preview before it goes out.</p></div><div className="row"><button type="button" className="btn btn-ghost" onClick={() => setWritingTool(writingTool === "templates" ? null : "templates")} aria-expanded={writingTool === "templates"}><FileText size={15} />Templates</button><button type="button" className="btn btn-ghost" onClick={() => setWritingTool(writingTool === "assistant" ? null : "assistant")} aria-expanded={writingTool === "assistant"}><WandSparkles size={15} />Assistant</button><button type="button" className="btn btn-secondary" onClick={() => void saveAsDraft()} disabled={saving || uploadBusy || loadingAccounts}>Save draft</button></div></div>
-            <div className="grid sc-composer" style={{ gridTemplateColumns: "minmax(0,1.45fr) minmax(0,1fr)", alignItems: "start" }}>
-              <form onSubmit={createPost} className="card col sc-composer-form" style={{ padding: 20, gap: 20, minWidth: 0 }}>
-                <div className="row wrap sc-publish-to" style={{ gap: 8, padding: "14px 20px", borderBottom: "1px solid var(--border)", margin: "-20px -20px 0" }}><span className="sm muted">Publish to</span>{accounts.filter((account) => account.is_active).map((account) => { const on = selectedIds.includes(account.id); return <button type="button" key={account.id} onClick={() => toggleAccount(account.id)} aria-pressed={on} className="row sc-acct-pill" style={{ gap: 6, padding: "3px 10px 3px 3px", borderRadius: 999, border: `1px solid ${on ? "var(--primary)" : "var(--border)"}`, background: on ? "var(--primary-soft)" : "var(--surface)", opacity: on ? 1 : .7 }}><span className="with-ch"><ScAvatar name={account.account_name || account.platform} size={24} src={account.avatar_url || undefined} /><ScCh platform={account.platform} /></span><span className="sm" style={{ fontWeight: 600 }}>{account.account_name || account.platform}</span></button>; })}<button type="button" className="btn btn-ghost btn-icon btn-sm" aria-label="Connect a channel" onClick={() => connect()}><Plus size={16} /></button></div>
-                {writingTool && <div className="rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50/80 to-purple-50/70 p-3 dark:border-indigo-900/60 dark:from-indigo-950/30 dark:to-purple-950/20"><div className="mb-2 flex items-center justify-between"><p className="text-[10px] font-extrabold uppercase tracking-wider text-indigo-700 dark:text-indigo-200">{writingTool === "templates" ? "Start with a template" : "Writing assistant"}</p><button type="button" onClick={() => setWritingTool(null)} className="text-[10px] font-bold text-slate-400">Close</button></div>{writingTool === "templates" ? <div className="grid gap-2 sm:grid-cols-3">{COMPOSER_TEMPLATES.map((template) => <button type="button" key={template.name} onClick={() => { updateTargetCaption(() => template.text); setWritingTool(null); }} className="rounded-xl border border-white bg-white/80 p-2.5 text-left text-[10px] font-bold text-slate-700 transition hover:border-indigo-300 hover:shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">{template.name}<span className="mt-1 block line-clamp-2 text-[9px] font-normal leading-4 text-slate-500">{template.text.split("\n")[0]}</span></button>)}</div> : <><p className="mb-2 text-[10px] text-slate-500">Quick local writing helpers for {captionMode === "custom" ? (previewAccount?.account_name || "the selected preview account") : "your universal caption"}. Connect a text-generation service to enable generated copy.</p><div className="flex flex-wrap gap-2"><button type="button" onClick={() => applyWritingHelper("hook")} className="rounded-lg border border-indigo-100 bg-white px-2.5 py-1.5 text-[10px] font-bold text-indigo-700 dark:border-slate-700 dark:bg-slate-900 dark:text-indigo-200">Make it engaging</button><button type="button" onClick={() => applyWritingHelper("grammar")} className="rounded-lg border border-indigo-100 bg-white px-2.5 py-1.5 text-[10px] font-bold text-indigo-700 dark:border-slate-700 dark:bg-slate-900 dark:text-indigo-200">Fix grammar</button><button type="button" onClick={() => applyWritingHelper("hashtags")} className="rounded-lg border border-indigo-100 bg-white px-2.5 py-1.5 text-[10px] font-bold text-indigo-700 dark:border-slate-700 dark:bg-slate-900 dark:text-indigo-200">Add hashtag ideas</button></div></>}</div>}
-                {previewAccount && (formatForAccount(previewAccount) === "Short" || formatForAccount(previewAccount) === "Reel / Video" || previewAccount.platform === "youtube") && <label className="block"><span className="sc-h2">Video title <span className="font-normal text-slate-400">· optional</span></span><input value={title} onChange={(event) => setTitle(event.target.value)} maxLength={100} placeholder="Add a title for your video" className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs outline-none transition focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-950" /></label>}
-                <RenderErrorBoundary scope="Channel caption editor" compact><ComposerChannelEditor accounts={selectedAccounts} mode={captionMode} setMode={changeCaptionMode} caption={caption} setCaption={setCaption} captionsByAccount={captionsByAccount} setCaptionsByAccount={setCaptionsByAccount} useUniversalCaptionByAccount={useUniversalCaptionByAccount} setUseUniversalCaptionByAccount={setUseUniversalCaptionByAccount} channelFiles={channelFiles} setChannelFiles={setChannelFiles} channelMediaUrlsByAccount={channelMediaUrlsByAccount} setChannelMediaUrlsByAccount={setChannelMediaUrlsByAccount} useSharedMediaByAccount={useSharedMediaByAccount} setUseSharedMediaByAccount={setUseSharedMediaByAccount} sharedMediaCount={files.length + libraryMediaUrls.length} channelWarnings={channelWarnings} previewId={previewAccount?.id} setPreviewId={setPreviewId} formatsByAccount={formatsByAccount} formatOverridesByAccount={formatOverridesByAccount} setAccountFormat={setAccountFormat} platformSettingsByAccount={platformSettingsByAccount} setPlatformSetting={setPlatformSetting} onChannelFilesAdded={(account, incoming) => { void suggestFormatsForAccounts(incoming, [account]); }} onOpenAssistant={(accountId) => { if (accountId) setPreviewId(accountId); setWritingTool("assistant"); }} onEditMedia={(file) => { setQuickFile(file); setQuickTool(file.type.startsWith("video/") ? "video" : "image"); }}>
-                  <div className="mb-2 flex justify-end"><span className={`text-[10px] font-bold ${caption.length > postLimit ? "text-rose-500" : "text-slate-400"}`}>{caption.length.toLocaleString()} / {postLimit.toLocaleString()}</span></div><WritingTools caption={caption} setCaption={setCaption} />
-                </ComposerChannelEditor></RenderErrorBoundary>
-                <section><div className="mb-2.5 flex items-center justify-between"><div><h3 className="sc-h2">Add your media</h3><p className="section-hint mt-0.5">Photos and video make a post feel real.</p></div><span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Optional</span></div><MediaDropzone files={files} setFiles={setFiles} uploadBusy={uploadBusy} setToast={notify} openTool={setQuickTool} onFilesAdded={(incoming) => { void suggestFormatsForAccounts(incoming); }} onEditFile={(file) => { setQuickFile(file); setQuickTool(file.type.startsWith("video/") ? "video" : "image"); }} />{libraryMediaUrls.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{libraryMediaUrls.map((url) => <span key={url} className="inline-flex max-w-full items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 text-[10px] font-semibold text-indigo-800 dark:border-indigo-900 dark:bg-indigo-950/50 dark:text-indigo-200"><ImagePlus size={12} /><span className="max-w-48 truncate">{decodeURIComponent(url.split("/").pop().split("?")[0])}</span><button type="button" onClick={() => setLibraryMediaUrls((current) => current.filter((item) => item !== url))} aria-label="Remove selected library media" className="font-bold">×</button></span>)}</div>}</section>
-                <ScheduleControls mode={scheduleMode} setMode={setScheduleMode} date={date} setDate={setDate} time={time} setTime={setTime} timeZone={timeZone} setTimeZone={setTimeZone} selectedAccounts={selectedAccounts} />
-                <div className="row between wrap" style={{ borderTop: "1px solid var(--border)", margin: "0 -20px -20px", padding: "14px 20px", gap: 10 }}><span className="xs subtle">Posts are created separately for each selected account.</span><div className="row"><button type="button" onClick={() => void saveAsDraft()} disabled={saving || uploadBusy || loadingAccounts} className="btn btn-secondary">{saving && !uploadBusy ? <LoaderCircle size={15} className="animate-spin" /> : null}Save as draft</button><button type="submit" disabled={saving || uploadBusy || loadingAccounts} className="btn btn-primary">{saving || uploadBusy ? <LoaderCircle size={15} className="animate-spin" /> : null}{saving || uploadBusy ? "Preparing…" : scheduleMode === "now" ? `Post now${selectedAccounts.length > 1 ? ` (${selectedAccounts.length})` : ""}` : scheduleMode === "queue" ? "Add to queue" : `Schedule ${selectedAccounts.length || ""} post${selectedAccounts.length === 1 ? "" : "s"}`.replace("  ", " ")}</button></div></div>
-              </form>
-              <aside className="col sc-composer-preview" style={{ gap: 12, position: "sticky", top: 88, minWidth: 0 }}><h2>Preview</h2><RenderErrorBoundary scope="Live preview" compact><LivePreview channelInfo={{ account: previewAccount, platform: previewChannel }} accounts={selectedAccounts} previewId={previewId} setPreviewId={setPreviewId} caption={previewCaption} uploadedMedia={previewFiles} mediaUrls={previewMediaUrls} posts={posts} title={title} format={formatForAccount(previewAccount)} formatsByAccount={formatsByAccount} platformSettingsByAccount={platformSettingsByAccount} destinationUrl={platformSettingsByAccount[previewAccount?.id]?.destination_url || ""} destinationBoard={platformSettingsByAccount[previewAccount?.id]?.board || "Brand inspiration"} device={device} setDevice={setDevice} /></RenderErrorBoundary>
-              </aside>
-            </div>
+            <RenderErrorBoundary scope="Composer"><ComposerV2 accounts={accounts} selectedIds={selectedIds} toggleAccount={toggleAccount} connect={connect} selectedAccounts={selectedAccounts} channels={CHANNELS} maxChars={MAX_CHARS}
+              captionMode={captionMode} changeCaptionMode={changeCaptionMode} caption={caption} setCaption={setCaption} captionsByAccount={captionsByAccount} setCaptionsByAccount={setCaptionsByAccount} useUniversalCaptionByAccount={useUniversalCaptionByAccount} setUseUniversalCaptionByAccount={setUseUniversalCaptionByAccount}
+              captionForAccount={captionForAccount} mediaForAccount={mediaForAccount} channelWarnings={channelWarnings} templates={COMPOSER_TEMPLATES}
+              files={files} setFiles={setFiles} libraryMediaUrls={libraryMediaUrls} setLibraryMediaUrls={setLibraryMediaUrls} onFilesAdded={(incoming) => { void suggestFormatsForAccounts(incoming); }} onEditFile={(file) => { setQuickFile(file); setQuickTool(file.type.startsWith("video/") ? "video" : "image"); }}
+              title={title} setTitle={setTitle} formatForAccount={formatForAccount} formatsByAccount={formatsByAccount} formatOverridesByAccount={formatOverridesByAccount} setAccountFormat={setAccountFormat} platformSettingsByAccount={platformSettingsByAccount} setPlatformSetting={setPlatformSetting}
+              date={date} setDate={setDate} time={time} setTime={setTime} timeZone={timeZone} setTimeZone={setTimeZone} timezones={TIMEZONES} minDate={dateInZone(new Date(), timeZone)}
+              saving={saving} uploadBusy={uploadBusy} loadingAccounts={loadingAccounts} saveAsDraft={saveAsDraft} submit={(m) => { setScheduleMode(m); void createPost({ preventDefault() {} }, m); }} publishMode={scheduleMode} setPublishMode={setScheduleMode} request={authenticatedFetch} onSetupQueue={() => goToTab("queue")}
+              onDiscard={() => { if ((caption || files.length || libraryMediaUrls.length) && !window.confirm("Discard this post?")) return; setCaption(""); setCaptionsByAccount({}); setUseUniversalCaptionByAccount({}); setCaptionMode("universal"); setTitle(""); setFiles([]); setLibraryMediaUrls([]); setChannelFiles({}); setChannelMediaUrlsByAccount({}); setEditingDraftId(""); }}
+              previewId={previewId} setPreviewId={setPreviewId} /></RenderErrorBoundary>
           </section>}
         </div>
       </div>
@@ -1148,7 +1157,7 @@ function App() {
       <a href="#more" className={moreOpen ? "active" : ""} onClick={(event) => { event.preventDefault(); setMoreOpen((value) => !value); }}><MoreHorizontal size={20} className="ico" />More</a>
     </nav>
     {moreOpen && <div className="sc-more card" role="menu"><nav className="nav">{navGroups.flatMap(([, items]) => items).filter(([id]) => !["home", "calendar", "queue", "studio"].includes(id)).map(navLink)}<a href="#signout" onClick={(event) => { event.preventDefault(); logout(); }}><XIcon size={18} className="ico" />Sign out</a></nav></div>}
-    <QuickStudioDialog tool={quickTool} files={files} selectedFile={quickFile} onClose={() => { setQuickTool(null); setQuickFile(null); }} onToast={notify} />
+    <QuickStudioDialog tool={quickTool} files={files} selectedFile={quickFile} onClose={() => { setQuickTool(null); setQuickFile(null); }} />
     {pickSession && <DestinationPicker platform={pickSession.platform} sessionId={pickSession.sessionId} request={authenticatedFetch} channelMeta={CHANNELS.find((item) => item.id === pickSession.platform)} ChannelBrandImage={ChannelBrandImage} onClose={() => setPickSession(null)} onSaved={async (platform) => { setPickSession(null); await loadWorkspace(token); notify({ title: "Destinations saved", message: `${platform} destinations are connected.`, kind: "success" }); }} />}
     <ConnectChannelPicker
       open={showChannelPicker}

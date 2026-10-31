@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import facebookGlyph from "../assets/logos/facebook-glyph.svg";
 import instagramGlyph from "../assets/logos/instagram-glyph.svg";
 import linkedinGlyph from "../assets/logos/linkedin-glyph.svg";
@@ -37,19 +37,50 @@ export function chColor(platform) { return `var(--ch-${platform === "threads" ? 
 
 export function Ch({ platform, size = "sm", style }) {
   const m = meta(platform);
-  if (PLATFORM_GLYPHS[platform]) return <ChannelTile platform={platform} size={size} className={`ch ${size}`} style={style} />;
+  if (PLATFORM_GLYPHS[platform]) return <ChannelTile platform={platform} size={size} className={size === "badge" ? "ch ch-badge" : `ch ${size}`} style={style} />;
   return <span className={`ch ${m.cls} ${size}`} title={platform} style={!m.cls ? { background: "var(--text-3)", ...style } : style}>{m.short}</span>;
+}
+
+
+const AVATAR_KEYS = ["avatar_url", "profile_image_url", "profile_picture_url", "threads_profile_picture_url", "profile_image", "picture"];
+function pickUrl(value) {
+  if (typeof value === "string") return /^https?:\/\//i.test(value.trim()) ? value.trim() : "";
+  if (value && typeof value === "object") { const n = value.data && typeof value.data === "object" ? value.data : value; return pickUrl(n?.url); }
+  return "";
+}
+/** Same resolution as the API (extract_avatar_url) and Manage Accounts: top-level avatar_url, then provider metadata. */
+export function resolveAvatarUrl(account) {
+  if (!account || typeof account !== "object") return "";
+  for (const k of AVATAR_KEYS) { const u = pickUrl(account[k]); if (u) return u; }
+  const meta = account.extra_metadata && typeof account.extra_metadata === "object" ? account.extra_metadata : {};
+  for (const k of AVATAR_KEYS) { const u = pickUrl(meta[k]); if (u) return u; }
+  return "";
+}
+/** Display name without the "(@handle)" suffix the API adds for some accounts. */
+export function accountDisplayName(account) {
+  const meta = account?.extra_metadata || {};
+  const raw = String(account?.display_name || account?.account_name || meta.name || meta.page_name || "").trim();
+  return raw.replace(/\s*\(@[^)]*\)\s*$/, "").trim() || meta.username || "Your account";
+}
+export function accountHandle(account) {
+  const meta = account?.extra_metadata || {};
+  const explicit = account?.username || meta.username || meta.screen_name || meta.handle || meta.vanity_url || "";
+  const fromName = /\(@([^)]+)\)\s*$/.exec(String(account?.account_name || ""))?.[1] || "";
+  const base = String(explicit || fromName || accountDisplayName(account)).replace(/^@/, "").replace(/\s+/g, "").toLowerCase();
+  return `@${base || "account"}`;
 }
 
 const AV_COLORS = ["#4F46E5", "#0E7490", "#B45309", "#047857", "#7C3AED", "#BE185D"];
 export function initials(name) { return (name || "?").replace(/^@/, "").split(/[\s._-]+/).filter(Boolean).map((p) => p[0]).join("").slice(0, 2).toUpperCase() || "?"; }
 export function Avatar({ name, size = 32, color, src }) {
   const c = color || AV_COLORS[Math.abs([...(name || "")].reduce((a, ch) => a + ch.charCodeAt(0), 0)) % AV_COLORS.length];
-  if (src) return <img className="avatar" src={src} alt="" style={{ width: size, height: size, objectFit: "cover" }} />;
+  const [broken, setBroken] = useState(false);
+  useEffect(() => { setBroken(false); }, [src]);
+  if (src && !broken) return <img className="avatar" src={src} alt="" referrerPolicy="no-referrer" onError={() => setBroken(true)} style={{ width: size, height: size, objectFit: "cover" }} />;
   return <span className="avatar" style={{ background: c, width: size, height: size, fontSize: size >= 56 ? 20 : size <= 26 ? 10 : 12 }}>{initials(name)}</span>;
 }
 export function AccountAvatar({ account, size = 26 }) {
-  return <span className="with-ch"><Avatar name={account?.account_name || account?.platform} size={size} src={account?.avatar_url || account?.profile_image_url || undefined} /><Ch platform={account?.platform} size="badge" /></span>;
+  return <span className="with-ch"><Avatar name={accountDisplayName(account)} size={size} src={resolveAvatarUrl(account) || undefined} /><ChannelTile platform={account?.platform} size="badge" className="ch ch-badge" /></span>;
 }
 
 export function Ico({ d, children, style }) {

@@ -62,7 +62,7 @@ function ChannelFileThumb({ file, onRemove, onEdit, onDragStart, onDragOver, onD
   </div>;
 }
 
-function ChannelFormatSelector({ account, format, automatic, onSelect }) {
+export function ChannelFormatSelector({ account, format, automatic, onSelect }) {
   const options = FORMAT_SUPPORT[account?.platform] || [{ value: "Post", label: "Post" }];
   return (
     <label className="inline-flex shrink-0 items-center gap-1.5 text-[9px] font-bold text-slate-500">
@@ -108,7 +108,7 @@ const MEDIA_LAYOUT_OPTIONS = {
   x: [{ value: "Grid", label: "Grid / Mosaic" }, { value: "Side-by-side", label: "Side-by-side" }],
 };
 
-function PlatformSettingsPopover({ account, settings = {}, onChange, open, onToggle }) {
+export function PlatformSettingsPopover({ account, settings = {}, onChange, open, onToggle }) {
   const triggerRef = useRef(null);
   const panelRef = useRef(null);
   const [position, setPosition] = useState({ top: 12, left: 12, ready: false });

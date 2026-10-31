@@ -169,3 +169,29 @@ html.dark .cht,[data-theme=dark] .cht,.dark .cht{box-shadow:inset 0 0 0 1px rgba
 .cht.cht-linkedin{background:#0A66C2!important}.cht.cht-linkedin>img{width:56%;height:56%}
 .cht.cht-youtube{background:#FF0000!important}.cht.cht-youtube>img{width:52%;height:52%}
 .cht.cht-pinterest{background:#E60023!important}.cht.cht-pinterest>img{width:90%;height:90%}
+
+/* Avatar platform badge: shared app-icon tile, pinned bottom-right, ring + surface halo (light & dark) */
+.scd .with-ch{position:relative;display:inline-flex;flex:none}
+.scd .with-ch .cht.ch-badge,.cht.av-badge{position:absolute!important;right:-3px;bottom:-3px;width:18px;height:18px;border:0!important;box-sizing:border-box;z-index:1;pointer-events:none;box-shadow:inset 0 0 0 1px rgba(0,0,0,.10),0 0 0 2px var(--surface,#fff)!important}
+html.dark .with-ch .cht.ch-badge,.dark .with-ch .cht.ch-badge,html.dark .cht.av-badge,.dark .cht.av-badge{box-shadow:inset 0 0 0 1px rgba(255,255,255,.14),0 0 0 2px var(--surface,#0b0f19)!important}
+.cht.ch-badge::before,.cht.av-badge::before{content:none!important;display:none!important}
+.cht.av-badge{width:auto;height:auto}
+
+/* Post row "⋯" menu + delete confirm modal */
+.scd .pp-menu.sc-row-menu{width:168px;z-index:90;right:auto}
+.scd .pp-menu .ico{width:15px;height:15px;flex:none}
+.scd .pp-menu .sc-menu-div{border:0;border-top:1px solid var(--border);margin:4px 2px}
+.scd .modal-wrap.sc-del-wrap{position:fixed;inset:0;z-index:85;place-items:start center;padding:clamp(16px,calc(50vh - 170px),260px) 16px 16px;overflow:auto}
+.scd .modal.sc-del-modal{width:470px;max-width:100%}
+.scd .sc-del-preview{gap:12px;margin-top:10px;padding:12px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface-2);align-items:flex-start}
+.scd .sc-clamp2{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}
+.scd .sc-del-foot{justify-content:flex-end;gap:8px;padding:16px 24px;border-top:1px solid var(--border)}
+.scd .sc-del-modal .btn-danger{background:var(--error);color:#fff;border-color:transparent;box-shadow:none;background-image:none}
+html.dark .scd .sc-del-modal .btn-danger,[data-theme=dark] .scd .sc-del-modal .btn-danger{color:#0B1120}
+.scd .sc-spin{width:14px;height:14px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:sc-spin .7s linear infinite}
+@keyframes sc-spin{to{transform:rotate(360deg)}}
+@media (max-width:640px){
+  .scd .modal-wrap.sc-del-wrap{place-items:end center;padding:12px}
+  .scd .modal.sc-del-modal{width:100%}
+  .scd .sc-del-foot .btn{flex:1;justify-content:center}
+}

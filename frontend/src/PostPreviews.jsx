@@ -35,9 +35,23 @@ function Av({ account, size = 40 }) {
   useEffect(() => { setBroken(false); }, [src]);
   return src && !broken ? <img className="pv-av" src={src} alt="" referrerPolicy="no-referrer" onError={() => setBroken(true)} style={{ width: size, height: size }} /> : <span className="pv-av" style={{ width: size, height: size, fontSize: size * 0.32 }}>{ini}</span>;
 }
-const Md = memo(function Md({ url, video, ratio, radius, overlay, children }) {
-  return <div className="md" style={{ aspectRatio: ratio, borderRadius: radius }}>
-    {url ? (video ? <video src={url} muted playsInline preload="metadata" /> : <img className="real" src={url} alt="" />) : <img className="ph" src={brandMark} alt="" width={56} height={56} />}
+// Natural width/height ratio per media URL (URLs are stable via useUrls), so typing never resets it.
+const natRatio = new Map();
+// fit modes: given natural ratio r (w/h) return the box ratio; media is object-fit: cover inside it.
+const FIT = {
+  fb: (r) => Math.max(r, 4 / 5),                       // landscape/square native, portrait native down to 4:5
+  ig: (r) => Math.min(1.91, Math.max(r, 4 / 5)),       // Instagram feed clamp 1.91:1 .. 4:5
+  x: (r) => Math.max(r, 3 / 4),                        // native landscape, portrait capped at 3:4
+  li: (r) => Math.max(r, 4 / 5),                       // native landscape, portrait capped at 4:5
+};
+const PH = { fb: [16 / 9, 1], ig: [1, 1], x: [16 / 9, 16 / 9], li: [16 / 9, 1] }; // [video, image] before load
+const Md = memo(function Md({ url, video, ratio, fit, radius, overlay, children }) {
+  const [nat, setNat] = useState(() => natRatio.get(url) || 0);
+  useEffect(() => { setNat(natRatio.get(url) || 0); }, [url]);
+  const got = (w, h) => { if (w > 0 && h > 0) { const r = w / h; natRatio.set(url, r); setNat(r); } };
+  const box = fit && FIT[fit] ? (url && nat ? FIT[fit](nat) : (video ? PH[fit][0] : PH[fit][1])) : ratio;
+  return <div className="md" style={{ aspectRatio: box, borderRadius: radius }}>
+    {url ? (video ? <video src={url} muted playsInline preload="metadata" onLoadedMetadata={fit ? (e) => got(e.currentTarget.videoWidth, e.currentTarget.videoHeight) : undefined} /> : <img className="real" src={url} alt="" onLoad={fit ? (e) => got(e.currentTarget.naturalWidth, e.currentTarget.naturalHeight) : undefined} />) : <img className="ph" src={brandMark} alt="" width={56} height={56} />}
     {video && url && !overlay && <span className="play"><Play size={18} fill="currentColor" /></span>}
     {children}
   </div>;
@@ -59,26 +73,26 @@ export default function PostPreview({ account, caption, media = [], title = "", 
   if (p === "facebook") { const [t, more] = clip(cap, 125); return <div className="pp2">
     <div className="h"><Av account={account} /><div className="grow"><b>{name(account)}</b><div className="sub">Just now · <Globe size={11} /></div></div><MoreHorizontal size={18} /></div>
     <div className={capCls}><Txt text={t} />{more && <>… <span className="mo">See more</span></>}</div>
-    {(first || vertical) && <Md url={first} video={vid} ratio={vertical ? "9/16" : "4/5"} />}
+    {(first || vertical) && (vertical ? <Md url={first} video={vid} ratio="9/16" /> : <Md url={first} video={vid} fit="fb" radius={0} />)}
     <div className="ac fb"><span><ThumbsUp size={17} />Like</span><span><MessageCircle size={17} />Comment</span><span><Forward size={17} />Share</span></div></div>; }
 
   if (p === "instagram") { const [t, more] = clip(cap, 125); return <div className="pp2">
     <div className="h"><Av account={account} size={32} /><b className="grow">{String(name(account)).toLowerCase().replace(/\s+/g, ".")}</b><MoreHorizontal size={18} /></div>
-    <Md url={first} video={vid} ratio={vertical ? "9/16" : "4/5"} radius={0} />
+    {vertical ? <Md url={first} video={vid} ratio="9/16" radius={0} /> : <Md url={first} video={vid} fit="ig" radius={0} />}
     <div className="ac ig"><Heart size={22} /><MessageCircle size={22} /><Send size={22} /><span className="grow" /><Bookmark size={22} /></div>
     <div className={capCls}><b>{String(name(account)).toLowerCase().replace(/\s+/g, ".")}</b> <Txt text={t} />{more && <span className="mo">… more</span>}<div className="sub" style={{ marginTop: 4 }}>Just now</div></div></div>; }
 
   if (p === "x" || p === "twitter") return <div className="pp2"><div className="h" style={{ alignItems: "flex-start" }}><Av account={account} />
     <div className="grow" style={{ minWidth: 0 }}><div><b>{name(account)}</b> <span className="sub">{handle(account)} · now</span></div>
       <div className={capCls} style={{ padding: "2px 0 0", whiteSpace: "pre-wrap" }}><Txt text={cap} /></div>
-      {first && <div style={{ marginTop: 10 }}><Md url={first} video={vid} ratio="16/9" radius={16} /></div>}
+      {first && <div style={{ marginTop: 10 }}><Md url={first} video={vid} fit="x" radius={16} /></div>}
       <div className="ac x"><span><MessageCircle size={16} />0</span><span><Repeat2 size={16} />0</span><span><Heart size={16} />0</span><span><ChartNoAxesColumn size={16} />0</span><span className="grow" /><Bookmark size={16} /><Share size={16} /></div>
     </div></div></div>;
 
   if (p === "linkedin") { const [t, more] = clip(cap, 210); return <div className="pp2">
     <div className="h"><Av account={account} size={44} /><div className="grow"><b>{name(account)}</b><div className="sub">Now · <Globe size={11} /></div></div><MoreHorizontal size={18} /></div>
     <div className={capCls} style={{ whiteSpace: "pre-wrap" }}><Txt text={t} />{more && <span className="mo">…more</span>}</div>
-    {first && <Md url={first} video={vid} ratio="1.91/1" radius={0} />}
+    {first && <Md url={first} video={vid} fit="li" radius={0} />}
     <div className="ac li"><span><ThumbsUp size={17} />Like</span><span><MessageSquare size={17} />Comment</span><span><Repeat size={17} />Repost</span><span><Send size={17} />Send</span></div></div>; }
 
   if (p === "tiktok") { const [t, more] = clip(cap, 80); return <div className="pp2 vert"><Md url={first} video={vid} ratio="9/16" radius={0} overlay>

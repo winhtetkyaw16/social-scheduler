@@ -51,8 +51,8 @@ ACCOUNT_TYPE_CATALOG: dict[str, dict[str, Any]] = {
             "business": {"label": "Business", "publishable_when_ready": True, "primary": True},
             "creator": {"label": "Creator", "publishable_when_ready": True, "primary": True},
         },
-        "needs_destination_pick": False,
-        "notes": "Business/Creator accounts via Instagram Login. Personal profiles are not supported.",
+        "needs_destination_pick": True,
+        "notes": "Business/Creator accounts via Facebook Login for Business (linked to a Facebook Page). Personal profiles are not supported.",
     },
     "x": {
         "label": "X",

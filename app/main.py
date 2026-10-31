@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.v1.router import router as v1_router
+from app.api_docs import install_branded_docs
 from app.core.config import ALLOWED_ORIGINS, APP_ENV, APP_NAME
 from app.core.logging import configure_logging
 from app.db.bootstrap import ensure_database_schema
@@ -40,7 +41,10 @@ app = FastAPI(
     title=APP_NAME,
     version="0.1.0",
     lifespan=lifespan,
+    docs_url=None,  # branded Swagger UI is registered by install_branded_docs
 )
+
+install_branded_docs(app)
 
 app.add_middleware(
     CORSMiddleware,

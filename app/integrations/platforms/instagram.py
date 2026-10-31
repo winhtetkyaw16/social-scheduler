@@ -56,7 +56,7 @@ def instagram_image_url(url: str) -> str:
 
 
 class InstagramPlatform(SocialPlatform):
-    """Publish supported image posts through the Instagram API with Instagram Login."""
+    """Publish supported image posts through the Instagram Graph API (Facebook Login for Business)."""
 
     platform = "instagram"
     supports_remote_delete = True
@@ -67,7 +67,7 @@ class InstagramPlatform(SocialPlatform):
             raise ProviderConfigurationError("Instagram publishing currently requires exactly one public image URL")
         image_url = instagram_image_url(media_urls[0])
         version = os.getenv("INSTAGRAM_GRAPH_API_VERSION", "v24.0")
-        base = f"https://graph.instagram.com/{version}/{account_id}"
+        base = f"https://graph.facebook.com/{version}/{account_id}"
         container = provider_request(
             "POST", f"{base}/media", access_token=access_token, json={"image_url": image_url, "caption": content}
         ).json()
@@ -89,4 +89,4 @@ class InstagramPlatform(SocialPlatform):
         if not media_id:
             raise ProviderConfigurationError("Instagram delete needs a provider media id.")
         version = os.getenv("INSTAGRAM_GRAPH_API_VERSION", "v24.0")
-        provider_delete(f"https://graph.instagram.com/{version}/{media_id}", access_token=access_token)
+        provider_delete(f"https://graph.facebook.com/{version}/{media_id}", access_token=access_token)

@@ -22,6 +22,13 @@ def list_destinations(db: Session, user_id: UUID, session_id: UUID) -> dict:
     platform = session.platform
     if platform == "facebook":
         destinations = _facebook_destinations(access_token)
+    elif platform == "instagram":
+        destinations = _instagram_destinations(access_token)
+        if not destinations:
+            raise HTTPException(
+                status_code=404,
+                detail="No Instagram business account linked to a Facebook Page you manage.",
+            )
     elif platform == "linkedin":
         destinations = _linkedin_destinations(access_token, session.identity_json or {})
     elif platform == "youtube":
@@ -99,7 +106,75 @@ def save_destinations(db: Session, user_id: UUID, session_id: UUID, destination_
     return saved
 
 
+def _ig_item(ig: dict, token: str, page_id: str | None = None) -> dict:
+    ig_name = str(ig.get("name") or ig.get("username") or "Instagram")[:255]
+    item = {
+        "id": str(ig["id"]),
+        "name": ig_name if not ig.get("username") else f"{ig_name} (@{ig.get('username')})"[:255],
+        "account_type": "business",
+        "platform": "instagram",
+        "access_token": token,
+    }
+    if ig.get("username"):
+        item["username"] = str(ig["username"])
+    if page_id:
+        item["linked_facebook_page_id"] = page_id
+    avatar = ig.get("profile_picture_url")
+    if isinstance(avatar, str) and avatar.startswith(("http://", "https://")):
+        item["avatar_url"] = avatar
+    return item
+
+
+def _instagram_destinations(access_token: str) -> list[dict]:
+    """Instagram business accounts reachable through Facebook Login for Business."""
+    version = config.INSTAGRAM_GRAPH_API_VERSION or "v24.0"
+    base = f"https://graph.facebook.com/{version}"
+    headers = {"Authorization": f"Bearer {access_token}"}
+    ig_fields = "id,username,name,profile_picture_url"
+    found: dict[str, dict] = {}
+    try:
+        pages = httpx.get(
+            f"{base}/me/accounts",
+            params={"fields": f"id,name,access_token,instagram_business_account{{{ig_fields}}}", "limit": 100},
+            headers=headers,
+            timeout=30.0,
+        )
+        if not pages.is_error:
+            for page in pages.json().get("data") or []:
+                ig = page.get("instagram_business_account") if isinstance(page, dict) else None
+                if isinstance(ig, dict) and ig.get("id") and str(ig["id"]) not in found:
+                    found[str(ig["id"])] = _ig_item(ig, page.get("access_token") or access_token, str(page.get("id")))
+    except httpx.HTTPError:
+        pass
+    if found:
+        return list(found.values())
+    # Fallback: business-owned Instagram accounts (system users / Business Manager assets).
+    try:
+        biz = httpx.get(
+            f"{base}/me",
+            params={
+                "fields": f"businesses{{id,name,owned_instagram_accounts{{{ig_fields}}},instagram_accounts{{{ig_fields}}}}}"
+            },
+            headers=headers,
+            timeout=30.0,
+        )
+        if not biz.is_error:
+            businesses = (biz.json().get("businesses") or {}).get("data") or []
+            for business in businesses:
+                if not isinstance(business, dict):
+                    continue
+                for key in ("owned_instagram_accounts", "instagram_accounts"):
+                    for ig in (business.get(key) or {}).get("data") or []:
+                        if isinstance(ig, dict) and ig.get("id") and str(ig["id"]) not in found:
+                            found[str(ig["id"])] = _ig_item(ig, access_token)
+    except httpx.HTTPError:
+        pass
+    return list(found.values())
+
+
 def _notes_for(platform: str) -> str:
+    if platform == "instagram":
+        return "Choose the Instagram professional accounts (linked to Facebook Pages you manage) to publish to."
     if platform == "facebook":
         return "Personal Facebook profiles are not publishable. Choose Pages, Groups (when Meta returns them), and linked Instagram Business accounts."
     if platform == "linkedin":

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Ch, meta, chColor, Avatar, AccountAvatar, StatusBadge, Empty, PageHead, Seg, Tabs, fmtTime, fmtDay, postTitle, PLATFORM_META } from "./ui.jsx";
+import { PostRowMenu, DeletePostModal } from "./PostActions.jsx";
 import markPng from "../assets/brand/socialcastly-mark-256.png";
 import lockupLight from "../assets/brand/socialcastly-lockup-light.png";
 import lockupDark from "../assets/brand/socialcastly-lockup-dark.png";
@@ -21,7 +22,7 @@ const I = {
 };
 function splitTime(v) { const t = fmtTime(v); return [t.replace(/\s?(AM|PM)/i, ""), (t.match(/AM|PM/i) || [""])[0]]; }
 
-function PostRow({ post, account, onOpen, onRetry }) {
+function PostRow({ post, account, onOpen, onRetry, onDelete }) {
   const [t, ap] = splitTime(when(post));
   return <div className="post">
     <div className="time">{t}<span>{ap}</span></div>
@@ -29,7 +30,10 @@ function PostRow({ post, account, onOpen, onRetry }) {
     <div className="body"><div className="row" style={{ gap: 8, marginBottom: 4 }}><b className="sm">{account?.account_name || account?.platform || "Account"}</b><StatusBadge status={post.status} post={post} /></div><div className="txt">{post.content || "Untitled post"}</div>
       {post.status === "failed" && post.last_error_message && <div className="xs" style={{ color: "var(--error)", marginTop: 6 }}>⚠ {post.last_error_code ? `${post.last_error_code}: ` : ""}{post.last_error_message}</div>}</div>
     {post.media_urls?.[0] && <img className="thumb" src={post.media_urls[0]} alt="" style={{ objectFit: "cover" }} onError={(e) => { e.currentTarget.style.display = "none"; }} />}
-    {post.status === "failed" && onRetry ? <button type="button" className="btn btn-sm btn-secondary" onClick={() => onRetry(post.id)}>{I.retry}Retry</button> : <button type="button" className="btn btn-sm btn-ghost btn-icon" aria-label="More" onClick={onOpen}>{I.more}</button>}
+    <div className="row" style={{ gap: 6, flex: "none" }}>
+      {post.status === "failed" && onRetry && <button type="button" className="btn btn-sm btn-secondary" onClick={() => onRetry(post.id)}>{I.retry}Retry</button>}
+      <PostRowMenu post={post} onEdit={() => onOpen?.()} onDelete={onDelete ? () => onDelete(post) : null} />
+    </div>
   </div>;
 }
 
@@ -56,8 +60,9 @@ function WeekBars({ posts, accounts, start, days = 7 }) {
   </div>;
 }
 
-export function Dashboard({ user, accounts, posts, approvals = [], goToTab, openStudio, onRetryPost, onOpenPost }) {
+export function Dashboard({ user, accounts, posts, approvals = [], goToTab, openStudio, onRetryPost, onOpenPost, request, onPostDeleted }) {
   const [range, setRange] = useState("week");
+  const [deleting, setDeleting] = useState(null);
   const acc = new Map(accounts.map((a) => [a.id, a]));
   const now = new Date();
   const hour = now.getHours();
@@ -86,7 +91,7 @@ export function Dashboard({ user, accounts, posts, approvals = [], goToTab, open
     </div>
     <div className="grid" style={{ gridTemplateColumns: "minmax(0,1.6fr) minmax(0,1fr)", alignItems: "start" }}>
       <div className="card"><div className="card-head"><div><h2>Up next</h2><div className="xs subtle">{nextDay.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" })}</div></div><button type="button" className="btn btn-sm btn-ghost" onClick={() => goToTab("queue")}>View queue{I.arrow}</button></div>
-        {upcoming.length ? upcoming.map((p) => <PostRow key={p.id} post={p} account={acc.get(p.connected_account_id)} onOpen={() => onOpenPost ? onOpenPost(p) : goToTab("queue")} onRetry={onRetryPost} />) : <Empty art={<img src={markPng} alt="" style={{ width: 48 }} />} title="Nothing scheduled yet" text="Schedule your first post and it'll appear here, ready to cast." action="Create a post" onAction={() => openStudio()} />}
+        {upcoming.length ? upcoming.map((p) => <PostRow key={p.id} post={p} account={acc.get(p.connected_account_id)} onOpen={() => onOpenPost ? onOpenPost(p) : goToTab("queue")} onRetry={onRetryPost} onDelete={request ? setDeleting : null} />) : <Empty art={<img src={markPng} alt="" style={{ width: 48 }} />} title="Nothing scheduled yet" text="Schedule your first post and it'll appear here, ready to cast." action="Create a post" onAction={() => openStudio()} />}
       </div>
       <div className="col" style={{ gap: 20 }}>
         <WeekBars posts={posts} accounts={accounts} start={wk} />
@@ -95,6 +100,7 @@ export function Dashboard({ user, accounts, posts, approvals = [], goToTab, open
         <div className="card card-pad"><h2>Channel health</h2><div className="col" style={{ marginTop: 14 }}>{accounts.length ? accounts.slice(0, 6).map((a) => { const [l, c] = healthOf(a, posts); return <div key={a.id} className="row"><Ch platform={a.platform} size="" /><span className="grow sm">{a.account_name}</span><span className={`badge ${c}`}>{l}</span></div>; }) : <button type="button" className="btn btn-secondary btn-sm" onClick={() => goToTab("accounts")}>Connect a channel</button>}</div></div>
       </div>
     </div>
+    {deleting && <DeletePostModal post={deleting} account={acc.get(deleting.connected_account_id)} request={request} onClose={() => setDeleting(null)} onDeleted={(p, info) => onPostDeleted?.(p, info)} />}
   </>;
 }
 

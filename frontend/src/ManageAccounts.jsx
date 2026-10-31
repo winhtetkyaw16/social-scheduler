@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { ChannelTile, PLATFORM_GLYPHS } from "./sc/ui.jsx";
 import { Check, Link2, LoaderCircle, Plus, RefreshCw, Unplug, X as XIcon } from "lucide-react";
 
 const TYPE_HINTS = {
@@ -67,9 +68,11 @@ export function AccountAvatar({ account, ChannelBrandImage, size = 36, badgeScal
         </span>
       )}
       {showBadge ? (
-        <span className="pointer-events-none absolute bottom-[-2px] right-[-2px] rounded-full bg-white p-[1px] shadow-sm ring-1 ring-white dark:bg-slate-950 dark:ring-slate-900">
-          <BrandThumb channelId={platform} ChannelBrandImage={ChannelBrandImage} size={badge} />
-        </span>
+        PLATFORM_GLYPHS[platform === "twitter" ? "x" : platform]
+          ? <ChannelTile platform={platform} size={badge} className="av-badge" />
+          : <span className="pointer-events-none absolute bottom-[-2px] right-[-2px] rounded-full bg-white p-[1px] shadow-sm ring-1 ring-white dark:bg-slate-950 dark:ring-slate-900">
+              <BrandThumb channelId={platform} ChannelBrandImage={ChannelBrandImage} size={badge} />
+            </span>
       ) : null}
     </span>
   );

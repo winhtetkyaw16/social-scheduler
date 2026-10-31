@@ -1,4 +1,4 @@
-﻿"""Authorization-code OAuth for connectable platforms."""
+"""Authorization-code OAuth for connectable platforms."""
 
 from __future__ import annotations
 
@@ -184,7 +184,7 @@ def _providers() -> dict[str, _ProviderOAuth]:
             client_id=tiktok_key,
             client_secret=tiktok_secret,
             redirect_uri=tiktok_redirect,
-            scopes=("user.info.basic", "video.publish", "video.upload"),
+            scopes=("user.info.basic", "user.info.profile", "video.publish", "video.upload"),
             # Hex SHA-256 PKCE is applied in start_oauth; RFC 7636 base64url would be rejected.
             use_pkce=False,
             missing_env=tuple(

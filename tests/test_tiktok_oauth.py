@@ -53,7 +53,8 @@ def test_tiktok_connect_url_includes_hex_pkce(client, auth_headers, monkeypatch)
     assert "client_id" not in query
     assert query["response_type"] == ["code"]
     assert query["redirect_uri"] == [redirect_uri]
-    assert query["scope"] == ["user.info.basic,video.publish,video.upload"]
+    assert query["scope"] == ["user.info.basic,user.info.profile,video.publish,video.upload"]
+    assert "user.info.profile" in query["scope"][0].split(",")
     assert query["code_challenge_method"] == ["S256"]
     challenge = query["code_challenge"][0]
     assert _HEX_CHALLENGE.fullmatch(challenge)

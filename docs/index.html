@@ -3,83 +3,51 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Social Scheduler</title>
-  <meta name="description" content="Social Scheduler is a personal tool by Win Htet Kyaw to schedule and publish posts to YouTube, Pinterest, and other social accounts you connect.">
+  <title>SocialCastly</title>
+  <meta name="description" content="SocialCastly is a tool by Win Htet Kyaw to schedule and publish posts to Instagram, Threads, Facebook Pages, TikTok, YouTube, Pinterest, X and LinkedIn.">
   <style>
-    :root {
-      color-scheme: light;
-      --text: #1c1917;
-      --muted: #57534e;
-      --line: #e7e5e4;
-      --bg: #fafaf9;
-      --card: #ffffff;
-      --accent: #44403c;
-    }
+    :root { color-scheme: light; --text: #1c1917; --muted: #57534e; --line: #e7e5e4; --bg: #fafaf9; --card: #ffffff; --accent: #44403c; }
     * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      background: var(--bg);
-      color: var(--text);
-      font-family: Georgia, "Iowan Old Style", "Palatino Linotype", Palatino, serif;
-      font-size: 1.05rem;
-      line-height: 1.65;
-    }
-    main {
-      max-width: 42rem;
-      margin: 0 auto;
-      padding: 2.5rem 1.25rem 4rem;
-      background: var(--card);
-      min-height: 100vh;
-      border-left: 1px solid var(--line);
-      border-right: 1px solid var(--line);
-    }
+    body { margin: 0; background: var(--bg); color: var(--text); font-family: Georgia, "Iowan Old Style", "Palatino Linotype", Palatino, serif; font-size: 1.05rem; line-height: 1.65; }
+    main { max-width: 42rem; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; background: var(--card); min-height: 100vh; border-left: 1px solid var(--line); border-right: 1px solid var(--line); }
     header { margin-bottom: 2rem; }
-    p.kicker {
-      margin: 0 0 0.35rem;
-      font-family: system-ui, sans-serif;
-      font-size: 0.75rem;
-      font-weight: 650;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      color: var(--muted);
-    }
-    h1 {
-      margin: 0 0 0.5rem;
-      font-size: 2rem;
-      line-height: 1.2;
-      font-weight: 700;
-    }
-    p { margin: 0.6rem 0; }
+    nav { margin-bottom: 1.5rem; font-family: system-ui, sans-serif; font-size: 0.9rem; }
+    nav a { margin-right: 1rem; }
+    p.kicker { margin: 0 0 0.35rem; font-family: system-ui, sans-serif; font-size: 0.75rem; font-weight: 650; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+    h1 { margin: 0 0 0.5rem; font-size: 2rem; line-height: 1.2; font-weight: 700; }
+    .updated { margin: 0; color: var(--muted); font-family: system-ui, sans-serif; font-size: 0.95rem; }
+    h2 { margin: 2rem 0 0.6rem; font-size: 1.25rem; line-height: 1.3; }
+    h3 { margin: 1.25rem 0 0.4rem; font-size: 1.05rem; }
+    p, li { margin: 0.6rem 0; }
+    ul { padding-left: 1.25rem; }
     a { color: var(--accent); }
-    footer {
-      margin-top: 2.5rem;
-      padding-top: 1rem;
-      border-top: 1px solid var(--line);
-      color: var(--muted);
-      font-family: system-ui, sans-serif;
-      font-size: 0.9rem;
-    }
+    code { font-size: 0.85em; word-break: break-all; }
+    footer { margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid var(--line); color: var(--muted); font-family: system-ui, sans-serif; font-size: 0.9rem; }
   </style>
 </head>
 <body>
   <main>
+    <nav><a href="index.html">Home</a><a href="privacy.html">Privacy Policy</a><a href="terms.html">Terms of Service</a></nav>
     <header>
       <p class="kicker">Win Htet Kyaw</p>
-      <h1>Social Scheduler</h1>
+      <h1>SocialCastly</h1>
     </header>
 
     <p>
-      Social Scheduler is a personal tool to schedule and publish posts to YouTube,
-      Pinterest, and other social accounts you connect.
+      SocialCastly is a tool to schedule and publish posts to Instagram, Threads, Facebook Pages, TikTok, YouTube, Pinterest, X and LinkedIn.
+      Write once, tailor each post per platform, pick a time, and SocialCastly publishes it
+      to the accounts you connect.
     </p>
+    <ul>
+      <li>Connect your social accounts securely with each platform&rsquo;s official sign-in (OAuth).</li>
+      <li>Create, preview, and schedule posts for multiple platforms from one place.</li>
+      <li>Disconnect any account at any time from Manage Accounts.</li>
+    </ul>
 
-    <p>
-      Contact:
-      <a href="mailto:socialscheduler2610@gmail.com">socialscheduler2610@gmail.com</a>
-    </p>
+    <p>Contact: <a href="mailto:socialscheduler2610@gmail.com">socialscheduler2610@gmail.com</a></p>
 
     <footer>
-      <p><a href="privacy.html">Privacy policy</a></p>
+      <p>&copy; 2026 SocialCastly &middot; <a href="index.html">Home</a> &middot; <a href="privacy.html">Privacy Policy</a> &middot; <a href="terms.html">Terms of Service</a></p>
     </footer>
   </main>
 </body>

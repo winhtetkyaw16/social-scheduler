@@ -1,10 +1,11 @@
-﻿"""Authorization-code OAuth for connectable platforms."""
+"""Authorization-code OAuth for connectable platforms."""
 
 from __future__ import annotations
 
 import os
 
 import base64
+import logging
 import json
 import secrets
 from dataclasses import dataclass
@@ -21,6 +22,8 @@ from sqlalchemy.orm import Session
 from app.core import config
 from dotenv import load_dotenv
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 _ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
 
@@ -116,12 +119,21 @@ def _providers() -> dict[str, _ProviderOAuth]:
         ),
         "instagram": _ProviderOAuth(
             platform="instagram",
-            authorize_url="https://www.instagram.com/oauth/authorize",
-            token_url="https://api.instagram.com/oauth/access_token",
+            # Instagram via Facebook Login for Business (config_id), not Instagram Login.
+            authorize_url=f"https://www.facebook.com/{config.INSTAGRAM_GRAPH_API_VERSION or 'v24.0'}/dialog/oauth",
+            token_url=f"{_meta_graph(config.INSTAGRAM_GRAPH_API_VERSION or 'v24.0')}/oauth/access_token",
             client_id=instagram_id,
             client_secret=instagram_secret,
             redirect_uri=config.INSTAGRAM_REDIRECT_URI,
-            scopes=("instagram_business_basic", "instagram_business_content_publish"),
+            scopes=(
+                "instagram_basic",
+                "instagram_content_publish",
+                "instagram_manage_comments",
+                "instagram_manage_messages",
+                "pages_show_list",
+                "pages_read_engagement",
+                "business_management",
+            ),
             use_pkce=False,
             missing_env=tuple(
                 name
@@ -184,7 +196,7 @@ def _providers() -> dict[str, _ProviderOAuth]:
             client_id=tiktok_key,
             client_secret=tiktok_secret,
             redirect_uri=tiktok_redirect,
-            scopes=("user.info.basic", "video.publish", "video.upload"),
+            scopes=("user.info.basic", "user.info.profile", "video.publish", "video.upload"),
             # Hex SHA-256 PKCE is applied in start_oauth; RFC 7636 base64url would be rejected.
             use_pkce=False,
             missing_env=tuple(
@@ -274,7 +286,7 @@ def _tiktok_pkce_pair() -> tuple[str, str]:
 
 def _safe_return_base(candidate: str | None) -> str:
     """Allow OAuth to return to the same browser origin the user started from."""
-    fallback = config.PUBLIC_BASE_URL
+    fallback = config.FRONTEND_URL
     if not candidate or not isinstance(candidate, str):
         return fallback
     try:
@@ -339,13 +351,13 @@ def _read_state(state: str, platform: str) -> tuple[UUID, str | None, str | None
 
 def _peek_return_base(state: str | None) -> str:
     if not state:
-        return config.PUBLIC_BASE_URL
+        return config.FRONTEND_URL
     try:
         payload = json.loads(decrypt_token(state))
         raw = payload.get("return_to")
         return _safe_return_base(raw if isinstance(raw, str) else None)
     except Exception:
-        return config.PUBLIC_BASE_URL
+        return config.FRONTEND_URL
 
 
 def _studio_redirect(return_base: str | None = None, **query: str | None) -> RedirectResponse:
@@ -353,7 +365,7 @@ def _studio_redirect(return_base: str | None = None, **query: str | None) -> Red
     if "connect_error" in clean:
         clean["connect_error"] = clean["connect_error"][:180]
     suffix = f"?{urlencode(clean)}" if clean else ""
-    base = (return_base or config.PUBLIC_BASE_URL).rstrip("/")
+    base = (return_base or config.FRONTEND_URL).rstrip("/")
     return RedirectResponse(url=f"{base}/{suffix}", status_code=status.HTTP_302_FOUND)
 
 
@@ -372,6 +384,13 @@ def start_oauth(platform: str, user_id: UUID, return_to: str | None = None) -> d
         params["client_key"] = provider.client_id
     else:
         params["client_id"] = provider.client_id
+    if provider.platform == "instagram":
+        config_id = (os.getenv("INSTAGRAM_CONFIG_ID") or config.INSTAGRAM_CONFIG_ID or "").strip()
+        if config_id:
+            params.pop("scope", None)  # the Login for Business configuration defines permissions
+            params["config_id"] = config_id
+        else:
+            params["scope"] = ",".join(provider.scopes)
     if provider.platform == "youtube":
         params["access_type"] = "offline"
         params["include_granted_scopes"] = "true"
@@ -415,6 +434,14 @@ def finish_oauth(
         return_base = _safe_return_base(state_return) if state_return else return_base
         token_payload = _exchange_code(provider, code, verifier)
         identity = _identity(provider, token_payload["access_token"])
+        if provider.platform == "instagram":
+            from app.services.destinations import _instagram_destinations
+
+            if not _instagram_destinations(token_payload["access_token"]):
+                raise HTTPException(
+                    status_code=404,
+                    detail="No Instagram business account linked to a Facebook Page you manage.",
+                )
         if platform_needs_destination_pick(provider.platform):
             session = create_pick_session(
                 db,
@@ -522,27 +549,28 @@ def _exchange_code(provider: _ProviderOAuth, code: str, verifier: str | None) ->
 
 
 def _instagram_token(provider: _ProviderOAuth, payload: dict) -> dict:
-    if isinstance(payload.get("data"), list) and payload["data"]:
-        payload = payload["data"][0]
+    """Facebook Login for Business token; try a long-lived exchange but tolerate system-user tokens."""
     access_token = payload.get("access_token")
     if not isinstance(access_token, str) or not access_token:
-        raise HTTPException(status_code=502, detail="Instagram did not return an access token.")
+        raise HTTPException(status_code=502, detail="Instagram (Facebook Login) did not return an access token.")
     try:
         long_lived = httpx.get(
-            "https://graph.instagram.com/access_token",
+            f"{_meta_graph(config.INSTAGRAM_GRAPH_API_VERSION or 'v24.0')}/oauth/access_token",
             params={
-                "grant_type": "ig_exchange_token",
+                "grant_type": "fb_exchange_token",
+                "client_id": provider.client_id,
                 "client_secret": provider.client_secret,
-                "access_token": access_token,
+                "fb_exchange_token": access_token,
             },
             timeout=30.0,
         )
-    except httpx.HTTPError as exc:
-        raise HTTPException(status_code=502, detail="Could not reach Instagram to extend the access token.") from exc
+    except httpx.HTTPError:
+        return payload
     if long_lived.is_error:
-        raise HTTPException(status_code=502, detail="Instagram rejected the long-lived token exchange.")
+        return payload  # system-user / already long-lived tokens do not need the exchange
     extended = long_lived.json()
-    extended.setdefault("user_id", payload.get("user_id"))
+    if not isinstance(extended.get("access_token"), str) or not extended.get("access_token"):
+        return payload
     return extended
 
 
@@ -634,6 +662,12 @@ def _authorized_get(url: str, access_token: str, *, params: dict | None = None, 
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=502, detail="Could not reach the provider to read the account profile.") from exc
     if response.is_error:
+        logger.warning(
+            "Provider profile request failed: url=%s status=%s body=%s",
+            url,
+            response.status_code,
+            (response.text or "")[:300],
+        )
         raise HTTPException(status_code=502, detail="The provider refused the account profile request.")
     body = response.json()
     if not isinstance(body, dict):
@@ -679,28 +713,21 @@ def _linkedin_identity(access_token: str) -> dict:
 
 
 def _instagram_identity(access_token: str) -> dict:
-    version = config.INSTAGRAM_GRAPH_API_VERSION or "v24.0"
+    """Identity of the Facebook user who granted access; IG accounts are picked afterwards."""
     body = _authorized_get(
-        f"https://graph.instagram.com/{version}/me",
+        f"{_meta_graph(config.INSTAGRAM_GRAPH_API_VERSION or 'v24.0')}/me",
         access_token,
-        params={"fields": "user_id,username,name,account_type,profile_picture_url"},
+        params={"fields": "id,name"},
     )
-    account_id = body.get("user_id") or body.get("id")
+    account_id = body.get("id")
     if not account_id:
-        raise HTTPException(status_code=502, detail="Instagram did not return an account id.")
-    raw_type = str(body.get("account_type") or "BUSINESS").strip().upper()
-    account_type = "creator" if raw_type == "MEDIA_CREATOR" else "business"
-    name = body.get("username") or body.get("name") or "Instagram account"
-    identity = {
+        raise HTTPException(status_code=502, detail="Facebook did not return a user id for Instagram connect.")
+    return {
         "id": str(account_id),
-        "name": str(name)[:255],
-        "account_type": account_type,
-        "username": body.get("username"),
+        "name": str(body.get("name") or "Facebook login")[:255],
+        "account_type": "user",
+        "login": "facebook_login_for_business",
     }
-    avatar = _normalize_avatar_url(body.get("profile_picture_url"))
-    if avatar:
-        identity["avatar_url"] = avatar
-    return identity
 
 
 def _facebook_identity(access_token: str) -> dict:
@@ -724,20 +751,39 @@ def _facebook_identity(access_token: str) -> dict:
     return identity
 
 
+YOUTUBE_NO_CHANNEL_DETAIL = (
+    "This Google account has no YouTube channel. Create a channel at youtube.com, then connect again."
+)
+
+
 def _youtube_identity(access_token: str) -> dict:
-    body = _authorized_get("https://www.googleapis.com/oauth2/v3/userinfo", access_token)
-    account_id = body.get("sub")
-    if not account_id:
-        raise HTTPException(status_code=502, detail="Google did not return a user id.")
+    # YouTube scopes do not include openid/email/profile, so identify by the user's channel.
+    body = _authorized_get(
+        "https://www.googleapis.com/youtube/v3/channels",
+        access_token,
+        params={"part": "snippet", "mine": "true"},
+    )
+    items = [item for item in (body.get("items") or []) if isinstance(item, dict) and item.get("id")]
+    if not items:
+        raise HTTPException(status_code=422, detail=YOUTUBE_NO_CHANNEL_DETAIL)
+    channel = items[0]
+    snippet = channel.get("snippet") if isinstance(channel.get("snippet"), dict) else {}
     identity = {
-        "id": str(account_id),
-        "name": str(body.get("name") or body.get("email") or "YouTube login")[:255],
-        "account_type": "login",
-        "email": body.get("email"),
+        "id": str(channel["id"]),
+        "name": str(snippet.get("title") or "YouTube channel")[:255],
+        "account_type": "channel",
     }
-    avatar = _normalize_avatar_url(body.get("picture"))
-    if avatar:
-        identity["avatar_url"] = avatar
+    handle = snippet.get("customUrl")
+    if handle:
+        identity["username"] = str(handle)
+        identity["custom_url"] = str(handle)
+    thumbs = snippet.get("thumbnails") if isinstance(snippet.get("thumbnails"), dict) else {}
+    for size in ("high", "medium", "default"):
+        thumb = thumbs.get(size) if isinstance(thumbs.get(size), dict) else None
+        avatar = _normalize_avatar_url(thumb.get("url")) if thumb else None
+        if avatar:
+            identity["avatar_url"] = avatar
+            break
     return identity
 
 

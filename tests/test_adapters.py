@@ -75,7 +75,7 @@ def test_instagram_adapter_publishes_one_public_image(monkeypatch):
     monkeypatch.setenv("PUBLIC_BASE_URL", "http://localhost:8000")
     result = InstagramPlatform().publish("token", "1789", "Caption", ["https://cdn.example.com/photo.jpg"])
     assert result.post_id == "ig-post-1"
-    assert calls[0][0] == "https://graph.instagram.com/v24.0/1789/media"
+    assert calls[0][0] == "https://graph.facebook.com/v24.0/1789/media"
     assert calls[0][1]["image_url"] == "https://cdn.example.com/photo.jpg"
     assert calls[1][0].endswith("/media_publish")
     assert calls[1][1] == {"creation_id": "container-1"}

@@ -1,0 +1,102 @@
+/* SocialCastly theme for Swagger UI 5 — load AFTER swagger-ui.css. Dark: <html data-theme="dark"> */
+:root{--sc-bg:#F8FAFC;--sc-surface:#fff;--sc-surface-2:#F1F5F9;--sc-border:#E2E8F0;--sc-border-strong:#CBD5E1;--sc-text:#0F172A;--sc-text-2:#475569;--sc-text-3:#64748B;
+--sc-grad:linear-gradient(135deg,#4F46E5,#7C3AED);--sc-on-grad:#fff;--sc-focus:#4F46E5;--sc-code:#0F172A;--sc-code-text:#E2E8F0;
+--sc-get:#0369A1;--sc-get-bg:#E0F2FE;--sc-post:#047857;--sc-post-bg:#DCFCE7;--sc-put:#B45309;--sc-put-bg:#FEF3C7;--sc-patch:#6D28D9;--sc-patch-bg:#EDE9FE;--sc-del:#B91C1C;--sc-del-bg:#FEE2E2;
+--sc-font:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;--sc-mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace}
+[data-theme=dark]{--sc-bg:#0B1120;--sc-surface:#111A2E;--sc-surface-2:#1A2540;--sc-border:#24314F;--sc-border-strong:#334366;--sc-text:#F1F5F9;--sc-text-2:#CBD5E1;--sc-text-3:#94A3B8;
+--sc-grad:linear-gradient(135deg,#818CF8,#A78BFA);--sc-on-grad:#0B1120;--sc-focus:#818CF8;--sc-code:#0B1120;--sc-code-text:#CBD5E1;
+--sc-get:#7DD3FC;--sc-get-bg:rgba(56,189,248,.14);--sc-post:#6EE7B7;--sc-post-bg:rgba(52,211,153,.14);--sc-put:#FCD34D;--sc-put-bg:rgba(251,191,36,.14);--sc-patch:#C4B5FD;--sc-patch-bg:rgba(167,139,250,.16);--sc-del:#FCA5A5;--sc-del-bg:rgba(248,113,113,.14)}
+html,body{background:var(--sc-bg);margin:0}
+/* Branded header (markup in README template) */
+.sc-head{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:12px;height:60px;padding:0 32px;background:color-mix(in srgb,var(--sc-surface) 92%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--sc-border);font-family:var(--sc-font)}
+.sc-head img{height:28px}.sc-head .d{display:none}[data-theme=dark] .sc-head .l{display:none}[data-theme=dark] .sc-head .d{display:block}
+.sc-head .tag{font-size:12px;font-weight:600;color:var(--sc-text-2);border:1px solid var(--sc-border);border-radius:99px;padding:2px 10px}
+.sc-head .ver{font-size:12px;color:var(--sc-text-3);font-family:var(--sc-mono)}.sc-head .sp{flex:1}
+.sc-head button,.sc-head a{font:500 13px var(--sc-font);color:var(--sc-text-2);background:transparent;border:1px solid var(--sc-border);border-radius:8px;height:32px;padding:0 12px;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center}
+.sc-head button:hover,.sc-head a:hover{background:var(--sc-surface-2);color:var(--sc-text)}
+.swagger-ui{font-family:var(--sc-font);color:var(--sc-text)}
+.swagger-ui .wrapper{max-width:1040px;padding:0 32px}
+.swagger-ui .topbar{display:none}
+.swagger-ui,.swagger-ui .info .title,.swagger-ui .opblock-tag,.swagger-ui .opblock .opblock-section-header h4,.swagger-ui .parameter__name,.swagger-ui .response-col_status,.swagger-ui table thead tr th,.swagger-ui table thead tr td,.swagger-ui .tab li,.swagger-ui .model-title,.swagger-ui .model,.swagger-ui label,.swagger-ui .opblock .opblock-summary-path,.swagger-ui .opblock .opblock-summary-description,.swagger-ui .scheme-container .schemes>label,.swagger-ui .opblock-description-wrapper p,.swagger-ui .response-col_description,.swagger-ui .markdown p,.swagger-ui .renderedMarkdown p,.swagger-ui .info p,.swagger-ui .info li,.swagger-ui .dialog-ux .modal-ux-content p,.swagger-ui .dialog-ux .modal-ux-content h4,.swagger-ui .dialog-ux .modal-ux-header h3,.swagger-ui h4,.swagger-ui h5,.swagger-ui .parameter__type,.swagger-ui .prop-type,.swagger-ui .responses-inner h4,.swagger-ui .responses-inner h5,.swagger-ui .btn,.swagger-ui select,.swagger-ui section.models h4,.swagger-ui .model-toggle:after{color:var(--sc-text);font-family:var(--sc-font)}
+.swagger-ui .opblock .opblock-summary-description,.swagger-ui .parameter__in,.swagger-ui .parameter__type,.swagger-ui .prop-format,.swagger-ui .info p,.swagger-ui .response-col_links,.swagger-ui .opblock-tag small,.swagger-ui .renderedMarkdown p{color:var(--sc-text-3)}
+/* Info */
+.swagger-ui .info{margin:36px 0 20px}.swagger-ui .info .title{font-size:28px;font-weight:700;letter-spacing:-.02em}
+.swagger-ui .info .title small{background:var(--sc-surface-2)!important;border:1px solid var(--sc-border);color:var(--sc-text-2)!important;border-radius:99px;padding:2px 8px;font-weight:600;top:-6px}
+.swagger-ui .info .title small pre{color:var(--sc-text-2);font-family:var(--sc-mono)}
+.swagger-ui .info a,.swagger-ui a.nostyle,.swagger-ui .info .link{color:var(--sc-text-2)}
+/* Scheme / authorize bar */
+.swagger-ui .scheme-container{background:transparent;box-shadow:none;padding:0 0 12px;margin:0;border-bottom:1px solid var(--sc-border)}
+.swagger-ui .scheme-container .wrapper,.swagger-ui .scheme-container .schemes{padding:0}
+.swagger-ui .btn{border-radius:8px;box-shadow:none;font-weight:600;font-size:13px;border:1px solid var(--sc-border-strong);background:var(--sc-surface);padding:7px 14px}
+.swagger-ui .btn:hover{box-shadow:none;background:var(--sc-surface-2)}
+.swagger-ui .btn.authorize{background:var(--sc-grad);color:var(--sc-on-grad);border:0;display:inline-flex;align-items:center;gap:6px}
+.swagger-ui .btn.authorize span{color:var(--sc-on-grad);padding:0}.swagger-ui .btn.authorize svg{fill:var(--sc-on-grad);width:14px;height:14px}
+.swagger-ui .btn.authorize:hover{filter:brightness(1.06);background:var(--sc-grad)}
+.swagger-ui .authorization__btn svg,.swagger-ui .opblock-summary-control svg,.swagger-ui .expand-operation svg,.swagger-ui .arrow,.swagger-ui .expand-methods svg{fill:var(--sc-text-3)}
+.swagger-ui svg.arrow{fill:var(--sc-text-3)}
+/* Tags */
+.swagger-ui .opblock-tag-section{margin-top:28px}
+.swagger-ui .opblock-tag{border-bottom:0;padding:0 0 10px;margin:0;font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--sc-text-2)}
+.swagger-ui .opblock-tag:hover{background:transparent}.swagger-ui .opblock-tag small{text-transform:none;letter-spacing:0;font-weight:400;padding:0 10px}
+/* Endpoint rows */
+.swagger-ui .opblock,.swagger-ui .opblock.opblock-get,.swagger-ui .opblock.opblock-post,.swagger-ui .opblock.opblock-put,.swagger-ui .opblock.opblock-patch,.swagger-ui .opblock.opblock-delete,.swagger-ui .opblock.opblock-deprecated,.swagger-ui .opblock.opblock-head,.swagger-ui .opblock.opblock-options{background:var(--sc-surface);border:1px solid var(--sc-border);border-radius:10px;box-shadow:none;margin:0 0 6px}
+.swagger-ui .opblock.is-open{border-color:var(--sc-border-strong)}
+.swagger-ui .opblock .opblock-summary{border:0!important;padding:8px 12px;gap:10px}
+.swagger-ui .opblock.is-open .opblock-summary{border-bottom:1px solid var(--sc-border)!important}
+.swagger-ui .opblock .opblock-summary-method{min-width:58px;padding:3px 0;border-radius:6px;font:600 11px var(--sc-mono);letter-spacing:.02em;text-shadow:none;background:var(--m-bg)!important;color:var(--m)!important}
+.swagger-ui .opblock-get{--m:var(--sc-get);--m-bg:var(--sc-get-bg)}.swagger-ui .opblock-post{--m:var(--sc-post);--m-bg:var(--sc-post-bg)}.swagger-ui .opblock-put{--m:var(--sc-put);--m-bg:var(--sc-put-bg)}.swagger-ui .opblock-patch{--m:var(--sc-patch);--m-bg:var(--sc-patch-bg)}.swagger-ui .opblock-delete{--m:var(--sc-del);--m-bg:var(--sc-del-bg)}
+.swagger-ui .opblock-head,.swagger-ui .opblock-options,.swagger-ui .opblock-deprecated{--m:var(--sc-text-2);--m-bg:var(--sc-surface-2)}
+.swagger-ui .opblock .opblock-summary-path,.swagger-ui .opblock .opblock-summary-path__deprecated{font:500 14px var(--sc-mono);color:var(--sc-text)}
+.swagger-ui .opblock .opblock-summary-description{font-size:13px}
+.swagger-ui .opblock .opblock-summary:hover{background:var(--sc-surface-2);border-radius:10px}
+.swagger-ui .opblock .opblock-summary .view-line-link svg,.swagger-ui .copy-to-clipboard{opacity:.6}
+.swagger-ui .copy-to-clipboard{background:transparent;border:0}.swagger-ui .copy-to-clipboard button{background:none;}
+/* Expanded body */
+.swagger-ui .opblock .opblock-section-header{background:var(--sc-surface-2);box-shadow:none;border-bottom:1px solid var(--sc-border);padding:8px 16px;min-height:auto}
+.swagger-ui .opblock .opblock-section-header h4{font-size:13px;font-weight:600}
+.swagger-ui .opblock-description-wrapper,.swagger-ui .opblock-external-docs-wrapper,.swagger-ui .opblock-title_normal{padding:12px 16px}
+.swagger-ui .opblock-body{background:var(--sc-surface);border-radius:0 0 10px 10px}
+.swagger-ui .try-out__btn{border-color:var(--sc-border-strong);color:var(--sc-text)}
+.swagger-ui .try-out__btn.cancel,.swagger-ui .btn.cancel{color:var(--sc-text-2);border-color:var(--sc-border-strong)}
+.swagger-ui .btn.execute{background:var(--sc-grad);color:var(--sc-on-grad);border:0}
+.swagger-ui .btn-group{padding:16px}
+.swagger-ui .parameters-container,.swagger-ui .table-container{padding:4px 16px}
+.swagger-ui table thead tr th,.swagger-ui table thead tr td{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--sc-text-3);border-bottom:1px solid var(--sc-border)}
+.swagger-ui .parameters-col_description input,.swagger-ui input[type=text],.swagger-ui input[type=password],.swagger-ui input[type=email],.swagger-ui textarea,.swagger-ui select{background:var(--sc-surface);color:var(--sc-text);border:1px solid var(--sc-border-strong);border-radius:8px;box-shadow:none;font-family:var(--sc-font)}
+.swagger-ui select{background-color:var(--sc-surface)}
+.swagger-ui .parameter__name.required:after{color:#DC2626}.swagger-ui .parameter__name.required span{color:#DC2626}
+.swagger-ui textarea.body-param__text,.swagger-ui .opblock-body pre.microlight,.swagger-ui .highlight-code>.microlight,.swagger-ui .microlight{background:var(--sc-code)!important;color:var(--sc-code-text)!important;border-radius:8px;font-family:var(--sc-mono);font-size:12px;border:1px solid var(--sc-border)}
+.swagger-ui .tab li button.tablinks{color:var(--sc-text-2);font-family:var(--sc-font)}.swagger-ui .tab li.active button.tablinks{color:var(--sc-text)}
+.swagger-ui .tab li:first-of-type:after{background:var(--sc-border)}
+.swagger-ui .responses-inner{padding:12px 16px}
+.swagger-ui .response-col_status{font-family:var(--sc-mono);font-weight:600}
+.swagger-ui .response-control-media-type--accept-controller select{border-color:var(--sc-border-strong)}
+.swagger-ui .response-control-media-type__accept-message{color:var(--sc-text-3)}
+.swagger-ui .responses-table td,.swagger-ui .parameters td{border-color:var(--sc-border)}
+.swagger-ui .opblock-control-arrow,.swagger-ui .authorization__btn{fill:var(--sc-text-3)}
+.swagger-ui .unlocked svg,.swagger-ui .locked svg{fill:var(--sc-text-3)}
+/* Models */
+.swagger-ui section.models{border:1px solid var(--sc-border);border-radius:10px;background:var(--sc-surface);margin-top:36px}
+.swagger-ui section.models.is-open h4{border-bottom:1px solid var(--sc-border)}
+.swagger-ui section.models .model-container{background:var(--sc-surface-2);border-radius:8px}
+.swagger-ui section.models .model-container:hover{background:var(--sc-surface-2)}
+.swagger-ui .model-box{background:transparent}.swagger-ui .model .property.primitive,.swagger-ui .model-hint{color:var(--sc-text-3)}
+.swagger-ui .prop-type{color:var(--sc-patch)}
+/* Auth modal */
+.swagger-ui .dialog-ux .backdrop-ux{background:rgba(2,6,23,.55)}
+.swagger-ui .dialog-ux .modal-ux{background:var(--sc-surface);border:1px solid var(--sc-border);border-radius:14px;box-shadow:0 20px 50px rgba(2,6,23,.35)}
+.swagger-ui .dialog-ux .modal-ux-header{border-bottom:1px solid var(--sc-border)}.swagger-ui .dialog-ux .modal-ux-header .close-modal svg{fill:var(--sc-text-3)}
+.swagger-ui .auth-container{border-color:var(--sc-border)}
+.swagger-ui .auth-btn-wrapper .btn.modal-btn.auth.authorize{background:var(--sc-grad)}
+.swagger-ui .loading-container .loading:after{color:var(--sc-text-3)}
+.swagger-ui .errors-wrapper{background:var(--sc-del-bg);border-color:var(--sc-del)}
+.swagger-ui .opblock .opblock-section-header{background:var(--sc-surface-2)!important}
+.swagger-ui .opblock .tab-header .tab-item.active h4 span:after{background:var(--sc-text)}
+.swagger-ui .scheme-container .wrapper{max-width:1040px}
+.swagger-ui .opblock .tab-header .tab-item.active h4 span:after{background:var(--sc-text)!important}
+.swagger-ui .opblock-body textarea.body-param__text{min-height:140px;height:160px}
+.swagger-ui .opblock-summary-control,.swagger-ui .authorization__btn,.swagger-ui .expand-operation,.swagger-ui .opblock-tag button,.swagger-ui .models-control{color:var(--sc-text-3)}
+.swagger-ui svg:not(:root){fill:currentColor}
+.swagger-ui .opblock-tag svg,.swagger-ui .opblock-summary-control svg,.swagger-ui .authorization__btn svg{fill:var(--sc-text-3)!important}
+.swagger-ui .btn.authorize svg{fill:var(--sc-on-grad)!important}
+.swagger-ui .btn.authorize svg,.swagger-ui .btn.authorize svg path{fill:var(--sc-on-grad)!important}

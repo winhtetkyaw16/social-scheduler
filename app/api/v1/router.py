@@ -2,11 +2,12 @@
 
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import accounts, auth, health, posts, publish, upload
+from app.api.v1.endpoints import accounts, auth, meta_callbacks, health, posts, publish, upload
 
 router = APIRouter()
 router.include_router(health.router, tags=["health"])
 router.include_router(auth.router, prefix="/auth", tags=["auth"])
+router.include_router(meta_callbacks.router, prefix="/accounts", tags=["meta-callbacks"])
 router.include_router(accounts.router, prefix="/accounts", tags=["accounts"])
 router.include_router(posts.router, prefix="/posts", tags=["posts"])
 router.include_router(upload.router, prefix="/upload", tags=["upload"])

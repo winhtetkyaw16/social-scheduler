@@ -554,9 +554,9 @@ def _instagram_token(provider: _ProviderOAuth, payload: dict) -> dict:
     if not isinstance(access_token, str) or not access_token:
         raise HTTPException(status_code=502, detail="Instagram (Facebook Login) did not return an access token.")
     try:
-        long_lived = httpx.get(
+        long_lived = httpx.post(
             f"{_meta_graph(config.INSTAGRAM_GRAPH_API_VERSION or 'v24.0')}/oauth/access_token",
-            params={
+            data={  # POST form body keeps client_secret/token out of URLs and logs
                 "grant_type": "fb_exchange_token",
                 "client_id": provider.client_id,
                 "client_secret": provider.client_secret,
@@ -579,9 +579,9 @@ def _facebook_long_lived(provider: _ProviderOAuth, payload: dict) -> dict:
     if not isinstance(access_token, str) or not access_token:
         raise HTTPException(status_code=502, detail="Facebook did not return an access token.")
     try:
-        response = httpx.get(
+        response = httpx.post(
             f"{_meta_graph(config.FACEBOOK_GRAPH_API_VERSION)}/oauth/access_token",
-            params={
+            data={  # POST form body keeps client_secret/token out of URLs and logs
                 "grant_type": "fb_exchange_token",
                 "client_id": provider.client_id,
                 "client_secret": provider.client_secret,
@@ -604,6 +604,7 @@ def _threads_long_lived(provider: _ProviderOAuth, payload: dict) -> dict:
     if not isinstance(access_token, str) or not access_token:
         raise HTTPException(status_code=502, detail="Threads did not return an access token.")
     try:
+        # Threads requires GET; httpx/httpcore are set to WARNING in configure_logging so URLs are not logged.
         response = httpx.get(
             "https://graph.threads.net/access_token",
             params={

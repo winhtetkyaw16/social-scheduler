@@ -242,7 +242,7 @@ async function api(path, { token, _retried = false, ...options } = {}) {
   if (bearer) headers.set("Authorization", `Bearer ${bearer}`);
   if (options.body && !(options.body instanceof FormData)) headers.set("Content-Type", "application/json");
   let response;
-  try { response = await fetch(`${API_BASE}${path}`, { ...options, headers }); }
+  try { response = await fetch(`${API_BASE}${path}`, { cache: "no-store", ...options, headers }); }
   catch { throw new Error("Could not reach SocialCastly. Check that the API is running and try again."); }
   if (response.status === 401 && !_retried && !["/auth/refresh", "/auth/login", "/auth/token"].includes(path)) {
     const next = await refreshAccessToken();
@@ -630,6 +630,22 @@ function App() {
 
   useEffect(() => { if (token) void loadWorkspace(token); }, [token, loadWorkspace]);
 
+  // Keep queue/posts/calendar fresh without a manual refresh: poll while any post is
+  // still pending, and refetch whenever the tab regains focus.
+  const hasPendingPosts = posts.some((post) => ["scheduled", "queued", "publishing"].includes(post?.status));
+  useEffect(() => {
+    if (!token) return undefined;
+    const refreshPosts = async () => {
+      if (document.visibilityState === "hidden") return;
+      try { const data = await api("/posts", { token }); if (Array.isArray(data)) setPosts(data); } catch { /* next tick retries */ }
+    };
+    const timer = hasPendingPosts ? window.setInterval(refreshPosts, 15000) : null;
+    const onVisible = () => { if (document.visibilityState === "visible") void refreshPosts(); };
+    window.addEventListener("focus", refreshPosts);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => { if (timer) window.clearInterval(timer); window.removeEventListener("focus", refreshPosts); document.removeEventListener("visibilitychange", onVisible); };
+  }, [token, hasPendingPosts]);
+
   const refreshNavCounts = useCallback(async () => {
     if (!token) return;
     const [approvalData, draftData] = await Promise.all([
@@ -954,7 +970,7 @@ function App() {
           ? `${publishedCount} account${publishedCount === 1 ? "" : "s"} published successfully.`
           : failedCount
             ? `${publishedCount} published, ${failedCount} failed.${failureMessages.length ? ` ${failureMessages[0]}` : ""}`
-            : `${successCount} account${successCount === 1 ? "" : "s"} queued for publishing. Refresh if the status is still updating.`;
+            : `${successCount} account${successCount === 1 ? "" : "s"} queued for publishing. The status will update automatically.`;
         notify({ title: mode === "now" ? nowTitle : mode === "queue" ? "Added to queue" : "Post scheduled", message: mode === "now" ? nowMessage : `${successCount} account${successCount === 1 ? "" : "s"} ${mode === "queue" ? "placed in the next free queue slot" : "scheduled for a specific time"}.${failureMessages.length ? ` ${failureMessages.length} account${failureMessages.length === 1 ? "" : "s"} could not be scheduled.` : ""}`, kind: (failureMessages.length || failedCount) ? "error" : "success" });
       }
       if (!successCount) notify({ title: "Couldn’t create your post", message: failureMessages[0] || "Please try again." });

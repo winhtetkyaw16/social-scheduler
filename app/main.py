@@ -32,7 +32,21 @@ logger = logging.getLogger(__name__)
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """Create tables missing from the shared application model metadata."""
     ensure_database_schema(engine)
-    yield
+    import asyncio
+
+    from app.tasks.inprocess_scheduler import scheduler_loop, scheduler_mode
+
+    stop = asyncio.Event()
+    task = asyncio.create_task(scheduler_loop(stop)) if scheduler_mode() != "off" else None
+    try:
+        yield
+    finally:
+        stop.set()
+        if task is not None:
+            try:
+                await asyncio.wait_for(task, timeout=5)
+            except (asyncio.TimeoutError, Exception):
+                task.cancel()
 
 
 configure_logging()
@@ -77,7 +91,8 @@ def serve_frontend() -> FileResponse:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="The frontend has not been built. Run `npm install` and `npm run build` from the project root, then restart the API.",
         )
-    return FileResponse(FRONTEND_INDEX)
+    # index.html must never be cached so a rebuilt bundle is picked up without Ctrl+F5.
+    return FileResponse(FRONTEND_INDEX, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
 
 app.include_router(v1_router, prefix="/api/v1")

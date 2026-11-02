@@ -684,6 +684,20 @@ function App() {
   const previewMediaItems = useMemo(() => mediaForAccount(previewAccount), [captionMode, channelFiles, channelMediaUrlsByAccount, useSharedMediaByAccount, files, libraryMediaUrls, previewAccount?.id]);
   const previewFiles = useMemo(() => previewMediaItems.filter((item) => typeof item !== "string"), [previewMediaItems]);
   const previewMediaUrls = useMemo(() => previewMediaItems.filter((item) => typeof item === "string"), [previewMediaItems]);
+  const [mediaDims, setMediaDims] = useState({});
+  const mediaKey = (item) => typeof item === "string" ? item : item ? `${item.name}:${item.size}:${item.lastModified}` : "";
+  useEffect(() => {
+    const all = [...files, ...libraryMediaUrls, ...Object.values(channelFiles || {}).flat(), ...Object.values(channelMediaUrlsByAccount || {}).flat()];
+    let cancelled = false;
+    all.filter((item) => item && !isVideoMedia(item) && !(mediaKey(item) in mediaDims)).forEach((item) => {
+      const key = mediaKey(item);
+      const load = typeof item === "string"
+        ? new Promise((resolve) => { const img = new Image(); img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight }); img.onerror = () => resolve(null); img.src = item; })
+        : getMediaDimensions(item);
+      load.then((dims) => { if (!cancelled) setMediaDims((cur) => ({ ...cur, [key]: dims })); });
+    });
+    return () => { cancelled = true; };
+  }, [files, libraryMediaUrls, channelFiles, channelMediaUrlsByAccount]);
   const channelWarnings = useMemo(() => selectedAccounts.flatMap((account) => {
     const media = mediaForAccount(account);
     const hasVideo = media.some(isVideoMedia);
@@ -697,8 +711,20 @@ function App() {
     if (text.length > limit) warnings.push(`Caption is over this channel’s ${limit.toLocaleString()} character limit.`);
     if ((format === "Short" || format === "Reel / Video") && !hasVideo) warnings.push(`Please include a video for this ${format === "Short" ? "Short" : "video post"}.`);
     if (format === "Story" && !media.length) warnings.push("Add a photo or video to create this Story.");
+    const videoCount = media.filter(isVideoMedia).length;
+    if (account.platform === "instagram") {
+      if (!media.length) warnings.push("Instagram needs at least one image or video; caption-only posts aren't allowed. Add one photo.");
+      else if (media.length !== 1 || videoCount) warnings.push("Instagram posts from SocialCastly need exactly one photo (JPG or PNG). Remove the extra files or the video.");
+      else {
+        const dims = mediaDims[mediaKey(media[0])];
+        const ratio = dims?.width && dims?.height ? dims.width / dims.height : null;
+        if (ratio && (ratio < 0.795 || ratio > 1.915)) warnings.push(`Instagram only accepts photos from portrait 4:5 to landscape 1.91:1. This photo is ${dims.width}Ã—${dims.height}; crop it to square, 4:5 or 1.91:1.`);
+      }
+    }
+    if (account.platform === "youtube" && (media.length !== 1 || videoCount !== 1)) warnings.push("YouTube needs exactly one video. Add a video (photos and text-only posts can't go to YouTube).");
+    if (account.platform === "tiktok" && (media.length !== 1 || videoCount !== 1)) warnings.push("TikTok needs exactly one video. Keep a single video and remove other files.");
     return warnings.map((message) => ({ account, message }));
-  }), [selectedAccounts, captionMode, captionsByAccount, useUniversalCaptionByAccount, caption, channelFiles, channelMediaUrlsByAccount, useSharedMediaByAccount, files, libraryMediaUrls, formatsByAccount]);
+  }), [selectedAccounts, captionMode, captionsByAccount, useUniversalCaptionByAccount, caption, channelFiles, channelMediaUrlsByAccount, useSharedMediaByAccount, files, libraryMediaUrls, formatsByAccount, mediaDims]);
 
   async function suggestFormatsForAccounts(newFiles, targetAccounts = selectedAccounts) {
     const safeTargets = Array.isArray(targetAccounts) ? targetAccounts : [];

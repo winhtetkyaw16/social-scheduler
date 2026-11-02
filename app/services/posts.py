@@ -4,6 +4,8 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import HTTPException
+
+from app.services.error_messages import media_requirement_error
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -129,8 +131,9 @@ def get_owned_post(db: Session, post_id: UUID, user_id: UUID) -> ScheduledPost:
 
 def update_post(db: Session, post: ScheduledPost, payload: PostUpdate) -> ScheduledPost:
     """Validate and apply partial changes to an editable post."""
-    if post.status not in {"draft", "scheduled"}:
-        raise HTTPException(status_code=409, detail="Only draft or scheduled posts can be edited")
+    was_failed = post.status == "failed" and not (post.provider_post_id or "").strip()
+    if post.status not in {"draft", "scheduled"} and not was_failed:
+        raise HTTPException(status_code=409, detail="Only draft, scheduled or failed posts can be edited")
     changes = payload.model_dump(exclude_unset=True)
     if any(value is None for value in changes.values()):
         raise HTTPException(status_code=422, detail="Post fields cannot be set to null")
@@ -154,6 +157,12 @@ def update_post(db: Session, post: ScheduledPost, payload: PostUpdate) -> Schedu
         changes["post_metadata"] = metadata
     for key, value in changes.items():
         setattr(post, key, value)
+    if was_failed and changes.get("scheduled_at") is not None:
+        # "Save & reschedule": a failed post goes back on the schedule fresh.
+        post.status = "scheduled"
+        post.attempt_count = 0
+        post.last_error_code = None
+        post.last_error_message = None
     db.commit()
     db.refresh(post)
     _attach_execution_summaries(db, [post])
@@ -347,11 +356,15 @@ def materialize_draft_posts(
         }
         if account.platform == "pinterest" and isinstance(account_settings, dict) and account_settings.get("destination_url"):
             post_metadata["destination_url"] = account_settings["destination_url"]
+        account_media = _media_for_account(metadata, account.id, list(item.media_urls or []))[:10]
+        problem = media_requirement_error(account.platform, account_media, content)
+        if problem:
+            raise HTTPException(status_code=422, detail=f"{account.account_name}: {problem}")
         post = ScheduledPost(
             user_id=user_id,
             connected_account_id=account.id,
             content=content,
-            media_urls=_media_for_account(metadata, account.id, list(item.media_urls or []))[:10],
+            media_urls=account_media,
             scheduled_at=when,
             status="scheduled",
             idempotency_key=key,

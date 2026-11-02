@@ -59,7 +59,7 @@ export function useNextQueueSlot({ request, accounts, timeZone, enabled }) {
 }
 
 export default function PublishBar(props) {
-  const { mode, setMode, busy, submit, saveAsDraft, whenText, zoneText, date, setDate, time, setTime, timeZone, setTimeZone, timezones, minDate, request, selectedAccounts, onSetupQueue } = props;
+  const { mode, setMode, busy, submit, saveAsDraft, whenText, zoneText, date, setDate, time, setTime, timeZone, setTimeZone, timezones, minDate, request, selectedAccounts, onSetupQueue, blocked = false, blockedReason = "" } = props;
   const [whenOpen, setWhenOpen] = useState(false);
   const q = useNextQueueSlot({ request, accounts: selectedAccounts, timeZone, enabled: mode === "queue" });
   const noSlots = mode === "queue" && q.none;
@@ -94,6 +94,6 @@ export default function PublishBar(props) {
       <PublishModeControl mode={mode} onChange={(m) => { setMode(m); setWhenOpen(false); }} />
       <div className="c2-pdet">{detail}</div>
     </div>
-    <button type="button" className="btn btn-primary c2-pbtn" disabled={busy || noSlots} onClick={() => submit(mode)}>{busy ? <LoaderCircle size={15} className="animate-spin" /> : null}{cta}</button>
+    <button type="button" className="btn btn-primary c2-pbtn" disabled={busy || noSlots || blocked} title={blocked ? blockedReason : undefined} onClick={() => submit(mode)}>{busy ? <LoaderCircle size={15} className="animate-spin" /> : null}{cta}</button>
   </div>;
 }

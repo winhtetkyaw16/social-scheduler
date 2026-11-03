@@ -181,7 +181,7 @@ async function getMediaDimensions(file) {
     const video = document.createElement("video");
     const done = (value) => { URL.revokeObjectURL(url); video.removeAttribute("src"); resolve(value); };
     video.preload = "metadata";
-    video.onloadedmetadata = () => done({ width: video.videoWidth, height: video.videoHeight });
+    video.onloadedmetadata = () => done({ width: video.videoWidth, height: video.videoHeight, duration: video.duration });
     video.onerror = () => done(null);
     video.src = url;
   });
@@ -689,10 +689,12 @@ function App() {
   useEffect(() => {
     const all = [...files, ...libraryMediaUrls, ...Object.values(channelFiles || {}).flat(), ...Object.values(channelMediaUrlsByAccount || {}).flat()];
     let cancelled = false;
-    all.filter((item) => item && !isVideoMedia(item) && !(mediaKey(item) in mediaDims)).forEach((item) => {
+    all.filter((item) => item && !(mediaKey(item) in mediaDims)).forEach((item) => {
       const key = mediaKey(item);
       const load = typeof item === "string"
-        ? new Promise((resolve) => { const img = new Image(); img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight }); img.onerror = () => resolve(null); img.src = item; })
+        ? (isVideoMedia(item)
+          ? new Promise((resolve) => { const v = document.createElement("video"); v.preload = "metadata"; v.onloadedmetadata = () => resolve({ width: v.videoWidth, height: v.videoHeight, duration: v.duration }); v.onerror = () => resolve(null); v.src = item; })
+          : new Promise((resolve) => { const img = new Image(); img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight }); img.onerror = () => resolve(null); img.src = item; }))
         : getMediaDimensions(item);
       load.then((dims) => { if (!cancelled) setMediaDims((cur) => ({ ...cur, [key]: dims })); });
     });
@@ -716,15 +718,53 @@ function App() {
       if (!media.length) warnings.push("Instagram needs at least one image or video; caption-only posts aren't allowed. Add one photo.");
       else if (media.length !== 1 || videoCount) warnings.push("Instagram posts from SocialCastly need exactly one photo (JPG or PNG). Remove the extra files or the video.");
       else {
-        const dims = mediaDims[mediaKey(media[0])];
+        const item = media[0];
+        const dims = mediaDims[mediaKey(item)];
         const ratio = dims?.width && dims?.height ? dims.width / dims.height : null;
-        if (ratio && (ratio < 0.795 || ratio > 1.915)) warnings.push(`Instagram only accepts photos from portrait 4:5 to landscape 1.91:1. This photo is ${dims.width}Ã—${dims.height}; crop it to square, 4:5 or 1.91:1.`);
+        const target = ratio && ratio < 0.795 ? "4:5" : "1.91:1";
+        if (ratio && (ratio < 0.795 || ratio > 1.915)) warnings.push(`This photo is ${dims.width}×${dims.height}, which is ${ratio < 0.795 ? "taller" : "wider"} than Instagram allows. Click "Adjust crop" in the Instagram preview to crop it to ${target} before posting.`);
+        if (dims?.width && dims.width < 320) warnings.push(`This photo is only ${dims.width}px wide. Instagram needs photos at least 320px wide.`);
+        if (typeof item !== "string" && item.size > 8 * 1024 * 1024) warnings.push(`This photo is ${(item.size / 1048576).toFixed(1)} MB. Instagram photos can be up to 8 MB.`);
+      }
+      // Video limits (Meta): Reels 3 s–15 min, up to 300 MB; Story video 3–60 s, up to 100 MB.
+      const vid = media.find(isVideoMedia);
+      if (vid && (format === "Reel / Video" || format === "Story")) {
+        const vd = mediaDims[mediaKey(vid)]; const dur = vd?.duration; const mb = typeof vid !== "string" ? vid.size / 1048576 : 0;
+        const story = format === "Story"; const maxS = story ? 60 : 900; const maxMb = story ? 100 : 300; const what = story ? "Story videos" : "Reels";
+        if (Number.isFinite(dur) && dur < 3) warnings.push(`${what} must be at least 3 seconds long.`);
+        if (Number.isFinite(dur) && dur > maxS) warnings.push(`${what} can be up to ${story ? "60 seconds" : "15 minutes"} long. This one is ${Math.floor(dur / 60)}:${String(Math.round(dur % 60)).padStart(2, "0")}.`);
+        if (mb > maxMb) warnings.push(`${what} can be up to ${maxMb} MB. This one is ${mb.toFixed(0)} MB.`);
       }
     }
     if (account.platform === "youtube" && (media.length !== 1 || videoCount !== 1)) warnings.push("YouTube needs exactly one video. Add a video (photos and text-only posts can't go to YouTube).");
     if (account.platform === "tiktok" && (media.length !== 1 || videoCount !== 1)) warnings.push("TikTok needs exactly one video. Keep a single video and remove other files.");
     return warnings.map((message) => ({ account, message }));
   }), [selectedAccounts, captionMode, captionsByAccount, useUniversalCaptionByAccount, caption, channelFiles, channelMediaUrlsByAccount, useSharedMediaByAccount, files, libraryMediaUrls, formatsByAccount, mediaDims]);
+
+  // Non-blocking tips shown under the composer (publishing still allowed).
+  const channelNotices = useMemo(() => selectedAccounts.flatMap((account) => {
+    if (account.platform !== "instagram") return [];
+    const media = mediaForAccount(account);
+    if (media.length !== 1 || isVideoMedia(media[0])) return [];
+    const item = media[0];
+    const jpeg = typeof item === "string" ? /\.(jpe?g)(\?|$)/i.test(item) || !/\.(png|webp|gif|heic|avif|bmp)(\?|$)/i.test(item) : /^image\/jpe?g$/i.test(item.type || "");
+    return jpeg ? [] : [{ account, message: "Instagram officially supports JPEG photos. This photo isn't a JPEG, so Instagram may reject it. Re-save it as JPG to be safe." }];
+  }), [selectedAccounts, captionMode, channelFiles, channelMediaUrlsByAccount, useSharedMediaByAccount, files, libraryMediaUrls]);
+  // Swap one media item for a new File (used by the Instagram crop tool).
+  const replaceMediaItem = (account, oldItem, newFile) => {
+    if (!oldItem || !newFile) return;
+    const id = account?.id;
+    if (typeof oldItem !== "string") {
+      if (files.includes(oldItem)) setFiles((cur) => cur.map((f) => (f === oldItem ? newFile : f)));
+      else if (id) setChannelFiles((cur) => ({ ...cur, [id]: (cur[id] || []).map((f) => (f === oldItem ? newFile : f)) }));
+    } else if (libraryMediaUrls.includes(oldItem)) {
+      setLibraryMediaUrls((cur) => cur.filter((u) => u !== oldItem)); setFiles((cur) => [...cur, newFile]);
+    } else if (id) {
+      setChannelMediaUrlsByAccount((cur) => ({ ...cur, [id]: (cur[id] || []).filter((u) => u !== oldItem) }));
+      setChannelFiles((cur) => ({ ...cur, [id]: [...(cur[id] || []), newFile] }));
+    }
+    notify({ title: "Photo cropped", message: "The cropped JPEG replaced the original in this post." });
+  };
 
   async function suggestFormatsForAccounts(newFiles, targetAccounts = selectedAccounts) {
     const safeTargets = Array.isArray(targetAccounts) ? targetAccounts : [];
@@ -1181,7 +1221,7 @@ function App() {
           : activeTab === "biolink" ? <RenderErrorBoundary scope="Bio Link dashboard"><BioLinkDashboard user={user} accounts={accounts} posts={posts} /></RenderErrorBoundary> : activeTab === "accounts" ? <><ManageAccounts posts={posts} ownerName={user.full_name} accounts={accounts} channels={CHANNELS} request={authenticatedFetch} onConnect={connect} onChanged={() => loadWorkspace(token)} ChannelBrandImage={ChannelBrandImage} publishablePlatforms={PUBLISHABLE_PLATFORMS} /></> : <section className="animate-fade-up space-y-4">
             <RenderErrorBoundary scope="Composer"><ComposerV2 accounts={accounts} selectedIds={selectedIds} toggleAccount={toggleAccount} connect={connect} selectedAccounts={selectedAccounts} channels={CHANNELS} maxChars={MAX_CHARS}
               captionMode={captionMode} changeCaptionMode={changeCaptionMode} caption={caption} setCaption={setCaption} captionsByAccount={captionsByAccount} setCaptionsByAccount={setCaptionsByAccount} useUniversalCaptionByAccount={useUniversalCaptionByAccount} setUseUniversalCaptionByAccount={setUseUniversalCaptionByAccount}
-              captionForAccount={captionForAccount} mediaForAccount={mediaForAccount} channelWarnings={channelWarnings} templates={COMPOSER_TEMPLATES}
+              captionForAccount={captionForAccount} mediaForAccount={mediaForAccount} channelWarnings={channelWarnings} channelNotices={channelNotices} onReplaceMedia={replaceMediaItem} templates={COMPOSER_TEMPLATES}
               files={files} setFiles={setFiles} libraryMediaUrls={libraryMediaUrls} setLibraryMediaUrls={setLibraryMediaUrls} onFilesAdded={(incoming) => { void suggestFormatsForAccounts(incoming); }} onEditFile={(file) => { setQuickFile(file); setQuickTool(file.type.startsWith("video/") ? "video" : "image"); }}
               title={title} setTitle={setTitle} formatForAccount={formatForAccount} formatsByAccount={formatsByAccount} formatOverridesByAccount={formatOverridesByAccount} setAccountFormat={setAccountFormat} platformSettingsByAccount={platformSettingsByAccount} setPlatformSetting={setPlatformSetting}
               date={date} setDate={setDate} time={time} setTime={setTime} timeZone={timeZone} setTimeZone={setTimeZone} timezones={TIMEZONES} minDate={dateInZone(new Date(), timeZone)}

@@ -32,7 +32,7 @@ export default function ComposerV2(props) {
   const {
     accounts, selectedIds, toggleAccount, connect, selectedAccounts, channels, maxChars,
     captionMode, changeCaptionMode, caption, setCaption, captionsByAccount, setCaptionsByAccount, useUniversalCaptionByAccount, setUseUniversalCaptionByAccount,
-    captionForAccount, mediaForAccount, channelWarnings, templates,
+    captionForAccount, mediaForAccount, channelWarnings, channelNotices = [], onReplaceMedia, templates,
     files, setFiles, libraryMediaUrls, setLibraryMediaUrls, onFilesAdded, onEditFile,
     title, setTitle, formatForAccount, formatsByAccount, formatOverridesByAccount, setAccountFormat, platformSettingsByAccount, setPlatformSetting,
     date, setDate, time, setTime, timeZone, setTimeZone, timezones, minDate,
@@ -155,12 +155,13 @@ export default function ComposerV2(props) {
           </div>}
         </div>
         {channelWarnings.length > 0 && <div className="c2-blockers" role="alert">{channelWarnings.map((w, i) => <p key={`${w.account.id}-${i}`} className="c2-hint over"><AlertCircle size={14} /><span><b>{LABELS[w.account.platform] || w.account.platform}{w.account.account_name ? ` Â· ${w.account.account_name}` : ""}:</b> {w.message}</span></p>)}</div>}
+        {channelNotices.length > 0 && <div className="c2-blockers">{channelNotices.map((w, i) => <p key={`n-${w.account.id}-${i}`} className="c2-hint warn"><AlertCircle size={14} /><span><b>{LABELS[w.account.platform] || w.account.platform}:</b> {w.message}</span></p>)}</div>}
           <PublishBar blocked={channelWarnings.length > 0} blockedReason={channelWarnings[0]?.message} mode={publishMode} setMode={setPublishMode} busy={busy} submit={submit} saveAsDraft={saveAsDraft} whenText={whenText} zoneText={zoneLabel(timeZone)} date={date} setDate={setDate} time={time} setTime={setTime} timeZone={timeZone} setTimeZone={setTimeZone} timezones={timezones} minDate={minDate} request={request} selectedAccounts={selectedAccounts} onSetupQueue={onSetupQueue} />
       </form>
       <aside className="c2-pv">
         {selectedAccounts.length ? <>
           <div className="pvh" role="tablist">{selectedAccounts.map((a) => <a role="tab" key={a.id} className={previewAccount?.id === a.id ? "active" : ""} onClick={() => setPreviewId(a.id)} title={a.account_name}><ChannelTile platform={a.platform} size={18} /><span className={previewAccount?.id === a.id ? "" : "sr-only"}>{LABELS[a.platform]}</span></a>)}</div>
-          {previewAccount && <PostPreview account={previewAccount} caption={captionForAccount(previewAccount)} media={mediaForAccount(previewAccount)} title={title} format={formatForAccount(previewAccount)} settings={platformSettingsByAccount[previewAccount.id] || {}} />}
+          {previewAccount && <PostPreview account={previewAccount} caption={captionForAccount(previewAccount)} media={mediaForAccount(previewAccount)} title={title} format={formatForAccount(previewAccount)} settings={platformSettingsByAccount[previewAccount.id] || {}} onReplaceMedia={onReplaceMedia ? (oldItem, file) => onReplaceMedia(previewAccount, oldItem, file) : undefined} />}
         </> : <div className="card card-pad sm muted">Select a channel to see a preview.</div>}
       </aside>
     </div>

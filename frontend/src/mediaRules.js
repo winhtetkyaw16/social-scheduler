@@ -211,3 +211,13 @@ export function summarize(rows) {
 export function mediaKeyOf(item) {
   return typeof item === "string" ? item : item ? `${item.name}:${item.size}:${item.lastModified}` : "";
 }
+
+/**
+ * File-level Instagram photo checks. Size (under 320px), shape and weight are fixed automatically at publish
+ * (upscale, crop, JPG, compress), so the only thing left to report is a photo the browser couldn't read at all
+ * (corrupt or unsupported format). `loaded` = dimension probe finished; `dims` null = it failed.
+ */
+export function igPhotoWarnings({ which = "This photo", loaded = false, dims = null } = {}) {
+  if (loaded && !dims) return [`${which} can't be opened. Instagram needs a JPG, PNG or WebP photo; pick another file.`];
+  return [];
+}

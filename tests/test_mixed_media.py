@@ -349,3 +349,45 @@ def test_threads_and_facebook_publish_original_media_for_any_count(uploads):
     for net in ("threads", "facebook"):
         for n in (1, 2, 3, 4, 6):
             assert media_convert.prepare_media(net, urls[:n]) == urls[:n]
+
+
+def test_instagram_upscales_small_photos_after_crop(uploads):
+    tiny = uploads("tiny.jpg", size=(95, 120))
+    wide = uploads("tw.png", size=(300, 100))
+    for url in (tiny, wide):
+        out = media_convert.prepare_media("instagram", [url])[0]
+        assert out != url and out.endswith(".jpg")
+        w, h = _open(uploads, out).size
+        assert min(w, h) >= 320 and 0.8 - 0.01 <= w / h <= 1.91 + 0.01   # cropped into range, then upscaled
+    story = media_convert.prepare_media("instagram", [tiny], ig_crop={"format": "Story"})[0]
+    assert min(_open(uploads, story).size) >= 320
+    for net in ("facebook", "x", "linkedin", "threads", "tiktok"):
+        assert media_convert.prepare_media(net, [tiny]) == [tiny]
+
+
+def test_publish_ig_gets_processed_file_other_network_gets_original_bytes(uploads, monkeypatch):
+    import hashlib
+    from app.services import publishing
+    small = uploads("small.jpg", size=(95, 200), noise=True)
+    digest = lambda url: hashlib.sha256((uploads.dir / url.rsplit("/", 1)[-1]).read_bytes()).hexdigest()
+    original = digest(small)
+    sent = {}
+
+    class Fake:
+        def __init__(self, name):
+            self.name = name
+
+        def publish(self, token, account, content, media):
+            sent[self.name] = list(media)
+            return ProviderPublishResult(post_id="p", request_id="r", status_code=200)
+
+    monkeypatch.setattr(publishing, "get_platform", lambda name: Fake(name))
+    crop = {"ratio": 0.8, "offsets": [[0.5, 0.5]], "format": "Post"}
+    for net in ("instagram", "facebook", "x", "linkedin", "threads", "tiktok", "youtube"):
+        publishing.publish(net, "tok", "acct", "hi", [small], ig_crop=crop)
+    ig = sent["instagram"][0]
+    assert ig != small and digest(ig) != original
+    w, h = _open(uploads, ig).size
+    assert min(w, h) >= 320 and abs(w / h - 0.8) < 0.01
+    for net in ("facebook", "x", "linkedin", "threads", "tiktok", "youtube"):
+        assert [digest(u) for u in sent[net]] == [original], net

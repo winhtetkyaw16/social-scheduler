@@ -6,7 +6,8 @@ Converted copies are written next to the original upload and reused on retry; fa
 original file so the network's own validation still applies.
 
     instagram  any non-JPG photo -> JPG; feed photos are cropped to one shared frame (4:5 .. 1.91:1, first photo
-               decides, user ratio/offsets from post metadata ``ig_crop`` win)
+               decides, user ratio/offsets from post metadata ``ig_crop`` win); photos whose shortest side is under
+               320px are upscaled (LANCZOS) after the crop; photos over 8 MB are compressed. Instagram only.
     linkedin   WebP -> PNG/JPG; MOV/M4V -> MP4 when ffmpeg is installed
     facebook   WebP -> PNG/JPG; photos over 4 MB are compressed
     tiktok     PNG (and other non JPG/WebP photos) -> JPG
@@ -28,6 +29,8 @@ log = logging.getLogger(__name__)
 IG_MIN_RATIO = 0.8
 IG_MAX_RATIO = 1.91
 FB_MAX_PHOTO_BYTES = 4 * 1024 * 1024
+IG_MIN_SIDE = 320
+IG_MAX_PHOTO_BYTES = 8 * 1024 * 1024
 _JPEG_EXT = {".jpg", ".jpeg"}
 
 
@@ -116,7 +119,7 @@ def _out_path(src: Path, tag: str, ext: str) -> Path:
 
 
 def _save_image(src: Path, tag: str, *, fmt: str, crop_instagram: bool = False, max_bytes: int | None = None,
-                frame: tuple[float, float, float] | None = None) -> Path:
+                frame: tuple[float, float, float] | None = None, min_side: int | None = None) -> Path:
     from PIL import Image, ImageOps
 
     ext = ".jpg" if fmt == "JPEG" else ".png"
@@ -134,6 +137,11 @@ def _save_image(src: Path, tag: str, *, fmt: str, crop_instagram: bool = False, 
         box = instagram_crop_box(img.width, img.height)
         if box != (0, 0, img.width, img.height):
             img = img.crop(box)
+    if min_side and img.width and img.height and min(img.width, img.height) < min_side:
+        # Crop first, then upscale, so the final output always meets the minimum.
+        scale = min_side / min(img.width, img.height)
+        size = (max(min_side, round(img.width * scale)), max(min_side, round(img.height * scale)))
+        img = img.resize(size, Image.LANCZOS)
     if fmt == "JPEG":
         if img.mode in ("RGBA", "LA", "P"):
             rgba = img.convert("RGBA")
@@ -147,6 +155,8 @@ def _save_image(src: Path, tag: str, *, fmt: str, crop_instagram: bool = False, 
         while max_bytes and out.stat().st_size > max_bytes:
             if quality > 60:
                 quality -= 10
+            elif min_side and min(img.width, img.height) * 0.85 < min_side:
+                break
             else:
                 img = img.resize((max(1, int(img.width * 0.85)), max(1, int(img.height * 0.85))))
             img.save(out, "JPEG", quality=quality, optimize=True)
@@ -168,6 +178,14 @@ def _photo_ratio(src: Path) -> float | None:
     with Image.open(src) as img:
         w, h = ImageOps.exif_transpose(img).size if img.getexif().get(0x0112, 1) in (5, 6, 7, 8) else img.size
     return (w / h) if w and h else None
+
+
+def _ig_small(src: Path) -> bool:
+    from PIL import Image
+
+    with Image.open(src) as img:
+        w, h = img.size
+    return bool(w and h) and min(w, h) < IG_MIN_SIDE
 
 
 def _needs_ig_crop(src: Path) -> bool:
@@ -208,17 +226,18 @@ def convert_one(platform: str, url: str, frame: tuple[float, float, float] | Non
     out: Path | None = None
     if kind == "image" and ext != ".gif":
         if key == "instagram" and frame == "story":
-            if ext not in _JPEG_EXT:
-                out = _save_image(src, "igs", fmt="JPEG")
+            if ext not in _JPEG_EXT or _ig_small(src) or src.stat().st_size > IG_MAX_PHOTO_BYTES:
+                out = _save_image(src, "igs", fmt="JPEG", min_side=IG_MIN_SIDE, max_bytes=IG_MAX_PHOTO_BYTES)
         elif key == "instagram" and frame:
             r = _photo_ratio(src)
-            if (r is not None and abs(r - frame[0]) >= 0.005) or ext not in _JPEG_EXT:
-                tag = "ig" + hashlib.sha1(("%.4f:%.3f:%.3f" % frame).encode()).hexdigest()[:6]
-                out = _save_image(src, tag, fmt="JPEG", frame=frame)
+            if ((r is not None and abs(r - frame[0]) >= 0.005) or ext not in _JPEG_EXT or _ig_small(src)
+                    or src.stat().st_size > IG_MAX_PHOTO_BYTES):
+                tag = "ig" + hashlib.sha1(("%.4f:%.3f:%.3f:%d" % (*frame, IG_MIN_SIDE)).encode()).hexdigest()[:6]
+                out = _save_image(src, tag, fmt="JPEG", frame=frame, min_side=IG_MIN_SIDE, max_bytes=IG_MAX_PHOTO_BYTES)
         elif key == "instagram":
             crop = _needs_ig_crop(src)
-            if crop or ext not in _JPEG_EXT:
-                out = _save_image(src, "ig", fmt="JPEG", crop_instagram=crop)
+            if crop or ext not in _JPEG_EXT or _ig_small(src) or src.stat().st_size > IG_MAX_PHOTO_BYTES:
+                out = _save_image(src, "ig", fmt="JPEG", crop_instagram=crop, min_side=IG_MIN_SIDE, max_bytes=IG_MAX_PHOTO_BYTES)
         elif key in {"linkedin", "facebook"} and ext == ".webp":
             out = _save_image(src, key[:2], fmt="PNG" if _has_alpha(src) else "JPEG",
                               max_bytes=FB_MAX_PHOTO_BYTES if key == "facebook" else None)

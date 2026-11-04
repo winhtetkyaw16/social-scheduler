@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { igCropPayload } from "./igFrame.js";
-import { actionIndices, autoSplit, checkMedia, cropIndices, defaultIndices, mediaInfo, mediaKeyOf, selectionFor, splitLabel } from "./mediaRules.js";
+import { actionIndices, autoSplit, checkMedia, cropIndices, defaultIndices, mediaInfo, mediaKeyOf, selectionFor, splitLabel, igPhotoWarnings } from "./mediaRules.js";
 import { ChannelTile } from "./sc/ui.jsx";
 import { createPortal } from "react-dom";
 import { createRoot } from "react-dom/client";
@@ -741,9 +741,9 @@ function App() {
     if (account.platform === "instagram") {
       media.filter((m) => !isVideoMedia(m)).forEach((item) => {
         const which = media.length > 1 ? `Photo ${media.indexOf(item) + 1}` : "This photo";
-        const dims = mediaDims[mediaKey(item)];
-        if (dims?.width && dims.width < 320) warnings.push(`${which} is only ${dims.width}px wide. Instagram needs photos at least 320px wide.`);
-        if (typeof item !== "string" && item.size > 8 * 1024 * 1024) warnings.push(`${which} is ${(item.size / 1048576).toFixed(1)} MB. Instagram photos can be up to 8 MB.`);
+        const key = mediaKey(item);
+        // Small, odd-shaped or large photos are fixed at publish (upscale, crop, JPG, compress); only unreadable files block.
+        warnings.push(...igPhotoWarnings({ which, loaded: key in mediaDims, dims: mediaDims[key] }));
       });
       const vid = media.length === 1 && isVideoMedia(media[0]) ? media[0] : null;
       const mb = vid && typeof vid !== "string" ? vid.size / 1048576 : 0;
@@ -863,6 +863,8 @@ function App() {
   const setIgCrop = (account, next) => {
     if (!account?.id) return;
     setIgCropByAccount((cur) => ({ ...cur, [account.id]: { ...(cur[account.id] || {}), ...next, offsets: { ...(cur[account.id]?.offsets || {}), ...(next.offsets || {}) } } }));
+
+    setCropOkByAccount((cur) => ({ ...cur, [account.id]: true })); // Adjust crop accepts the Instagram frame
   };
 
   async function suggestFormatsForAccounts(newFiles, targetAccounts = selectedAccounts) {

@@ -1,7 +1,7 @@
 // Run with: node --test frontend/src/mediaRules.test.mjs
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mediaInfo, autoSplit, checkMedia, actionIndices, splitLabel, summarize, selectionFor, defaultIndices, instagramCropBox, cropIndices } from "./mediaRules.js";
+import { igPhotoWarnings, mediaInfo, autoSplit, checkMedia, actionIndices, splitLabel, summarize, selectionFor, defaultIndices, instagramCropBox, cropIndices } from "./mediaRules.js";
 
 const vid = (d = 42, w = 1080, h = 1920, ext = "mp4") => ({ kind: "video", ext, size: 0, width: w, height: h, duration: d });
 const pic = (w = 1080, h = 1080, ext = "jpg", size = 0) => ({ kind: "photo", ext, size, width: w, height: h, duration: null });
@@ -155,4 +155,12 @@ test("auto-conversion info notes are never shown, blocking problems still are", 
   assert.deepEqual(codes(checkMedia("instagram", Array.from({ length: 21 }, () => pic()))), ["too_many"]);
   assert.deepEqual(codes(checkMedia("tiktok", MIX)), ["mixed"]);
   assert.deepEqual(codes(checkMedia("youtube", [pic()])), ["no_video"]);
+});
+
+test("Instagram: small photos are fixed at publish, only unreadable files show an error", () => {
+  const tiny = [{ kind: "photo", width: 95, height: 120, ext: "png" }, { kind: "photo", width: 47, height: 300 }];
+  assert.deepEqual(checkMedia("instagram", tiny).problems, []);
+  assert.deepEqual(igPhotoWarnings({ which: "Photo 4", loaded: true, dims: { width: 95, height: 95 } }), []);
+  assert.deepEqual(igPhotoWarnings({ which: "Photo 4", loaded: false }), []); // still measuring
+  assert.match(igPhotoWarnings({ which: "Photo 4", loaded: true, dims: null })[0], /Photo 4 can't be opened/);
 });

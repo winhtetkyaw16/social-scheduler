@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { choiceOptions, indicesForChoice, choiceOf, pickerFor, togglePick, rowText, buildFixPlan, planResult, identityLine, fmtDuration } from "./fixPlan.js";
+import { checkMedia } from "./mediaRules.js";
 
 const P = (n) => ({ kind: "photo", width: 1080, height: 1080, name: `p${n}.jpg` });
 const V = { kind: "video", duration: 42, name: "clip.mp4" };
@@ -78,4 +79,11 @@ test("identity: handle only from API, FB pages say Facebook Page", () => {
   assert.equal(identityLine(acc(1, "facebook")), "Facebook Page");
   assert.equal(identityLine(acc(2, "x", { username: "winhk" })), "X · @winhk");
   assert.equal(identityLine(acc(3, "linkedin")), "LinkedIn");
+});
+
+test("Fix for me count ignores what the app fixes on its own (small, odd-shaped, PNG Instagram photos)", () => {
+  const ig = { id: "ig1", platform: "instagram" }, tt = { id: "tt1", platform: "tiktok" };
+  const infos = [{ kind: "photo", width: 95, height: 400, ext: "png" }, { kind: "photo", width: 3000, height: 800, ext: "webp" }];
+  const rows = [ig, tt].map((account) => ({ account, format: "Post", infos, problems: checkMedia(account.platform, infos).problems.length }));
+  assert.equal(buildFixPlan(rows).counts.changing, 0);
 });

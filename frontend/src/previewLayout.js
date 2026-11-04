@@ -78,3 +78,12 @@ export function liLayout(ratios, { video = false, max = LINKEDIN_MAX_VISIBLE } =
   for (let j = 1; j <= k; j++) cells.push({ i: j, area: `${j} / 2 / ${j + 1} / 3` });
   return { kind: "left", ratio, frame: ratio, cropped: false, cols: "2fr 1fr", rows: fr(rowFracs), rowFracs, colFracs, cells, more };
 }
+
+/** Facebook Page post preview: a Page post carries one video, never a video next to other media.
+ *  kinds: "video" | "image" | "gif" per item. Returns "blocked" until the media is cut down to one video. */
+export function fbPostState(kinds = []) {
+  const v = kinds.filter((k) => k === "video").length;
+  if (v > 1) return "choose_video";
+  if (v === 1 && kinds.length > 1) return "mixed";
+  return "ok";
+}

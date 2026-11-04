@@ -36,12 +36,58 @@ export function choiceOptions(platform, infos) {
 }
 
 /** Indices a choice sends. X Photos uses `xPhotos` (from "Choose which 4") when given. */
-export function indicesForChoice(platform, infos, choice, { xPhotos = null } = {}) {
+export function indicesForChoice(platform, infos, choice, { xPhotos = null, video = null } = {}) {
   const p = net(platform);
-  if (choice === "Video") return videos(infos).slice(0, 1);
+  if (choice === "Video") return videoChoice(infos, video);
   if (choice === "GIF") return gifs(infos).slice(0, 1);
   if (p === "x" && Array.isArray(xPhotos) && xPhotos.length) return xPhotos.filter((i) => infos[i]?.kind === "photo").slice(0, LIMITS.x.photos);
   return photoSide(p, infos);
+}
+
+/** Networks that post only one video per post (Fix for me shows a "which video" picker when 2+ exist). */
+export const SINGLE_VIDEO_NETWORKS = ["facebook", "linkedin", "tiktok", "x", "youtube"];
+
+/** The one video a single-video network sends: the user's pick when it is a video, else the first. */
+export function videoChoice(infos, video = null) {
+  const v = videos(infos);
+  return Number.isInteger(video) && v.includes(video) ? [video] : v.slice(0, 1);
+}
+
+/** Shared media URLs one account publishes, in order (what the publish payload sends). */
+export function urlsForSelection(sharedUrls, indices) {
+  return (Array.isArray(indices) ? indices : []).map((i) => sharedUrls[i]).filter(Boolean);
+}
+
+const joinNames = (names) => (names.length <= 1 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`);
+
+/**
+ * Specific blocking media errors for the composer, grouped by message across accounts (shown under the
+ * "Media needs a few changes" panel with the account avatars). rows: mediaReport rows ({ account, infos, check }).
+ * Returns [{ key, accounts, message }].
+ */
+export function blockingGroups(rows = []) {
+  const groups = new Map();
+  const add = (key, account, text) => {
+    if (!groups.has(key)) groups.set(key, { key, accounts: [], text });
+    const g = groups.get(key); if (!g.accounts.some((a) => a.id === account.id)) g.accounts.push(account);
+  };
+  for (const r of rows) {
+    const p = net(r.account?.platform);
+    const infos = r.infos || [];
+    const many = videos(infos).length > 1 && SINGLE_VIDEO_NETWORKS.includes(p);
+    if (many) add("one_video", r.account, null);
+    for (const pr of r.check?.problems || []) {
+      if (many && pr.code === "too_many") continue; // said once, as "allow only 1 video per post"
+      add(`${pr.code}:${pr.title}`, r.account, pr.title + (pr.detail ? ` — ${pr.detail}` : ""));
+    }
+  }
+  return [...groups.values()].map((g) => {
+    const names = [...new Set(g.accounts.map((a) => NETWORK[net(a.platform)] || a.platform))];
+    const message = g.key === "one_video"
+      ? `${joinNames(names)} allow${names.length === 1 ? "s" : ""} only 1 video per post`
+      : `${joinNames(names)}: ${g.text}`;
+    return { key: g.key, accounts: g.accounts, message };
+  });
 }
 
 /** Which toggle option a set of indices corresponds to. */
@@ -59,6 +105,16 @@ export function pickerFor(platform, infos, { format = "Post" } = {}) {
   if (p === "threads" && infos.length > 1) return { kind: "items", label: "Change", items: infos.map((_, i) => i), limit: LIMITS.threads.carousel };
   if (p === "x" && photos(infos).length > LIMITS.x.photos) return { kind: "x4", label: "Choose which 4", items: photos(infos), limit: LIMITS.x.photos };
   return null;
+}
+
+/** Single-video networks with 2+ videos sending a video: pick which one (thumbnails with durations, one choice). */
+export function videoPicker(platform, infos, indices, skipped = false) {
+  const p = net(platform);
+  const v = videos(infos);
+  if (skipped || !SINGLE_VIDEO_NETWORKS.includes(p) || v.length < 2) return null;
+  const picked = indices.map((i) => infos[i]).filter(Boolean);
+  if (!picked.length || !picked.every((m) => m.kind === "video")) return null;
+  return { kind: "video", label: "Choose video", items: v, limit: 1, chosen: indices.find((i) => v.includes(i)) };
 }
 
 /** Tick/untick one item in a picker. Never above the limit, never below 1. Keeps the user's order. */
@@ -114,7 +170,11 @@ export function rowText(platform, infos, indices, { format = "Post", suggested =
   const left = infos.length - picked.length;
   const choice = choiceOf(infos, indices);
   const changed = !same(indices, suggested);
-  if (TOGGLE_NETWORKS.includes(p) && choice === "Video" && stills(infos).length) line3 = p === "x" ? "Photos and GIFs won't be posted here" : "Photos won't be posted here";
+  const otherVids = SINGLE_VIDEO_NETWORKS.includes(p) && choice === "Video" ? videos(infos).length - v.length : 0;
+  const otherV = otherVids > 0 ? `${otherVids === 1 ? "The other video" : `${otherVids} other videos`} won't be posted here` : "";
+  if (otherV && (stills(infos).length)) line3 = `${otherV}, nor the ${p === "x" ? "photos and GIFs" : "photos"}`;
+  else if (otherV) line3 = otherV;
+  else if (TOGGLE_NETWORKS.includes(p) && choice === "Video" && stills(infos).length) line3 = p === "x" ? "Photos and GIFs won't be posted here" : "Photos won't be posted here";
   else if (TOGGLE_NETWORKS.includes(p) && choice === "GIF") line3 = "Other items won't be posted here";
   else if (p === "x" && choice === "Photos" && photos(infos).length > LIMITS.x.photos) line3 = changed ? `${plural(photos(infos).length - s, "photo")} won't be posted here` : "X allows up to 4 — we'll use the first 4";
   else if (TOGGLE_NETWORKS.includes(p) && choice === "Photos" && videos(infos).length) line3 = `${NETWORK[p]} can't mix photos and a video`;
@@ -142,7 +202,7 @@ export function buildFixPlan(rows, overrides = {}) {
     return {
       account: r.account, platform: p, format, suggested, indices, skipped, empty, needsChange,
       changed: !same(indices, suggested), options, choice: options.length ? choiceOf(r.infos, indices) : null,
-      picker: pickerFor(p, r.infos, { format }), identity: identityLine(r.account),
+      picker: videoPicker(p, r.infos, indices, skipped) || pickerFor(p, r.infos, { format }), identity: identityLine(r.account),
       ...rowText(p, r.infos, indices, { format, suggested, skipped }),
     };
   });

@@ -120,3 +120,68 @@ test("savedPostBlock: same rules as the composer for a saved post; auto-fixed is
   // Composer and panel share channelErrors.
   assert.deepEqual(channelErrors({ platform: "threads", format: "Story", text: "x", limit: 500, mediaCount: 1 }), ["Story is not available for threads; choose a supported format."]);
 });
+
+// --- 2+ videos on single-video networks (regression: errors vanished, Fix for me knew only one video) ---
+const V1 = { kind: "video", duration: 21, name: "a.mp4" };
+const V2 = { kind: "video", duration: 65, name: "b.mp4" };
+const TWO = [V1, V2, P(1), P(2), P(3)];
+const EIGHT = ["facebook", "linkedin", "tiktok", "x", "youtube", "instagram", "threads", "pinterest"];
+
+test("blockingGroups: 2 videos + photos on 8 channels gives the specific grouped 'only 1 video' error, and the hint shows", async () => {
+  const { blockingGroups, publishBlock } = await import("./fixPlan.js");
+  const rows = EIGHT.map((p, i) => ({ account: acc(i + 1, p), infos: TWO, check: checkMedia(p, TWO, { format: "Post" }) }));
+  const groups = blockingGroups(rows);
+  const one = groups.find((g) => g.key === "one_video");
+  assert.ok(one, "specific error is returned");
+  assert.equal(one.message, "Facebook, LinkedIn, TikTok, X and YouTube allow only 1 video per post");
+  assert.deepEqual(one.accounts.map((a) => a.platform), ["facebook", "linkedin", "tiktok", "x", "youtube"]);
+  assert.ok(!groups.some((g) => /instagram|threads/i.test(g.message) && /1 video/.test(g.message)));
+  const block = publishBlock({ mediaReport: rows });
+  assert.equal(block.blocked, true);
+  assert.equal(block.hint, "Fix the errors above to post");
+  assert.deepEqual(blockingGroups([{ account: acc(9, "youtube"), infos: [V1, V2], check: checkMedia("youtube", [V1, V2]) }])[0].message, "YouTube allows only 1 video per post");
+});
+
+test("buildFixPlan with 2 videos: single-video networks get a video picker with every video; IG/Threads keep both", () => {
+  const rows = ["facebook", "youtube", "instagram", "threads"].map((p, i) => ({ account: acc(i + 1, p), infos: TWO, check: checkMedia(p, TWO, { format: "Post" }) }));
+  const plan = buildFixPlan(rows, { 1: { choice: "Video" } });
+  const fb = plan.entries.find((e) => e.platform === "facebook");
+  const fbv = buildFixPlan(rows, { 1: { indices: [0] } }).entries.find((e) => e.platform === "facebook");
+  assert.equal(fbv.picker.kind, "video");
+  assert.deepEqual(fbv.picker.items, [0, 1]);
+  assert.equal(fbv.picker.chosen, 0);
+  assert.match(fbv.line3, /other video won't be posted here/);
+  const yt = plan.entries.find((e) => e.platform === "youtube");
+  assert.equal(yt.picker.kind, "video");
+  assert.match(yt.line3, /The other video won't be posted here/);
+  for (const p of ["instagram", "threads"]) {
+    const e = plan.entries.find((x) => x.platform === p);
+    if (e) assert.ok(e.indices.includes(0) && e.indices.includes(1), `${p} keeps both videos`);
+  }
+  void fb;
+});
+
+test("per-account video choice is honoured and the publish payload sends only that video", async () => {
+  const { videoChoice, urlsForSelection } = await import("./fixPlan.js");
+  assert.deepEqual(indicesForChoice("facebook", TWO, "Video"), [0]);
+  assert.deepEqual(indicesForChoice("facebook", TWO, "Video", { video: 1 }), [1]);
+  assert.deepEqual(videoChoice(TWO, 3), [0], "a photo index is not a valid video pick");
+  const rows = [{ account: acc(1, "facebook"), infos: TWO, check: checkMedia("facebook", TWO, { format: "Post" }) },
+    { account: acc(2, "x"), infos: TWO, check: checkMedia("x", TWO, { format: "Post" }) }];
+  const plan = buildFixPlan(rows, { 1: { indices: [1], video: 1 }, 2: { indices: [0], video: 0 } });
+  const fb = plan.entries.find((e) => e.account.id === 1);
+  assert.deepEqual(fb.indices, [1]);
+  assert.equal(fb.picker.chosen, 1);
+  const sel = planResult(plan).selections;
+  assert.deepEqual(sel[1], [1]); assert.deepEqual(sel[2], [0]);
+  const urls = ["/m/a.mp4", "/m/b.mp4", "/m/p1.jpg", "/m/p2.jpg", "/m/p3.jpg"];
+  assert.deepEqual(urlsForSelection(urls, sel[1]), ["/m/b.mp4"]);
+  assert.deepEqual(urlsForSelection(urls, sel[2]), ["/m/a.mp4"]);
+});
+
+test("composer CSS shows the 'Fix the errors' hint on desktop whenever posting is blocked", async () => {
+  const { readFileSync } = await import("node:fs");
+  const css = readFileSync(new URL("./sc/composer-v2.css", import.meta.url), "utf8");
+  // Top-level rule (not indented inside a mobile-only @media block).
+  assert.match(css, /^\.scd \.c2 \.c2-pbar\.fix-first \.c2-fixhint\{display:block\}/m);
+});

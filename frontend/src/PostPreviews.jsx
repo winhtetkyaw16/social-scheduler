@@ -4,9 +4,9 @@ import { accountDisplayName, accountHandle, resolveAvatarUrl } from "./sc/ui.jsx
 import ModalPortal from "./ModalPortal.jsx";
 import useBodyScrollLock from "./useBodyScrollLock.js";
 import { focusNoScroll } from "./scrollLock.js";
-import { mediaKeyOf } from "./mediaRules.js";
+import { mediaInfo, mediaKeyOf } from "./mediaRules.js";
 import { IG_CHIPS, igChipLabel, igDragOffset, igFrameRatio, igNeedsCrop, igObjectPosition } from "./igFrame.js";
-import { threadsLayout, fbGridLayout, xLayout, liLayout } from "./previewLayout.js";
+import { fbPostState, threadsLayout, fbGridLayout, xLayout, liLayout } from "./previewLayout.js";
 import { arrowsFor, keyDir, nearestIndex, stepIndex } from "./carouselNav.js";
 import brandMark from "./assets/brand/socialcastly-mark-256.png";
 
@@ -387,13 +387,16 @@ function FacebookPreview({ account, caption, capCls, media, format }) {
   const nat = useNatural(c.cur, c.vid);
   const box = nat ? FIT.fb(nat) : (c.vid ? 16 / 9 : 1);
   const [t, more] = clip(caption, 110);
-  const label = view === "post" ? (c.n > 1 ? `${c.n} items · Approximate layout` : c.cur ? sizeLabel(box).join(" · ") : "Text post") : "9:16 · 1080×1920";
+  const fbState = fbPostState((media || []).map((m) => mediaInfo(m).kind));
+  const label = view === "post" && fbState !== "ok" ? "Blocked · choose one video" : view === "post" ? (c.n > 1 ? `${c.n} items · Approximate layout` : c.cur ? sizeLabel(box).join(" · ") : "Text post") : "9:16 · 1080×1920";
   return <Cpv net="Facebook" tabs={[["post", "Post"], ["reel", "Reel"], ["story", "Story"]]} view={view} setView={setView} label={label}>
     {view === "post" && <div className="pp2">
       <div className="h"><Av account={account} size={32} /><div className="grow"><b>{name(account)}</b><div className="sub">Just now · <Globe size={11} /></div></div><MoreHorizontal size={18} /></div>
       <div className={`${capCls} cpv-capt`}><Txt text={t} />{more && <>… <span className="mo">more</span></>}</div>
-      {c.n === 1 && <CMd c={c} ratio={box} radius={0} />}
-      {c.n > 1 && <FbGrid urls={c.urls} media={media} />}
+      {fbState !== "ok" && <div className="cpv-blocked" role="status" style={{ aspectRatio: "16 / 9", display: "grid", placeItems: "center", textAlign: "center", padding: 16, background: "var(--surface-2, #f0f2f5)", color: "var(--muted, #65676b)", fontSize: 13 }}>
+        <div><b style={{ display: "block", color: "var(--text, #1c1e21)", marginBottom: 4 }}>{fbState === "choose_video" ? "Choose which video goes to Facebook" : "Facebook posts a video on its own"}</b>A Page post carries one video. Use Fix for me to pick it.</div></div>}
+      {fbState === "ok" && c.n === 1 && <CMd c={c} ratio={box} radius={0} />}
+      {fbState === "ok" && c.n > 1 && <FbGrid urls={c.urls} media={media} />}
       <div className="ac fb"><span><ThumbsUp size={15} />Like</span><span><MessageCircle size={15} />Comment</span><span><Forward size={15} />Share</span></div>
     </div>}
     {view === "reel" && <VFrame c={c} top="Reels" rail={<><span><ThumbsUp size={22} />1.2K</span><span><MessageCircle size={22} />48</span><span><Forward size={22} /></span><span><MoreHorizontal size={20} /></span></>}

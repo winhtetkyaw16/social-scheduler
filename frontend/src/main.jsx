@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { igCropPayload } from "./igFrame.js";
-import { SUPPORTED_FORMATS, channelErrors } from "./fixPlan.js";
+import { SUPPORTED_FORMATS, channelErrors, urlsForSelection } from "./fixPlan.js";
 import { actionIndices, autoSplit, checkMedia, cropIndices, defaultIndices, mediaInfo, mediaKeyOf, selectionFor, splitLabel, igPhotoWarnings } from "./mediaRules.js";
 import { ChannelTile } from "./sc/ui.jsx";
 import { createPortal } from "react-dom";
@@ -1109,7 +1109,7 @@ function App() {
         const accountFiles = Array.isArray(channelFiles[account.id]) ? channelFiles[account.id] : [];
         const inheritShared = useSharedMediaByAccount[account.id] !== false;
         const customUrls = captionMode === "custom" ? [...(channelMediaUrlsByAccount[account.id] || []), ...(accountFiles.length ? await uploadFiles(accountFiles) : [])] : [];
-        const accountShared = mediaIndicesForAccount(account).map((i) => sharedUrls[i]).filter(Boolean);
+        const accountShared = urlsForSelection(sharedUrls, mediaIndicesForAccount(account)); // only the chosen video for single-video networks
         const mediaUrls = (captionMode === "universal" || inheritShared) ? [...accountShared, ...customUrls] : customUrls;
         const when = mode === "queue" ? queueByAccount[account.id] : scheduledAt;
         return authenticatedFetch("/posts", {

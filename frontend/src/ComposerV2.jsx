@@ -8,7 +8,7 @@ import { ChannelFormatSelector, PlatformSettingsPopover } from "./ComposerChanne
 import { mediaKeyOf, summarize } from "./mediaRules.js";
 import useBodyScrollLock from "./useBodyScrollLock.js";
 import FixSheet from "./FixSheet.jsx";
-import { buildFixPlan, publishBlock } from "./fixPlan.js";
+import { blockingGroups, buildFixPlan, publishBlock } from "./fixPlan.js";
 
 const LABELS = { x: "X", facebook: "Facebook", instagram: "Instagram", linkedin: "LinkedIn", tiktok: "TikTok", youtube: "YouTube", pinterest: "Pinterest", threads: "Threads" };
 const isVideo = (item) => typeof item === "string" ? /\.(mp4|mov|webm|m4v)(\?|$)/i.test(item) : String(item?.type || "").startsWith("video/");
@@ -113,6 +113,8 @@ export default function ComposerV2(props) {
   }
   // Every publish action is disabled while a blocking error remains (Save draft stays enabled).
   const block = publishBlock({ channelWarnings, mediaReport });
+  // Specific media errors, always visible (not only under Review), grouped across accounts.
+  const mediaErrors = useMemo(() => blockingGroups(mediaReport), [mediaReport]);
   const guardedSubmit = (m) => { if (block.blocked) return; submit(m); };
 
   function insert(text) {
@@ -219,6 +221,7 @@ export default function ComposerV2(props) {
             {pr.action && <button type="button" className="btn btn-ghost btn-sm" onClick={() => { if (["add_media", "add_video"].includes(pr.action.id)) fileInput.current?.click(); else if (["shorten", "replace"].includes(pr.action.id)) { changeCaptionMode("custom"); setTab(r.account.id); } else applyMediaAction(r.account, pr.action); }}>{pr.action.label}</button>}
           </div>; })}
         </div>}
+        {mediaErrors.length > 0 && <div className="c2-blockers c2-merrs" role="alert">{mediaErrors.map((g) => <p key={g.key} className="c2-hint over"><span className="c2-avs" aria-hidden="true">{g.accounts.slice(0, 5).map((a) => <ChannelTile key={a.id} platform={a.platform} size={16} />)}</span><span>{g.message}</span></p>)}</div>}
         {mediaNotes.length > 0 && <div className="c2-notes">{mediaNotes.map((n, i) => <p key={`mn-${n.account.id}-${i}`} className="sm muted">{nameOf(n.account)}: {n.text}</p>)}</div>}
         {sheetOpen && <FixSheet rows={mediaReport} items={sharedMedia} returnFocus={fixTrigger} onCancel={() => setSheetOpen(false)} onApply={applyFix} onAddMedia={() => fileInput.current?.click()} nameOf={(a) => accountDisplayName(a)} renderAvatar={(a) => <AccountAvatar account={a} size={36} />} />}
         {mtoast && <div className="mtoast" role="status" aria-live="polite" onMouseEnter={() => window.clearTimeout(toastTimer.current)} onMouseLeave={startToast} onFocus={() => window.clearTimeout(toastTimer.current)} onBlur={startToast}>Media updated for {mtoast.count} account{mtoast.count === 1 ? "" : "s"}. <button type="button" className="lnk" onClick={() => { window.clearTimeout(toastTimer.current); mtoast.undo(); setMtoast(null); }}>Undo</button></div>}

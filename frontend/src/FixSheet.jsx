@@ -14,14 +14,14 @@ function useObjectUrl(file) {
 }
 
 /** Real preview: image, or a video frame with a play icon and duration. */
-function Prev({ item, info, on, tick, onClick, label }) {
+function Prev({ item, info, on, tick, onClick, label, radio = false }) {
   const url = useObjectUrl(item);
   const vid = isVideoItem(item);
   const body = <>{url && (vid ? <video src={`${url}#t=0.1`} muted playsInline preload="metadata" aria-hidden="true" /> : <img src={url} alt="" />)}
     {vid && <span className="pl" aria-hidden="true"><Play size={10} fill="currentColor" /></span>}
     {vid && fmtDuration(info?.duration) && <span className="du">{fmtDuration(info.duration)}</span>}
     {tick && <span className={`tk${on ? " on" : ""}`} aria-hidden="true">{on && <Check size={10} strokeWidth={3} />}</span>}</>;
-  if (onClick) return <button type="button" className={`fxt${on ? "" : " off"}`} role="checkbox" aria-checked={on} aria-label={label} onClick={onClick}>{body}</button>;
+  if (onClick) return <button type="button" className={`fxt${on ? "" : " off"}`} role={radio ? "radio" : "checkbox"} aria-checked={on} aria-label={label} onClick={onClick}>{body}</button>;
   return <i className="fxt">{body}</i>;
 }
 
@@ -46,7 +46,8 @@ function Seg({ options, value, onChange, label }) {
  * renderAvatar(account) and nameOf(account) let the composer supply its identity components.
  */
 export default function FixSheet({ rows, items, onApply, onCancel, onAddMedia, renderAvatar, nameOf, returnFocus }) {
-  const [ov, setOv] = useState({});
+  // Start from the per-account picks already saved in the composer (e.g. which video goes to Facebook).
+  const [ov, setOv] = useState(() => Object.fromEntries(rows.filter((r) => r.picked && Array.isArray(r.indices)).map((r) => [r.account.id, { indices: r.indices, video: r.indices.find((i) => r.sharedInfos?.[i]?.kind === "video") }])));
   const [pick, setPick] = useState(null); // { id, sel }
   const [drag, setDrag] = useState(0);
   const box = useRef(null), closeBtn = useRef(null), dragStart = useRef(null);
@@ -84,11 +85,13 @@ export default function FixSheet({ rows, items, onApply, onCancel, onAddMedia, r
         <div className="s2">{e.line2}{!e.skipped && e.changed ? <em className="chgd">Changed from suggestion</em> : null}</div>
         {e.line3 && <div className="s3">{e.line3}</div>}
       </div>
-      <span className="rt">{!e.skipped && e.indices.length > 0 && <Strip items={items} infos={infos} indices={e.indices} />}</span>
+      <span className="rt">{e.picker?.kind === "video"
+        ? <span className="th fxv" role="radiogroup" aria-label={`Which video goes to ${name}`}>{e.picker.items.map((i, n) => <Prev key={i} item={items[i]} info={infos[i]} tick radio on={e.picker.chosen === i} label={`Video ${n + 1}${fmtDuration(infos[i]?.duration) ? ` · ${fmtDuration(infos[i].duration)}` : ""}`} onClick={() => set(id, { video: i, indices: [i] })} />)}</span>
+        : !e.skipped && e.indices.length > 0 && <Strip items={items} infos={infos} indices={e.indices} />}</span>
       <div className="ctl">
         {e.skipped ? <button type="button" className="chg" onClick={() => set(id, { skip: false })}>Undo skip</button> : <>
-          {e.options.length > 0 && <><Seg label={`Media for ${name}`} options={e.options} value={e.choice} onChange={(c) => set(id, { indices: indicesForChoice(e.platform, infos, c, { xPhotos: ov[id]?.xPhotos }) })} />{!e.changed && <span className="sug">Suggested</span>}</>}
-          {e.picker && (e.picker.kind !== "x4" || e.choice === "Photos") && <>{!e.options.length && !e.changed && <span className="sug">Suggested</span>}<button type="button" className="chg" aria-expanded={open} onClick={() => setPick(open ? null : { id, sel: e.indices.filter((i) => e.picker.items.includes(i)) })}>{e.picker.label}</button></>}
+          {e.options.length > 0 && <><Seg label={`Media for ${name}`} options={e.options} value={e.choice} onChange={(c) => set(id, { indices: indicesForChoice(e.platform, infos, c, { xPhotos: ov[id]?.xPhotos, video: ov[id]?.video }) })} />{!e.changed && <span className="sug">Suggested</span>}</>}
+          {e.picker && e.picker.kind !== "video" && (e.picker.kind !== "x4" || e.choice === "Photos") && <>{!e.options.length && !e.changed && <span className="sug">Suggested</span>}<button type="button" className="chg" aria-expanded={open} onClick={() => setPick(open ? null : { id, sel: e.indices.filter((i) => e.picker.items.includes(i)) })}>{e.picker.label}</button></>}
           {e.empty && <><button type="button" className="chg" onClick={onAddMedia}>Add a video</button><button type="button" className="chg" onClick={() => set(id, { skip: true })}>Skip this account</button></>}
         </>}
       </div>

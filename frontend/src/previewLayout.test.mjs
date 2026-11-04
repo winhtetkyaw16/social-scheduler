@@ -99,3 +99,12 @@ test("linkedin +N follows max", () => {
   assert.equal(liLayout([LS, 1, 1, 1, 1, 1], { max: 3 }).more, 3);
   fills(liLayout([1.4, 0.8, 0.8]));
 });
+
+test("fbPostState: a Facebook Page post never previews two videos", async () => {
+  const { fbPostState } = await import("./previewLayout.js");
+  assert.equal(fbPostState(["video", "video"]), "choose_video");
+  assert.equal(fbPostState(["video", "video", "photo"]), "choose_video");
+  assert.equal(fbPostState(["video", "photo"]), "mixed");
+  assert.equal(fbPostState(["video"]), "ok");
+  assert.equal(fbPostState(["photo", "photo"]), "ok");
+});

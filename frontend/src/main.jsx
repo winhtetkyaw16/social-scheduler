@@ -715,20 +715,23 @@ function App() {
     if (format === "Story" && !media.length) warnings.push("Add a photo or video to create this Story.");
     const videoCount = media.filter(isVideoMedia).length;
     if (account.platform === "instagram") {
-      if (!media.length) warnings.push("Instagram needs at least one image or video; caption-only posts aren't allowed. Add one photo.");
-      else if (media.length !== 1 || videoCount) warnings.push("Instagram posts from SocialCastly need exactly one photo (JPG or PNG). Remove the extra files or the video.");
-      else {
-        const item = media[0];
+      if (!media.length) warnings.push("Instagram needs at least one image or video; caption-only posts aren't allowed. Add a photo or video.");
+      else if (media.length > 10) warnings.push(`Instagram carousels can have up to 10 photos/videos. This post has ${media.length}; remove some.`);
+      // Photo rules (single photo and every carousel photo): 4:5 to 1.91:1, at least 320px wide, up to 8 MB.
+      const photos = media.filter((m) => !isVideoMedia(m));
+      photos.forEach((item, i) => {
+        const which = photos.length > 1 ? `Photo ${media.indexOf(item) + 1}` : "This photo";
         const dims = mediaDims[mediaKey(item)];
         const ratio = dims?.width && dims?.height ? dims.width / dims.height : null;
         const target = ratio && ratio < 0.795 ? "4:5" : "1.91:1";
-        if (ratio && (ratio < 0.795 || ratio > 1.915)) warnings.push(`This photo is ${dims.width}×${dims.height}, which is ${ratio < 0.795 ? "taller" : "wider"} than Instagram allows. Click "Adjust crop" in the Instagram preview to crop it to ${target} before posting.`);
-        if (dims?.width && dims.width < 320) warnings.push(`This photo is only ${dims.width}px wide. Instagram needs photos at least 320px wide.`);
-        if (typeof item !== "string" && item.size > 8 * 1024 * 1024) warnings.push(`This photo is ${(item.size / 1048576).toFixed(1)} MB. Instagram photos can be up to 8 MB.`);
-      }
+        if (ratio && (ratio < 0.795 || ratio > 1.915)) warnings.push(`${which} is ${dims.width}×${dims.height}, which is ${ratio < 0.795 ? "taller" : "wider"} than Instagram allows. ${photos.length > 1 ? `Crop it to ${target} (or 1:1) before posting.` : `Click "Adjust crop" in the Instagram preview to crop it to ${target} before posting.`}`);
+        if (dims?.width && dims.width < 320) warnings.push(`${which} is only ${dims.width}px wide. Instagram needs photos at least 320px wide.`);
+        if (typeof item !== "string" && item.size > 8 * 1024 * 1024) warnings.push(`${which} is ${(item.size / 1048576).toFixed(1)} MB. Instagram photos can be up to 8 MB.`);
+      });
       // Video limits (Meta): Reels 3 s–15 min, up to 300 MB; Story video 3–60 s, up to 100 MB.
       const vid = media.find(isVideoMedia);
-      if (vid && (format === "Reel / Video" || format === "Story")) {
+      // A single video is published as a Reel (whatever format is picked), so Reel limits apply.
+      if (vid && media.length === 1) {
         const vd = mediaDims[mediaKey(vid)]; const dur = vd?.duration; const mb = typeof vid !== "string" ? vid.size / 1048576 : 0;
         const story = format === "Story"; const maxS = story ? 60 : 900; const maxMb = story ? 100 : 300; const what = story ? "Story videos" : "Reels";
         if (Number.isFinite(dur) && dur < 3) warnings.push(`${what} must be at least 3 seconds long.`);
@@ -736,6 +739,8 @@ function App() {
         if (mb > maxMb) warnings.push(`${what} can be up to ${maxMb} MB. This one is ${mb.toFixed(0)} MB.`);
       }
     }
+    if (account.platform === "threads" && media.length > 20) warnings.push(`Threads carousels can have up to 20 photos/videos. This post has ${media.length}; remove some.`);
+    if (account.platform === "facebook" && media.length > 1 && videoCount) warnings.push("Facebook posts from SocialCastly can have several photos or one video, not a mix. Remove the video or the photos.");
     if (account.platform === "youtube" && (media.length !== 1 || videoCount !== 1)) warnings.push("YouTube needs exactly one video. Add a video (photos and text-only posts can't go to YouTube).");
     if (account.platform === "tiktok" && (media.length !== 1 || videoCount !== 1)) warnings.push("TikTok needs exactly one video. Keep a single video and remove other files.");
     return warnings.map((message) => ({ account, message }));
@@ -745,10 +750,14 @@ function App() {
   const channelNotices = useMemo(() => selectedAccounts.flatMap((account) => {
     if (account.platform !== "instagram") return [];
     const media = mediaForAccount(account);
-    if (media.length !== 1 || isVideoMedia(media[0])) return [];
-    const item = media[0];
-    const jpeg = typeof item === "string" ? /\.(jpe?g)(\?|$)/i.test(item) || !/\.(png|webp|gif|heic|avif|bmp)(\?|$)/i.test(item) : /^image\/jpe?g$/i.test(item.type || "");
-    return jpeg ? [] : [{ account, message: "Instagram officially supports JPEG photos. This photo isn't a JPEG, so Instagram may reject it. Re-save it as JPG to be safe." }];
+    const photos = media.filter((m) => !isVideoMedia(m));
+    const isJpeg = (item) => typeof item === "string" ? /\.(jpe?g)(\?|$)/i.test(item) || !/\.(png|webp|gif|heic|avif|bmp)(\?|$)/i.test(item) : /^image\/jpe?g$/i.test(item.type || "");
+    const notJpeg = photos.filter((item) => !isJpeg(item)).length;
+    const notices = [];
+    if (notJpeg) notices.push({ account, message: `Instagram officially supports JPEG photos. ${notJpeg === 1 && photos.length === 1 ? "This photo isn't" : `${notJpeg} photo(s) aren't`} a JPEG, so Instagram may reject ${notJpeg === 1 ? "it" : "them"}. Re-save as JPG to be safe.` });
+    if (media.length === 1 && isVideoMedia(media[0])) notices.push({ account, message: "This video will be published as an Instagram Reel (also shared to the feed)." });
+    if (media.length > 1) notices.push({ account, message: `This will be published as an Instagram carousel of ${media.length} items. Instagram crops every slide to the first item's shape, so keep them the same size.` });
+    return notices;
   }), [selectedAccounts, captionMode, channelFiles, channelMediaUrlsByAccount, useSharedMediaByAccount, files, libraryMediaUrls]);
   // Swap one media item for a new File (used by the Instagram crop tool).
   const replaceMediaItem = (account, oldItem, newFile) => {

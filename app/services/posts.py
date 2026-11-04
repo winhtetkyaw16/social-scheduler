@@ -356,7 +356,7 @@ def materialize_draft_posts(
         }
         if account.platform == "pinterest" and isinstance(account_settings, dict) and account_settings.get("destination_url"):
             post_metadata["destination_url"] = account_settings["destination_url"]
-        account_media = _media_for_account(metadata, account.id, list(item.media_urls or []))[:10]
+        account_media = _media_for_account(metadata, account.id, list(item.media_urls or []))[:20]
         problem = media_requirement_error(account.platform, account_media, content)
         if problem:
             raise HTTPException(status_code=422, detail=f"{account.account_name}: {problem}")

@@ -1,4 +1,4 @@
-"""Meta Threads API publisher (text and single image/video)."""
+"""Meta Threads API publisher (text, single image/video, and carousels of 2-20 items)."""
 
 from __future__ import annotations
 
@@ -10,6 +10,10 @@ import httpx
 from app.core.exceptions import ProviderConfigurationError
 from app.integrations.base import ProviderPublishResult, SocialPlatform, provider_delete, provider_request
 from app.integrations.media_urls import guess_media_kind, public_media_url
+
+
+MAX_CAROUSEL_ITEMS = 20
+_sleep = time.sleep
 
 
 class ThreadsPlatform(SocialPlatform):
@@ -26,21 +30,37 @@ class ThreadsPlatform(SocialPlatform):
             raise ProviderConfigurationError("Threads text posts are limited to 500 characters.")
         if not text and not media_urls:
             raise ProviderConfigurationError("Threads posts need text and/or one image or video.")
-        if len(media_urls) > 1:
+        if len(media_urls) > MAX_CAROUSEL_ITEMS:
             raise ProviderConfigurationError(
-                "Threads publishing currently supports one image or video (or text-only). "
-                "Carousels are not implemented yet."
+                f"Threads carousels can have at most {MAX_CAROUSEL_ITEMS} items (this post has {len(media_urls)})."
             )
 
         version = os.getenv("THREADS_API_VERSION", "v1.0")
         base = f"https://graph.threads.net/{version}/{account_id}"
-        if media_urls:
-            kind = guess_media_kind(media_urls[0])
-            media = public_media_url(media_urls[0], platform="Threads")
-            if kind == "video":
-                container_body: dict = {"media_type": "VIDEO", "video_url": media}
-            else:
-                container_body = {"media_type": "IMAGE", "image_url": media}
+
+        def item_body(url: str) -> dict:
+            media = public_media_url(url, platform="Threads")
+            if guess_media_kind(url) == "video":
+                return {"media_type": "VIDEO", "video_url": media}
+            return {"media_type": "IMAGE", "image_url": media}
+
+        if len(media_urls) > 1:
+            # Carousel: one child container per item (is_carousel_item), then a CAROUSEL container.
+            children: list[str] = []
+            for url in media_urls:
+                child = provider_request(
+                    "POST", f"{base}/threads", access_token=access_token,
+                    json={**item_body(url), "is_carousel_item": True},
+                ).json().get("id")
+                if not child:
+                    raise RuntimeError("Threads did not return a carousel item container identifier")
+                _wait_for_threads_container(access_token, version, str(child))
+                children.append(str(child))
+            container_body: dict = {"media_type": "CAROUSEL", "children": ",".join(children)}
+            if text:
+                container_body["text"] = text
+        elif media_urls:
+            container_body = item_body(media_urls[0])
             if text:
                 container_body["text"] = text
         else:
@@ -66,6 +86,16 @@ class ThreadsPlatform(SocialPlatform):
         return ProviderPublishResult(post_id=str(post_id), status_code=200)
 
 
+
+    def delete(self, access_token: str, provider_post_id: str) -> None:
+        """Delete a published Threads media object."""
+        media_id = (provider_post_id or "").strip()
+        if not media_id:
+            raise ProviderConfigurationError("Threads delete needs a provider media id.")
+        version = os.getenv("THREADS_API_VERSION", "v1.0")
+        provider_delete(f"https://graph.threads.net/{version}/{media_id}", access_token=access_token)
+
+
 def _wait_for_threads_container(access_token: str, version: str, creation_id: str) -> None:
     """Poll until Threads finishes processing media, or fail with a clear error."""
     deadline = time.time() + 90
@@ -82,7 +112,7 @@ def _wait_for_threads_container(access_token: str, version: str, creation_id: st
             raise RuntimeError("Could not check Threads media container status") from exc
         if response.is_error:
             # Give the container a moment and let publish decide; avoid blocking forever.
-            time.sleep(3)
+            _sleep(3)
             return
         body = response.json()
         state = str(body.get("status") or "").upper()
@@ -91,16 +121,8 @@ def _wait_for_threads_container(access_token: str, version: str, creation_id: st
         if state in {"ERROR", "EXPIRED"}:
             detail = body.get("error_message") or state
             raise ProviderConfigurationError(f"Threads media container failed ({detail}). Check the media URL.")
-        time.sleep(2)
+        _sleep(2)
     raise ProviderConfigurationError(
         "Threads is still processing the media after 90s. Try a smaller file or publish again shortly."
     )
 
-
-    def delete(self, access_token: str, provider_post_id: str) -> None:
-        """Delete a published Threads media object."""
-        media_id = (provider_post_id or "").strip()
-        if not media_id:
-            raise ProviderConfigurationError("Threads delete needs a provider media id.")
-        version = os.getenv("THREADS_API_VERSION", "v1.0")
-        provider_delete(f"https://graph.threads.net/{version}/{media_id}", access_token=access_token)

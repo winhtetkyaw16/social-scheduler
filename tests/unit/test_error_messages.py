@@ -116,8 +116,8 @@ def test_fallback_short_banner_and_none():
 
 @pytest.mark.parametrize("platform,media,content,ok", [
     ("instagram", [], "hi", False),
-    ("instagram", ["https://a.test/1.png", "https://a.test/2.png"], "hi", False),
-    ("instagram", ["https://a.test/1.mp4"], "hi", False),
+    ("instagram", ["https://a.test/1.png", "https://a.test/2.png"], "hi", True),
+    ("instagram", ["https://a.test/1.mp4"], "hi", True),
     ("instagram", ["https://a.test/1.png"], "hi", True),
     ("youtube", [], "hi", False),
     ("youtube", ["https://a.test/1.png"], "hi", False),

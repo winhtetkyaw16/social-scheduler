@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class PublishItemCreate(BaseModel):
     content: str = Field(default="", max_length=10000)
-    media_urls: list[str] = Field(default_factory=list, max_length=10)
+    media_urls: list[str] = Field(default_factory=list, max_length=20)
     post_format: str = Field(default="Post", max_length=32)
     scheduled_at: datetime | None = None
     status: str = Field(default="draft", pattern="^(draft|pending_approval)$")
@@ -18,7 +18,7 @@ class PublishItemCreate(BaseModel):
 
 class PublishItemUpdate(BaseModel):
     content: str | None = Field(default=None, max_length=10000)
-    media_urls: list[str] | None = Field(default=None, max_length=10)
+    media_urls: list[str] | None = Field(default=None, max_length=20)
     post_format: str | None = Field(default=None, max_length=32)
     scheduled_at: datetime | None = None
     metadata: dict[str, Any] | None = None

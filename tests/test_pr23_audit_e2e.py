@@ -107,7 +107,7 @@ def test_b_mixed_instagram_carousel_keeps_videos_and_photos(client, auth_headers
 
 
 @pytest.mark.parametrize("platform,media,fmt,needle", [
-    ("facebook", [V1, V2], "Post", "one video"),
+    ("facebook", [V1, V2], "Post", "1 video"),
     ("facebook", [V1, P1], "Post", "not a mix"),
     ("tiktok", [V1, V2], "Post", "one video"),
     ("tiktok", [V1, P1], "Post", "not both"),
@@ -193,3 +193,36 @@ def test_pick_of_a_removed_video_falls_back_safely(client, auth_headers):
     if r.status_code == 200:
         row = [p for p in client.get("/api/v1/posts", headers=headers).json() if p["connected_account_id"] == fb["id"]][0]
         assert V2 not in row["media_urls"]
+
+
+def test_worker_recheck_blocks_invalid_row_then_fix_and_retry_publishes(client, auth_headers, monkeypatch):
+    headers, _ = auth_headers
+    fb = _connect(client, headers, "facebook")
+    post = client.post("/api/v1/posts", headers=headers, json={
+        "connected_account_id": fb["id"], "content": "c", "media_urls": [V1], "scheduled_at": _later(),
+        "idempotency_key": uuid4().hex, "post_metadata": {"format": "Post"}}).json()
+    _bad_row({"post": post["id"]}, "scheduled")  # like a row scheduled before the checks existed
+    calls = []
+    monkeypatch.setattr("app.tasks.publish_post.publish", lambda *a, **k: calls.append(a) or ProviderPublishResult(post_id="p", request_id="r", status_code=200))
+    from app.tasks.publish_post import publish_post_task
+    assert publish_post_task.run(post["id"])["status"] == "failed"
+    assert calls == []
+    row = client.get(f"/api/v1/posts/{post['id']}", headers=headers).json()
+    assert row["status"] == "failed" and row["last_error_code"] == "media_invalid"
+    assert "1 video" in row["last_error_message"]
+    assert client.post(f"/api/v1/posts/{post['id']}/retry", headers=headers).status_code == 422
+    r = client.patch(f"/api/v1/posts/{post['id']}", headers=headers, json={"scheduled_at": _later(3), "media_urls": [V2]})
+    assert r.status_code == 200 and r.json()["status"] == "scheduled", r.text
+    assert publish_post_task.run(post["id"])["status"] == "published"
+    assert calls and calls[-1][4] == [V2]
+    # failed again -> fixed -> Retry also works
+    _bad_row({"post": post["id"]}, "failed", media=(V2,))
+    assert client.post(f"/api/v1/posts/{post['id']}/retry", headers=headers).status_code == 202
+    assert publish_post_task.run(post["id"])["status"] == "published"
+
+
+def test_facebook_two_videos_message_vs_mix():
+    from app.services.error_messages import media_requirement_error as m
+    assert m("facebook", [V1, V2]) == "Facebook Page posts carry 1 video. Use Fix for me to pick which one."
+    assert "not a mix" in m("facebook", [V1, P1])
+    assert "not a mix" in m("facebook", [V1, V2, P1])

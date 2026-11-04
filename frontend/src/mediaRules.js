@@ -115,7 +115,7 @@ export function checkMedia(platform, infos, { format = "Post", igRatio = null } 
     // Feed photos are auto-fitted to one frame and saved as JPG at publish (Instagram only), silently.
   } else if (p === "facebook") {
     if (mixed) problems.push(P("mixed", "Use photos or the video, not both", "Facebook can't mix photos and a video in one post.", { id: "pick_photos", label: "Pick photos" }));
-    else if (vids.length > 1) problems.push(P("too_many", "Too many videos", "Facebook posts take one video.", { id: "use_video", label: "Use the first video" }));
+    else if (vids.length > 1) problems.push(P("too_many", "Too many videos", "Facebook Page posts carry 1 video. Use Fix for me to pick which one.", { id: "use_video", label: "Use the first video" }));
   } else if (p === "linkedin") {
     if (mixed) problems.push(P("mixed", "Use photos or the video, not both", "One video, or up to 20 photos.", { id: "pick_photos", label: "Pick photos" }));
     else if (vids.length > 1) problems.push(P("too_many", "Too many videos", "One video, or up to 20 photos.", { id: "use_video", label: "Use the first video" }));

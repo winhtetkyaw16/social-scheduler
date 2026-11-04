@@ -91,6 +91,31 @@ def publish_post_task(post_id: str) -> dict[str, str]:
             db.commit()
             return {"status": "failed"}
 
+        # Publish-time re-check (same rule as the 422 backstop) on the row's own per-account media, so rows
+        # scheduled before the composer checks existed never reach the network with media it would reject.
+        from app.services.posts import publish_problem
+
+        meta = post.post_metadata if isinstance(post.post_metadata, dict) else {}
+        problem = publish_problem(account.platform, list(post.media_urls or []), post.content, meta.get("format"))
+        if problem:
+            now = datetime.now(timezone.utc)
+            post.status = "failed"
+            post.last_error_code = "media_invalid"
+            post.last_error_message = problem
+            db.add(
+                ExecutionLog(
+                    scheduled_post_id=post.id,
+                    attempt_number=post.attempt_count + 1,
+                    outcome="skipped",
+                    started_at=now,
+                    finished_at=now,
+                    error_code=post.last_error_code,
+                    error_message=problem,
+                )
+            )
+            db.commit()
+            return {"status": "failed", "error": "media_invalid"}
+
         # Atomic claim: only one concurrent worker may transition into publishing.
         claim_filter = [
             ScheduledPost.id == post_uuid,

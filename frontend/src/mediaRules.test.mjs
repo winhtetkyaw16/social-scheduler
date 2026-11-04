@@ -164,3 +164,10 @@ test("Instagram: small photos are fixed at publish, only unreadable files show a
   assert.deepEqual(igPhotoWarnings({ which: "Photo 4", loaded: false }), []); // still measuring
   assert.match(igPhotoWarnings({ which: "Photo 4", loaded: true, dims: null })[0], /Photo 4 can't be opened/);
 });
+
+test("facebook 2 videos says 1 video + Fix for me; a real mix keeps the mix message", () => {
+  const two = checkMedia("facebook", [{ kind: "video" }, { kind: "video" }]);
+  assert.ok(two.problems.some((p) => p.detail === "Facebook Page posts carry 1 video. Use Fix for me to pick which one."));
+  const mix = checkMedia("facebook", [{ kind: "video" }, { kind: "image" }]);
+  assert.ok(mix.problems.some((p) => p.code === "mixed") && !mix.problems.some((p) => p.code === "too_many"));
+});

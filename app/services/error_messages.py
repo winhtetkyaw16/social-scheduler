@@ -381,6 +381,8 @@ def media_requirement_error(platform: str | None, media_urls: list | None, conte
             return f"Instagram carousels can have up to 20 photos/videos. This post has {len(media)}; remove some."
     if key == "threads" and len(media) > 20:
         return f"Threads carousels can have up to 20 photos/videos. This post has {len(media)}; remove some."
+    if key == "facebook" and len(videos) > 1 and len(videos) == len(media):
+        return "Facebook Page posts carry 1 video. Use Fix for me to pick which one."
     if key == "facebook" and len(media) > 1 and videos:
         return "Facebook posts from SocialCastly can have several photos or one video, not a mix. Remove the video or the photos."
     if key == "linkedin" and media:

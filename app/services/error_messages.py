@@ -23,6 +23,9 @@ BANNED_WORDS = ("developer account", "api", "json", "http", "error code", "porta
 IG_NO_MEDIA = "instagram_no_media"
 IG_ONE_IMAGE = "instagram_one_image"
 IG_RATIO = "instagram_aspect_ratio"
+IG_PROCESSING = "instagram_processing_failed"
+IG_TOO_MANY = "instagram_too_many_items"
+TOO_MANY_ITEMS = "too_many_media_items"
 MEDIA_NOT_PUBLIC = "media_not_public"
 MEDIA_FETCH = "media_fetch_failed"
 TIMEOUT = "timeout"
@@ -95,10 +98,18 @@ def classify_error(code: str | None, message: str | None, platform: str | None, 
     if key == "instagram":
         if "aspect ratio" in text or "aspect_ratio" in text:
             return IG_RATIO
+        if "at least one image or video" in text:
+            return IG_NO_MEDIA
+        if "carousels can have at most" in text:
+            return IG_TOO_MANY
+        if "could not process the" in text or "processing expired" in text:
+            return IG_PROCESSING
         if "exactly one public image" in text or "exactly one image" in text:
             return IG_NO_MEDIA if media == [] else IG_ONE_IMAGE
         if "only photo or video can be accepted" in text or "media type" in text:
             return IG_ONE_IMAGE
+    if _has(text, ("carousels can have at most", "too many media items", "at most 20 items", "at most 10 items")):
+        return TOO_MANY_ITEMS
     if _has(text, ("publicly fetchable", "public_base_url", "public url", "not publicly reachable")):
         return MEDIA_NOT_PUBLIC
     if _has(text, ("could not download", "could not pull", "failed to download", "media url",
@@ -167,12 +178,24 @@ def friendly_error(code: str | None, message: str | None, platform: str | None,
         IG_NO_MEDIA: (
             "Instagram needs at least one image or video; caption-only posts aren't allowed.",
             "This post only had a caption. Instagram doesn't publish text-only posts.",
-            "Add one photo to the post (or remove Instagram), then try again.", _EDIT),
+            "Add a photo, a video (Reel) or 2-10 items (carousel), or remove Instagram, then try again.", _EDIT),
         IG_ONE_IMAGE: (
-            "Instagram needs exactly one image for this post.",
-            "This post had more than one media file or a file type SocialCastly can't send to Instagram yet. "
-            "Right now SocialCastly publishes one photo per Instagram post.",
-            "Keep a single photo (JPG or PNG) and remove the rest, then try again.", _EDIT),
+            "Instagram couldn't accept this media file.",
+            "Instagram accepts one photo (JPG), one video (posted as a Reel), or a carousel of 2-10 photos/videos. "
+            "This file type or combination wasn't accepted.",
+            "Use JPG photos or MP4/MOV videos, then try again.", _EDIT),
+        IG_PROCESSING: (
+            "Instagram couldn't process your video.",
+            "Instagram downloaded the video but its processing failed or expired. This usually means the format, length or size isn't supported.",
+            "Use an MP4 or MOV video (H.264, 3 seconds to 15 minutes, up to 300 MB), then try again.", _EDIT + _RETRY[:1]),
+        IG_TOO_MANY: (
+            "Too many items for an Instagram carousel.",
+            "Instagram carousels can hold up to 10 photos and videos.",
+            "Remove some items so the post has 10 or fewer, then try again.", _EDIT),
+        TOO_MANY_ITEMS: (
+            f"Too many media files for {net}.",
+            f"{net} limits how many photos or videos one post can have, and this post is over it.",
+            "Remove some files, then try again.", _EDIT),
         IG_RATIO: (
             "Instagram rejected this photo's shape (aspect ratio).",
             "Instagram only accepts photos between portrait 4:5 and landscape 1.91:1. This image is taller or wider than that.",
@@ -278,9 +301,13 @@ def media_requirement_error(platform: str | None, media_urls: list | None, conte
     text = content or ""
     if key == "instagram":
         if not media:
-            return "Instagram needs at least one image or video; caption-only posts aren't allowed. Add one photo."
-        if len(media) != 1 or videos:
-            return "Instagram posts from SocialCastly need exactly one photo (JPG or PNG). Remove the extra files or the video."
+            return "Instagram needs at least one image or video; caption-only posts aren't allowed. Add a photo or video."
+        if len(media) > 10:
+            return f"Instagram carousels can have up to 10 photos/videos. This post has {len(media)}; remove some."
+    if key == "threads" and len(media) > 20:
+        return f"Threads carousels can have up to 20 photos/videos. This post has {len(media)}; remove some."
+    if key == "facebook" and len(media) > 1 and videos:
+        return "Facebook posts from SocialCastly can have several photos or one video, not a mix. Remove the video or the photos."
     if key == "youtube" and (len(media) != 1 or len(videos) != 1):
         return "YouTube needs exactly one video. Add a video (photos and text-only posts can't go to YouTube)."
     if key == "tiktok" and (len(media) != 1 or len(videos) != 1):

@@ -10,7 +10,7 @@ from app.integrations.media_urls import guess_media_kind, public_media_url
 
 
 class FacebookPlatform(SocialPlatform):
-    """Publish text and/or one photo to a Facebook Page or Group feed."""
+    """Publish text, one or more photos, or one video to a Facebook Page or Group."""
 
     platform = "facebook"
     supports_remote_delete = True
@@ -22,28 +22,59 @@ class FacebookPlatform(SocialPlatform):
             )
         if not (content or "").strip() and not media_urls:
             raise ProviderConfigurationError("Facebook posts need text and/or an image.")
-        if len(media_urls) > 1:
-            raise ProviderConfigurationError(
-                "Facebook publishing currently supports one image (or text-only). Multi-photo posts are not implemented yet."
-            )
         version = os.getenv("FACEBOOK_GRAPH_API_VERSION", "v21.0")
         base = f"https://graph.facebook.com/{version}/{account_id}"
+        text = (content or "").strip()
+        kinds = [guess_media_kind(u) for u in media_urls]
 
-        if media_urls:
-            kind = guess_media_kind(media_urls[0])
-            if kind == "video":
+        if "video" in kinds:
+            if len(media_urls) > 1:
                 raise ProviderConfigurationError(
-                    "Facebook Page video upload is not implemented yet. Attach one image, or post text only."
+                    "Facebook posts can have several photos or one video, not a mix. Remove the video or the photos."
                 )
+            # Graph API: POST /{page-id}/videos with file_url (Facebook fetches the public URL).
+            video_url = public_media_url(media_urls[0], platform="Facebook")
+            payload: dict = {"file_url": video_url, "published": True}
+            if text:
+                payload["description"] = content
+            response = provider_request("POST", f"{base}/videos", access_token=access_token, json=payload)
+            body = response.json()
+            post_id = body.get("post_id") or body.get("id")
+            if not post_id:
+                raise RuntimeError("Facebook accepted the video without returning a video identifier")
+            return ProviderPublishResult(post_id=str(post_id), status_code=response.status_code)
+
+        if len(media_urls) == 1:
             image_url = public_media_url(media_urls[0], platform="Facebook")
-            payload: dict = {"url": image_url, "published": True}
-            if (content or "").strip():
+            payload = {"url": image_url, "published": True}
+            if text:
                 payload["caption"] = content
             response = provider_request("POST", f"{base}/photos", access_token=access_token, json=payload)
             body = response.json()
             post_id = body.get("post_id") or body.get("id")
             if not post_id:
                 raise RuntimeError("Facebook accepted the photo without returning a post identifier")
+            return ProviderPublishResult(post_id=str(post_id), status_code=response.status_code)
+
+        if media_urls:
+            # Multi-photo: upload each photo unpublished, then one feed post with attached_media.
+            photo_ids: list[str] = []
+            for url in media_urls:
+                body = provider_request(
+                    "POST", f"{base}/photos", access_token=access_token,
+                    json={"url": public_media_url(url, platform="Facebook"), "published": False},
+                ).json()
+                if not body.get("id"):
+                    raise RuntimeError("Facebook accepted a photo without returning a photo identifier")
+                photo_ids.append(str(body["id"]))
+            payload = {"attached_media": [{"media_fbid": pid} for pid in photo_ids]}
+            if text:
+                payload["message"] = content
+            response = provider_request("POST", f"{base}/feed", access_token=access_token, json=payload)
+            body = response.json()
+            post_id = body.get("id")
+            if not post_id:
+                raise RuntimeError("Facebook accepted the request without returning a post identifier")
             return ProviderPublishResult(post_id=str(post_id), status_code=response.status_code)
 
         response = provider_request(

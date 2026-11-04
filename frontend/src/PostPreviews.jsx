@@ -351,14 +351,14 @@ function XMedia({ urls, media }) {
     {vids[one] && urls[one] && <span className="play"><Play size={18} fill="currentColor" /></span>}</div></div>;
   return <ThreadsRow urls={urls} vids={vids} tiles={l.tiles} cls="xm" />;
 }
-// LinkedIn feed (display only): single at own ratio (4:5..3:1), 2 side by side, 3+ hero + row/stack, 4:5 cap, +N.
+// LinkedIn feed (display only): single at own ratio (4:5..3:1), 2 side by side, 3+ hero + row/stack filling a 4:5..1:1 block, +N.
 function LiGrid({ urls, media }) {
   const vids = media.map(isVideo);
   const nats = useNaturals(urls, vids);
   const g = liLayout(nats.slice(0, urls.length), { video: urls.length === 1 && vids[0] });
   if (g.kind === "none") return null;
-  return <div className="lig" style={{ aspectRatio: g.frame }} data-kind={g.kind}>
-    <div className="lig-in" style={{ aspectRatio: g.ratio, gridTemplateColumns: g.cols, gridTemplateRows: g.rows }}>
+  return <div className="lig" style={{ aspectRatio: g.ratio }} data-kind={g.kind}>
+    <div className="lig-in" style={{ gridTemplateColumns: g.cols, gridTemplateRows: g.rows }}>
       {g.cells.map((cell, j) => <div key={cell.i} className="lig-c" style={{ gridArea: cell.area }}>
         <Tile url={urls[cell.i]} video={vids[cell.i]} />
         {vids[cell.i] && urls[cell.i] && <span className="play"><Play size={16} fill="currentColor" /></span>}

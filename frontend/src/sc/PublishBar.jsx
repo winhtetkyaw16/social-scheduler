@@ -59,7 +59,7 @@ export function useNextQueueSlot({ request, accounts, timeZone, enabled }) {
 }
 
 export default function PublishBar(props) {
-  const { mode, setMode, busy, submit, saveAsDraft, whenText, zoneText, date, setDate, time, setTime, timeZone, setTimeZone, timezones, minDate, request, selectedAccounts, onSetupQueue, blocked = false, blockedReason = "" } = props;
+  const { mode, setMode, busy, submit, saveAsDraft, whenText, zoneText, date, setDate, time, setTime, timeZone, setTimeZone, timezones, minDate, request, selectedAccounts, onSetupQueue, blocked = false, blockHint = "Fix the errors above to post" } = props;
   const [whenOpen, setWhenOpen] = useState(false);
   const q = useNextQueueSlot({ request, accounts: selectedAccounts, timeZone, enabled: mode === "queue" });
   const noSlots = mode === "queue" && q.none;
@@ -87,13 +87,14 @@ export default function PublishBar(props) {
     detail = <span className="c2-pinfo"><Zap className="ico" />Publishes immediately</span>;
   }
 
-  return <div className="abar c2-pbar">
+  return <div className={`abar c2-pbar ${blocked ? "fix-first" : ""}`}>
     <button type="button" className="btn btn-secondary c2-pdraft" onClick={() => void saveAsDraft()} disabled={busy}>Save draft</button>
     <span className="grow c2-pgrow" />
     <div className="c2-pctl">
       <PublishModeControl mode={mode} onChange={(m) => { setMode(m); setWhenOpen(false); }} />
       <div className="c2-pdet">{detail}</div>
     </div>
-    <button type="button" className="btn btn-primary c2-pbtn" disabled={busy || noSlots || blocked} title={blocked ? blockedReason : undefined} onClick={() => submit(mode)}>{busy ? <LoaderCircle size={15} className="animate-spin" /> : null}{cta}</button>
+    <button type="button" className="btn btn-primary c2-pbtn" disabled={busy || noSlots || blocked} aria-disabled={busy || noSlots || blocked} title={blocked ? blockHint : undefined} onClick={() => { if (!blocked) submit(mode); }}>{busy ? <LoaderCircle size={15} className="animate-spin" /> : null}{cta}</button>
+    {blocked && <p className="c2-fixhint sm muted" role="status">{blockHint}</p>}
   </div>;
 }

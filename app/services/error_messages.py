@@ -77,7 +77,7 @@ def sanitize_raw(message: str | None, limit: int = 200) -> str:
         text = pattern.sub("[hidden]", text)
     text = re.sub(r"\s+", " ", text).strip(" |")
     if len(text) > limit:
-        text = text[: limit - 1].rstrip() + "â€¦"
+        text = text[: limit - 1].rstrip() + "…"
     return text
 
 
@@ -102,7 +102,8 @@ def classify_error(code: str | None, message: str | None, platform: str | None, 
                                         "exactly one video", "text-only posts are not supported")):
         return YOUTUBE_VIDEO
     if key == "tiktok" and _has(text, ("exactly one video", "video file is empty", "no video",
-                                       "photo posting is not implemented", "text-only posts are not supported")):
+                                       "photo posting is not implemented", "text-only posts are not supported",
+                                       "one video or up to 35 photos", "one video per post")):
         return TIKTOK_VIDEO
     if key == "linkedin":
         if _has(text, ("linkedin posts can have", "linkedin videos must", "linkedin accepts", "linkedin photos must",
@@ -214,7 +215,7 @@ def friendly_error(code: str | None, message: str | None, platform: str | None,
         IG_NO_MEDIA: (
             "Instagram needs at least one image or video; caption-only posts aren't allowed.",
             "This post only had a caption. Instagram doesn't publish text-only posts.",
-            "Add a photo, a video (Reel) or 2-10 items (carousel), or remove Instagram, then try again.", _EDIT),
+            "Add a photo, a video (Reel) or 2-20 items (carousel), or remove Instagram, then try again.", _EDIT),
         IG_ONE_IMAGE: (
             "Instagram couldn't accept this media file.",
             "Instagram accepts one photo (JPG), one video (posted as a Reel), or a carousel of 2-10 photos/videos. "
@@ -238,7 +239,7 @@ def friendly_error(code: str | None, message: str | None, platform: str | None,
             "Crop the photo to square (1:1), portrait (4:5) or landscape (1.91:1), then try again.",
             [{"id": "crop", "label": "Crop"}, {"id": "edit", "label": "Edit post"}]),
         MEDIA_NOT_PUBLIC: (
-            f"{net} couldn't reach your image â€” its link isn't public.",
+            f"{net} couldn't reach your image — its link isn't public.",
             f"{net} downloads the image from a web link, but this file is only stored on this computer/private server, so {net} can't open it.",
             "Use an image from the Media library on the live site (or any public image link), then try again.", _EDIT),
         MEDIA_FETCH: (
@@ -251,13 +252,13 @@ def friendly_error(code: str | None, message: str | None, platform: str | None,
             "Try again. If it keeps failing, use a smaller file (or a photo instead of a video) and make sure the link is public.",
             _RETRY),
         YOUTUBE_VIDEO: (
-            "YouTube needs a video â€” this post has no video.",
+            "YouTube needs a video — this post has no video.",
             "YouTube only publishes videos. Text-only and photo posts can't be uploaded.",
             "Add one video file to this post, or remove YouTube from it.", _EDIT),
         TIKTOK_VIDEO: (
-            "TikTok needs exactly one video.",
-            "TikTok posts from SocialCastly must contain one video. Text-only, photo, or multi-video posts aren't accepted.",
-            "Keep exactly one video in this post (remove other files), then try again.", _EDIT),
+            "TikTok needs one video or 1-35 photos.",
+            "TikTok posts one video, or a photo post of up to 35 photos. Text-only posts and mixes of photos and video aren't accepted.",
+            "Keep one video, or only photos, for TikTok, then try again.", _EDIT),
         X_CREDITS: (
             "X API has no credits: add credits in the X developer console to post.",
             "X refused the request with \"payment required\" (402 / CreditsDepleted): the X developer app this connection uses has no API credits left. Your post itself is fine and nothing was published.",
@@ -296,7 +297,7 @@ def friendly_error(code: str | None, message: str | None, platform: str | None,
         RATE_LIMIT: (
             f"{net} is limiting how often this account can post right now.",
             f"Too many posts or requests were sent to {net} in a short time, so it asked us to slow down.",
-            "Wait a while (usually 15â€“60 minutes) and retry, or reschedule for later.", _RETRY),
+            "Wait a while (usually 15–60 minutes) and retry, or reschedule for later.", _RETRY),
         NETWORK: (
             f"SocialCastly couldn't reach {net}: no internet connection.",
             f"The computer running SocialCastly couldn't connect to {net} (Wi-Fi dropped, no internet, or a firewall/VPN blocked it). "
@@ -376,10 +377,12 @@ def media_requirement_error(platform: str | None, media_urls: list | None, conte
     if key == "instagram":
         if not media:
             return "Instagram needs at least one image or video; caption-only posts aren't allowed. Add a photo or video."
-        if len(media) > 10:
-            return f"Instagram carousels can have up to 10 photos/videos. This post has {len(media)}; remove some."
+        if len(media) > 20:
+            return f"Instagram carousels can have up to 20 photos/videos. This post has {len(media)}; remove some."
     if key == "threads" and len(media) > 20:
         return f"Threads carousels can have up to 20 photos/videos. This post has {len(media)}; remove some."
+    if key == "facebook" and len(videos) > 1 and len(videos) == len(media):
+        return "Facebook Page posts carry 1 video. Use Fix for me to pick which one."
     if key == "facebook" and len(media) > 1 and videos:
         return "Facebook posts from SocialCastly can have several photos or one video, not a mix. Remove the video or the photos."
     if key == "linkedin" and media:
@@ -394,10 +397,24 @@ def media_requirement_error(platform: str | None, media_urls: list | None, conte
         problem = x_media_problem(media)
         if problem:
             return problem
-    if key == "youtube" and (len(media) != 1 or len(videos) != 1):
-        return "YouTube needs exactly one video. Add a video (photos and text-only posts can't go to YouTube)."
-    if key == "tiktok" and (len(media) != 1 or len(videos) != 1):
-        return "TikTok needs exactly one video. Keep a single video and remove other files."
+    if key == "facebook" and len(videos) > 1 and len(videos) == len(media):
+        return "Facebook posts can have one video. Keep a single video."
+    if key == "youtube" and len(videos) > 1:
+        return "YouTube posts one video at a time. Pick the video to post with Fix for me."
+    if key == "youtube" and not videos:
+        # Extra photos alongside a video are fine: YouTube publishes just the first video (shape is only a hint).
+        return "YouTube needs a video. Add a video (photos and text-only posts can't go to YouTube)."
+    if key == "tiktok":
+        if not media:
+            return "TikTok needs one video or 1-35 photos. Add a video or photos."
+        if videos and len(videos) != len(media):
+            return "TikTok posts one video or up to 35 photos, not both. Pick photos or the video."
+        if len(videos) > 1:
+            return "TikTok posts one video at a time. Keep a single video."
+        if not videos and any(m.lower().split("?")[0].endswith(".gif") for m in media):
+            return "TikTok photo posts take JPG, PNG or WebP photos, not GIFs. Remove the GIF."
+        if len(media) > 35:
+            return f"TikTok photo posts can have up to 35 photos. This post has {len(media)}; remove some."
     limit = CHAR_LIMITS.get(key)
     if limit and len(text) > limit:
         return f"The caption is {len(text):,} characters; {network_name(key)} allows up to {limit:,}. Shorten it."

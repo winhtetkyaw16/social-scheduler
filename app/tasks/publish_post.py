@@ -34,6 +34,16 @@ def _reconcile_published(db, post: ScheduledPost) -> dict[str, str] | None:
     return {"status": "published", "provider_post_id": provider_id, "reconciled": "1"}
 
 
+def _ig_crop_kwargs(platform: str, metadata) -> dict:
+    """Instagram-only crop settings from the composer (shared frame ratio + per-item offsets)."""
+    if (platform or "").lower() != "instagram":
+        return {}
+    meta = metadata if isinstance(metadata, dict) else {}
+    crop = dict(meta.get("ig_crop") or {}) if isinstance(meta.get("ig_crop"), dict) else {}
+    crop.setdefault("format", meta.get("format"))
+    return {"ig_crop": crop}
+
+
 @celery_app.task(name="app.tasks.publish_post.publish_post_task")
 def publish_post_task(post_id: str) -> dict[str, str]:
     """Claim a post, call its platform adapter, and persist the outcome.
@@ -80,6 +90,31 @@ def publish_post_task(post_id: str) -> dict[str, str]:
             )
             db.commit()
             return {"status": "failed"}
+
+        # Publish-time re-check (same rule as the 422 backstop) on the row's own per-account media, so rows
+        # scheduled before the composer checks existed never reach the network with media it would reject.
+        from app.services.posts import publish_problem
+
+        meta = post.post_metadata if isinstance(post.post_metadata, dict) else {}
+        problem = publish_problem(account.platform, list(post.media_urls or []), post.content, meta.get("format"))
+        if problem:
+            now = datetime.now(timezone.utc)
+            post.status = "failed"
+            post.last_error_code = "media_invalid"
+            post.last_error_message = problem
+            db.add(
+                ExecutionLog(
+                    scheduled_post_id=post.id,
+                    attempt_number=post.attempt_count + 1,
+                    outcome="skipped",
+                    started_at=now,
+                    finished_at=now,
+                    error_code=post.last_error_code,
+                    error_message=problem,
+                )
+            )
+            db.commit()
+            return {"status": "failed", "error": "media_invalid"}
 
         # Atomic claim: only one concurrent worker may transition into publishing.
         claim_filter = [
@@ -137,6 +172,7 @@ def publish_post_task(post_id: str) -> dict[str, str]:
                 account.platform_account_id,
                 post.content,
                 post.media_urls,
+                **_ig_crop_kwargs(account.platform, post.post_metadata),
             )
             # Re-load and write success even if another session touched the row.
             db.refresh(post)

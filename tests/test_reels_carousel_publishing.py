@@ -109,8 +109,8 @@ def test_instagram_carousel_mixed(monkeypatch, no_sleep):
 def test_instagram_carousel_limits_and_local_media(monkeypatch, no_sleep):
     calls = []
     monkeypatch.setattr(httpx, "request", _ig_fake(calls, {}))
-    with pytest.raises(ProviderConfigurationError, match="at most 10"):
-        InstagramPlatform().publish("tok", "1", "x", [f"https://cdn.example.com/{i}.jpg" for i in range(11)])
+    with pytest.raises(ProviderConfigurationError, match="at most 20"):
+        InstagramPlatform().publish("tok", "1", "x", [f"https://cdn.example.com/{i}.jpg" for i in range(21)])
     with pytest.raises(ProviderConfigurationError, match="at least one image or video"):
         InstagramPlatform().publish("tok", "1", "x", [])
     monkeypatch.setenv("PUBLIC_BASE_URL", "http://127.0.0.1:8000")
@@ -184,8 +184,8 @@ def test_facebook_video_and_multi_photo(monkeypatch):
 @pytest.mark.parametrize("platform,media,ok", [
     ("instagram", ["https://a.test/1.mp4"], True),
     ("instagram", ["https://a.test/1.jpg", "https://a.test/2.mp4"], True),
-    ("instagram", [f"https://a.test/{i}.jpg" for i in range(10)], True),
-    ("instagram", [f"https://a.test/{i}.jpg" for i in range(11)], False),
+    ("instagram", [f"https://a.test/{i}.jpg" for i in range(20)], True),
+    ("instagram", [f"https://a.test/{i}.jpg" for i in range(21)], False),
     ("instagram", [], False),
     ("threads", [f"https://a.test/{i}.jpg" for i in range(20)], True),
     ("threads", [f"https://a.test/{i}.jpg" for i in range(21)], False),

@@ -185,9 +185,11 @@ def test_permission_and_token_errors():
     (["https://a.test/1.mp4", "https://a.test/2.mp4"], "only one video"),
     ([f"https://a.test/{i}.jpg" for i in range(21)], "up to 20 photos"),
     (["https://a.test/1.mov"], "MP4 only"),
-    (["https://a.test/1.webp"], "JPG, PNG or GIF"),
+    (["https://a.test/1.bmp"], "JPG, PNG or GIF"),
 ])
-def test_validation_rejects(media, needle):
+def test_validation_rejects(media, needle, monkeypatch):
+    # MOV is only fixable when ffmpeg is installed (converted at publish); simulate a machine without it.
+    monkeypatch.setattr("shutil.which", lambda name: None)
     problem = media_requirement_error("linkedin", media, "hi")
     assert problem and needle in problem
     with pytest.raises(ProviderConfigurationError, match=needle):

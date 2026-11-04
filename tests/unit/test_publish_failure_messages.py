@@ -44,10 +44,12 @@ def test_non_http_errors_do_not_quote_raw():
 
 @pytest.mark.parametrize("platform,media,blocked", [
     ("youtube", ["https://a.test/p.jpg"], True),
-    ("tiktok", ["https://a.test/p.jpg"], True),
+    ("tiktok", ["https://a.test/p.jpg"], False),
+    ("tiktok", ["https://a.test/p.jpg", "https://a.test/v.mp4"], True),
     ("youtube", ["https://a.test/v.mp4"], False),
     ("tiktok", ["https://a.test/v.mp4"], False),
-    ("linkedin", ["https://a.test/p.webp"], True),
+    ("linkedin", ["https://a.test/p.webp"], False),
+    ("linkedin", ["https://a.test/p.bmp"], True),
     ("linkedin", ["https://a.test/p.jpg"], False),
     ("linkedin", ["https://a.test/v.mp4"], False),
     ("x", ["https://a.test/v.mp4"], False),

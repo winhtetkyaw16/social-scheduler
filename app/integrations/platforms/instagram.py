@@ -61,7 +61,7 @@ def instagram_image_url(url: str) -> str:
 # Module-level so tests can patch them; no real sleeping in tests.
 POLL_INTERVAL_SECONDS = 5.0
 POLL_TIMEOUT_SECONDS = 300.0
-MAX_CAROUSEL_ITEMS = 10
+MAX_CAROUSEL_ITEMS = 20
 _sleep = time.sleep
 _clock = time.monotonic
 
@@ -71,7 +71,7 @@ def _is_video(url: str) -> bool:
 
 
 class InstagramPlatform(SocialPlatform):
-    """Publish photos, Reels (one video) and carousels (2-10 items) via the Instagram Graph API."""
+    """Publish photos, Reels (one video) and carousels (2-20 items) via the Instagram Graph API."""
 
     platform = "instagram"
     supports_remote_delete = True

@@ -825,18 +825,26 @@ function App() {
     return next;
   });
   // "Fix for me": every selected account gets its auto-split; Instagram crops are accepted. Returns an undo snapshot.
-  const applyMediaFix = () => {
-    const snapshot = { selection: mediaSelectionByAccount, cropOk: cropOkByAccount, captionMode };
+  // Apply the "Fix for me" sheet: result = { selections: { [id]: indices }, skip: [ids] } (see fixPlan.planResult).
+  const applyMediaFix = (result = null) => {
+    const snapshot = { selection: mediaSelectionByAccount, cropOk: cropOkByAccount, captionMode, selectedIds };
     const nextSel = { ...mediaSelectionByAccount };
     const nextCrop = { ...cropOkByAccount };
+    const skip = new Set(result?.skip || []);
+    let count = 0;
     mediaReport.forEach((row) => {
-      nextSel[row.account.id] = row.split.map((i) => mediaKeyOf(sharedMedia[i]));
-      if (row.account.platform === "instagram") nextCrop[row.account.id] = true;
+      const id = row.account.id;
+      if (skip.has(id)) return;
+      const indices = result?.selections?.[id] ?? row.split;
+      nextSel[id] = indices.map((i) => mediaKeyOf(sharedMedia[i]));
+      if (row.account.platform === "instagram") nextCrop[id] = true;
+      count += 1;
     });
     setMediaSelectionByAccount(nextSel);
     setCropOkByAccount(nextCrop);
+    if (skip.size) setSelectedIds((ids) => ids.filter((x) => !skip.has(x)));
     if (captionMode !== "custom") changeCaptionMode("custom");
-    return { count: mediaReport.length, undo: () => { setMediaSelectionByAccount(snapshot.selection); setCropOkByAccount(snapshot.cropOk); setCaptionMode(snapshot.captionMode); } };
+    return { count, undo: () => { setMediaSelectionByAccount(snapshot.selection); setCropOkByAccount(snapshot.cropOk); setCaptionMode(snapshot.captionMode); setSelectedIds(snapshot.selectedIds); } };
   };
   // One "Review" action for one account.
   const applyMediaAction = (account, action) => {

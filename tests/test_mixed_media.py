@@ -226,3 +226,28 @@ def test_tiktok_rejects_mix_and_too_many():
         TikTokPlatform().publish("tok", "open-id", "hi", MIX)
     with pytest.raises(ProviderConfigurationError, match="35"):
         TikTokPlatform().publish("tok", "open-id", "hi", [f"https://a.test/{i}.jpg" for i in range(36)])
+
+
+def test_facebook_video_choice_publishes_as_video(monkeypatch):
+    """Fix for me sheet: picking "Video" for a Facebook account sends only the video, posted to /videos."""
+    from app.integrations.platforms import facebook as fb_mod
+
+    acct = uuid4()
+    meta = {"sharedMediaUrls": MIX, "captionMode": "custom", "mediaSelectionByAccount": {str(acct): [V]}}
+    media = _media_for_account(meta, acct, MIX, "facebook")
+    assert media == [V]
+    assert media_requirement_error("facebook", media) is None
+
+    calls = []
+
+    class Resp:
+        status_code = 200
+
+        def json(self):
+            return {"id": "vid1"}
+
+    monkeypatch.setattr(fb_mod, "provider_request", lambda method, url, **kw: calls.append((method, url, kw)) or Resp())
+    result = fb_mod.FacebookPlatform().publish("tok", "111", "hello", media)
+    assert result.post_id == "vid1"
+    assert len(calls) == 1 and calls[0][1].endswith("/111/videos")
+    assert calls[0][2]["json"]["file_url"].endswith("clip.mp4")

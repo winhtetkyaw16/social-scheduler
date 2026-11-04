@@ -7,6 +7,8 @@ import PostPreview from "./PostPreviews.jsx";
 import { ChannelFormatSelector, PlatformSettingsPopover } from "./ComposerChannelEditor.jsx";
 import { mediaKeyOf, summarize } from "./mediaRules.js";
 import useBodyScrollLock from "./useBodyScrollLock.js";
+import FixSheet from "./FixSheet.jsx";
+import { buildFixPlan } from "./fixPlan.js";
 
 const LABELS = { x: "X", facebook: "Facebook", instagram: "Instagram", linkedin: "LinkedIn", tiktok: "TikTok", youtube: "YouTube", pinterest: "Pinterest", threads: "Threads" };
 const isVideo = (item) => typeof item === "string" ? /\.(mp4|mov|webm|m4v)(\?|$)/i.test(item) : String(item?.type || "").startsWith("video/");
@@ -98,15 +100,19 @@ export default function ComposerV2(props) {
   const summary = useMemo(() => summarize(mediaReport.map((r) => ({ account: r.account, platform: r.account.platform, infos: r.sharedInfos, indices: r.indices, check: r.check }))), [mediaReport]);
   const mediaNotes = mediaReport.flatMap((r) => [...r.check.notes, ...r.check.hints].map((t) => ({ account: r.account, text: t })));
   const nameOf = (a) => LABELS[a.platform] || a.platform;
-  function applyFix() {
-    const { count, undo } = applyMediaFix();
+  // One count source for the panel and the sheet (accounts, not networks).
+  const fixPlan = useMemo(() => buildFixPlan(mediaReport.map((r) => ({ account: r.account, format: r.format, infos: r.sharedInfos, problems: r.check.problems.length }))), [mediaReport]);
+  const fixCount = fixPlan.counts.changing;
+  const fixTrigger = useRef(null);
+  const startToast = () => { window.clearTimeout(toastTimer.current); toastTimer.current = window.setTimeout(() => setMtoast(null), 10000); };
+  function applyFix(result) {
+    const { count, undo } = applyMediaFix(result);
     setSheetOpen(false); setReviewOpen(false);
-    window.clearTimeout(toastTimer.current);
     setMtoast({ count, undo });
-    toastTimer.current = window.setTimeout(() => setMtoast(null), 10000);
+    startToast();
   }
   // Schedule is always enabled; while media problems remain it shows the fix first.
-  const guardedSubmit = (m) => { if (summary.count) { setSheetOpen(true); return; } submit(m); };
+  const guardedSubmit = (m) => { if (fixCount) { fixTrigger.current = document.activeElement; setSheetOpen(true); return; } submit(m); };
 
   function insert(text) {
     const el = textarea.current; const start = el?.selectionStart ?? value.length; const end = el?.selectionEnd ?? start;
@@ -203,26 +209,21 @@ export default function ComposerV2(props) {
             {optsOpen && <div className="c2-opts-l">{selectedAccounts.map((a) => <div key={a.id} className="row" style={{ gap: 8 }}><ChannelTile platform={a.platform} size={18} /><span className="sm grow">{a.account_name || LABELS[a.platform]}</span><ChannelFormatSelector account={a} format={formatsByAccount[a.id] || "Post"} automatic={!formatOverridesByAccount[a.id]} onSelect={(f) => setAccountFormat(a.id, f)} /><PlatformSettingsPopover account={a} settings={platformSettingsByAccount[a.id] || {}} onChange={setPlatformSetting} open={settingsOpen === a.id} onToggle={() => setSettingsOpen((c) => c === a.id ? "" : a.id)} /></div>)}</div>}
           </div>}
         </div>
-        {summary.count > 0 && <div className="mp" role="region" aria-label="Media check">
-          <div className="hd"><span className="mk"><AlertCircle size={16} /></span><div className="grow"><b>Media needs a few changes for {summary.count} channel{summary.count === 1 ? "" : "s"}</b>
-            {summary.fine.length > 0 && <p className="sm muted">Already fine: {summary.fine.join(" · ")}</p>}</div>
-            <div className="acts"><button type="button" className="btn btn-grad btn-sm" onClick={() => setSheetOpen(true)}><Sparkles size={14} />Fix for me</button><button type="button" className="btn btn-secondary btn-sm" aria-expanded={reviewOpen} onClick={() => setReviewOpen((o) => !o)}>Review</button></div></div>
+        {fixCount > 0 && <div className="mp" role="region" aria-label="Media check">
+          <div className="hd"><span className="mk"><AlertCircle size={16} /></span><div className="grow"><b>Media needs a few changes for {fixCount} account{fixCount === 1 ? "" : "s"}</b>
+            <p className="sm muted">Each network accepts media a little differently. We can sort it out for you.</p></div>
+            <div className="acts"><button type="button" className="btn btn-grad btn-sm" onClick={(e) => { fixTrigger.current = e.currentTarget; setSheetOpen(true); }}><Sparkles size={14} />Fix for me</button><button type="button" className="btn btn-secondary btn-sm" aria-expanded={reviewOpen} onClick={() => setReviewOpen((o) => !o)}>{reviewOpen ? "Hide" : "Review"}</button></div></div>
           {reviewOpen && summary.needs.map((r) => { const pr = r.check.problems[0]; return <div className="ln" key={r.account.id}>
             <ChannelTile platform={r.account.platform} size={18} /><span className="grow"><b>{nameOf(r.account)}</b> <span className="d">{pr.title}{pr.detail ? ` — ${pr.detail}` : ""}</span></span>
             {pr.action && <button type="button" className="btn btn-ghost btn-sm" onClick={() => { if (["add_media", "add_video"].includes(pr.action.id)) fileInput.current?.click(); else if (["shorten", "replace"].includes(pr.action.id)) { changeCaptionMode("custom"); setTab(r.account.id); } else applyMediaAction(r.account, pr.action); }}>{pr.action.label}</button>}
           </div>; })}
         </div>}
         {mediaNotes.length > 0 && <div className="c2-notes">{mediaNotes.map((n, i) => <p key={`mn-${n.account.id}-${i}`} className="sm muted">{nameOf(n.account)}: {n.text}</p>)}</div>}
-        {sheetOpen && <div className="sheet" role="dialog" aria-modal="true" aria-label="Here's what each channel will get" onClick={(e) => { if (e.target === e.currentTarget) setSheetOpen(false); }}>
-          <div className="bx"><h3>Here's what each channel will get</h3>
-            {mediaReport.map((r) => <div className="r" key={r.account.id}><ChannelTile platform={r.account.platform} size={20} /><span className="grow"><b>{nameOf(r.account)}</b><span className="d">{r.splitLabel}</span></span><MiniStrip items={sharedMedia} indices={r.split} /></div>)}
-            <p className="sm muted">Nothing posts until you schedule. You can change any channel afterwards.</p>
-            <div className="row" style={{ gap: 8, justifyContent: "flex-end" }}><button type="button" className="btn btn-secondary" onClick={() => setSheetOpen(false)}>Cancel</button><button type="button" className="btn btn-grad" onClick={applyFix}>Apply</button></div>
-          </div></div>}
-        {mtoast && <div className="mtoast" role="status">Media sorted for {mtoast.count} account{mtoast.count === 1 ? "" : "s"}. <a role="button" tabIndex={0} onClick={() => { mtoast.undo(); setMtoast(null); }}>Undo</a></div>}
+        {sheetOpen && <FixSheet rows={mediaReport} items={sharedMedia} returnFocus={fixTrigger} onCancel={() => setSheetOpen(false)} onApply={applyFix} onAddMedia={() => fileInput.current?.click()} nameOf={(a) => accountDisplayName(a)} renderAvatar={(a) => <AccountAvatar account={a} size={36} />} />}
+        {mtoast && <div className="mtoast" role="status" aria-live="polite" onMouseEnter={() => window.clearTimeout(toastTimer.current)} onMouseLeave={startToast} onFocus={() => window.clearTimeout(toastTimer.current)} onBlur={startToast}>Media updated for {mtoast.count} account{mtoast.count === 1 ? "" : "s"}. <button type="button" className="lnk" onClick={() => { window.clearTimeout(toastTimer.current); mtoast.undo(); setMtoast(null); }}>Undo</button></div>}
         {channelWarnings.length > 0 && <div className="c2-blockers" role="alert">{channelWarnings.map((w, i) => <p key={`${w.account.id}-${i}`} className="c2-hint over"><AlertCircle size={14} /><span><b>{LABELS[w.account.platform] || w.account.platform}{w.account.account_name ? ` · ${w.account.account_name}` : ""}:</b> {w.message}</span></p>)}</div>}
         {channelNotices.length > 0 && <div className="c2-blockers">{channelNotices.map((w, i) => <p key={`n-${w.account.id}-${i}`} className="c2-hint warn"><AlertCircle size={14} /><span><b>{LABELS[w.account.platform] || w.account.platform}:</b> {w.message}</span></p>)}</div>}
-          <PublishBar fixFirst={summary.count > 0} mode={publishMode} setMode={setPublishMode} busy={busy} submit={guardedSubmit} saveAsDraft={saveAsDraft} whenText={whenText} zoneText={zoneLabel(timeZone)} date={date} setDate={setDate} time={time} setTime={setTime} timeZone={timeZone} setTimeZone={setTimeZone} timezones={timezones} minDate={minDate} request={request} selectedAccounts={selectedAccounts} onSetupQueue={onSetupQueue} />
+          <PublishBar fixFirst={fixCount > 0} mode={publishMode} setMode={setPublishMode} busy={busy} submit={guardedSubmit} saveAsDraft={saveAsDraft} whenText={whenText} zoneText={zoneLabel(timeZone)} date={date} setDate={setDate} time={time} setTime={setTime} timeZone={timeZone} setTimeZone={setTimeZone} timezones={timezones} minDate={minDate} request={request} selectedAccounts={selectedAccounts} onSetupQueue={onSetupQueue} />
       </form>
       <aside className="c2-pv">
         {selectedAccounts.length ? <>

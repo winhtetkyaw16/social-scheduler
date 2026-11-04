@@ -117,7 +117,7 @@ export default function ComposerV2(props) {
   function insert(text) {
     const el = textarea.current; const start = el?.selectionStart ?? value.length; const end = el?.selectionEnd ?? start;
     setValue(`${value.slice(0, start)}${text}${value.slice(end)}`);
-    requestAnimationFrame(() => { if (el) { el.focus(); el.setSelectionRange(start + text.length, start + text.length); } });
+    requestAnimationFrame(() => { if (el) { el.focus({ preventScroll: true }); el.setSelectionRange(start + text.length, start + text.length); } });
   }
   function ai(kind) {
     setAiOpen(false); setTplOpen(false);

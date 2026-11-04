@@ -12,6 +12,9 @@ import RenderErrorBoundary from "./RenderErrorBoundary.jsx";
 import Landing from "./Landing.jsx";
 import ComposerV2 from "./ComposerV2.jsx";
 import useBodyScrollLock from "./useBodyScrollLock.js";
+import { cleanFbHash } from "./scrollLock.js";
+
+if (typeof window !== "undefined") cleanFbHash(window.location, window.history);
 import ModalPortal from "./ModalPortal.jsx";
 import "./sc/composer-v2.css";
 import ManageAccounts, { AccountAvatar, DestinationPicker } from "./ManageAccounts.jsx";
@@ -443,7 +446,7 @@ function WritingTools({ caption, setCaption }) {
     const input = textarea.current; if (!input) { setCaption((old) => `${old}${old ? " " : ""}${value}`); return; }
     const start = input.selectionStart ?? caption.length; const end = input.selectionEnd ?? start;
     const next = `${caption.slice(0, start)}${value}${caption.slice(end)}`; setCaption(next);
-    requestAnimationFrame(() => { input.focus(); input.setSelectionRange(start + value.length, start + value.length); });
+    requestAnimationFrame(() => { input.focus({ preventScroll: true }); input.setSelectionRange(start + value.length, start + value.length); });
   }
   const suggestions = [...new Set((caption.toLowerCase().match(/[\p{L}\p{N}]{4,}/gu) || []).filter((word) => !["that", "with", "your", "this", "from", "have", "just", "what"].includes(word)))].slice(0, 5).map((word) => `#${word}`);
   function polish(action) {
@@ -1232,7 +1235,7 @@ function App() {
     url.searchParams.delete("connect_error");
     url.searchParams.delete("oauth_pick");
     url.searchParams.delete("pick_session");
-    window.history.replaceState({}, "", url.pathname + url.search + url.hash);
+    window.history.replaceState({}, "", url.pathname + url.search + (url.hash === "#_=_" ? "" : url.hash));
     if (token) void loadWorkspace(token);
   }, [token, loadWorkspace, notify]);
 

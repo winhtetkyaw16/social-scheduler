@@ -241,3 +241,5 @@ html.dark .scd .fe .btn-grad,[data-theme=dark] .scd .fe .btn-grad,.dark .scd .fe
 .scd .modal.sc-modal{max-height:calc(100vh - 32px);min-height:0}
 @supports (height:100dvh){.scd .modal.sc-modal{max-height:calc(100dvh - 32px)}}
 .scd.sc-modal-layer{position:relative;z-index:60;background:transparent;height:0}
+/* modal backdrops: block touch scroll-through without moving the page */
+.scd .modal-wrap.sc-modal-wrap,.scd .modal-wrap.sc-modal-wrap .modal{overscroll-behavior:contain}

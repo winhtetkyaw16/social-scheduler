@@ -314,3 +314,4 @@ html.dark .scd .c2 .c2-pbtn,[data-theme=dark] .scd .c2 .c2-pbtn{background:linea
   @supports (height:100dvh){.scd .c2 .fx .bx{max-height:92dvh}}
 }
 @media (max-height:520px){.scd .c2 .fx{padding:12px}.scd .c2 .fx .bx{max-height:calc(100vh - 24px)}.scd .c2 .fx .fh{padding:12px 20px 10px}}
+.scd .c2 .fx,.scd .c2 .fx .fb{overscroll-behavior:contain}

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Check, ChevronDown, Play, X as XIcon } from "lucide-react";
 import ModalPortal from "./ModalPortal.jsx";
+import { focusNoScroll } from "./scrollLock.js";
 import { buildFixPlan, fmtDuration, indicesForChoice, planResult, togglePick } from "./fixPlan.js";
 
 const FOCUSABLE = 'button:not([disabled]),[href],input:not([disabled]),[tabindex]:not([tabindex="-1"]),summary';
@@ -35,7 +36,7 @@ function Seg({ options, value, onChange, label }) {
   const move = (e, i) => {
     const d = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
     if (!d) return; e.preventDefault();
-    const n = (i + d + options.length) % options.length; onChange(options[n]); refs.current[n]?.focus();
+    const n = (i + d + options.length) % options.length; onChange(options[n]); focusNoScroll(refs.current[n]);
   };
   return <span className="sg" role="radiogroup" aria-label={label}>{options.map((o, i) => <button key={o} ref={(el) => { refs.current[i] = el; }} type="button" role="radio" aria-checked={value === o} tabIndex={value === o ? 0 : -1} className={value === o ? "on" : ""} onClick={() => onChange(o)} onKeyDown={(e) => move(e, i)}>{o}</button>)}</span>;
 }
@@ -55,8 +56,8 @@ export default function FixSheet({ rows, items, onApply, onCancel, onAddMedia, r
 
   useEffect(() => {
     const trigger = returnFocus?.current || document.activeElement;
-    closeBtn.current?.focus();
-    return () => { if (trigger && typeof trigger.focus === "function") window.setTimeout(() => trigger.focus(), 0); };
+    focusNoScroll(closeBtn.current);
+    return () => { if (trigger && typeof trigger.focus === "function") window.setTimeout(() => focusNoScroll(trigger), 0); };
   }, []);
   const onKey = (e) => {
     if (e.key === "Escape") { e.stopPropagation(); onCancel(); return; }
@@ -64,8 +65,8 @@ export default function FixSheet({ rows, items, onApply, onCancel, onAddMedia, r
     const f = [...box.current.querySelectorAll(FOCUSABLE)].filter((el) => el.offsetParent !== null || el === document.activeElement);
     if (!f.length) return;
     const first = f[0], last = f[f.length - 1];
-    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
-    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); focusNoScroll(last); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); focusNoScroll(first); }
   };
   const set = (id, patch) => setOv((o) => ({ ...o, [id]: { ...(o[id] || {}), ...patch } }));
   // Mobile: drag the handle down to cancel.

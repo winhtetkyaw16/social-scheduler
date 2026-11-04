@@ -256,6 +256,7 @@ def retry_post(db: Session, post: ScheduledPost) -> ScheduledPost:
         raise HTTPException(status_code=409, detail="Only failed posts can be retried")
     if not post.connected_account.is_active:
         raise HTTPException(status_code=409, detail="Reconnect the connected account before retrying")
+    ensure_publishable(post)  # a failed post with a blocking error must be fixed (Save & reschedule) first
 
     post.status = "queued"
     post.last_error_code = None

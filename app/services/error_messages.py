@@ -397,6 +397,8 @@ def media_requirement_error(platform: str | None, media_urls: list | None, conte
             return problem
     if key == "facebook" and len(videos) > 1 and len(videos) == len(media):
         return "Facebook posts can have one video. Keep a single video."
+    if key == "youtube" and len(videos) > 1:
+        return "YouTube posts one video at a time. Pick the video to post with Fix for me."
     if key == "youtube" and not videos:
         # Extra photos alongside a video are fine: YouTube publishes just the first video (shape is only a hint).
         return "YouTube needs a video. Add a video (photos and text-only posts can't go to YouTube)."

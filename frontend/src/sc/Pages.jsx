@@ -4,7 +4,7 @@ import { PostRowMenu, DeletePostModal, failedBannerText } from "./PostActions.js
 import markPng from "../assets/brand/socialcastly-mark-256.png";
 import lockupLight from "../assets/brand/socialcastly-lockup-light.png";
 import lockupDark from "../assets/brand/socialcastly-lockup-dark.png";
-import { sortUpNext, upNextTime, upNextDateLabel } from "../upNext.js";
+import { sortUpNext, upNextTime, upNextDateParts } from "../upNext.js";
 
 const DAY = 864e5;
 const when = (p) => p?.published_at || p?.scheduled_at || p?.created_at;
@@ -24,8 +24,9 @@ const I = {
 function splitTime(v) { const t = fmtTime(v); return [t.replace(/\s?(AM|PM)/i, ""), (t.match(/AM|PM/i) || [""])[0]]; }
 
 function PostRow({ post, account, onOpen, onRetry, onDelete }) {
+  const when2 = upNextDateParts(upNextTime(post));
   return <div className="post">
-    <div className="time" style={{ whiteSpace: "nowrap" }}>{upNextDateLabel(upNextTime(post))}</div>
+    <div className="time upnext-when"><span className="upnext-date">{when2.date}</span>{when2.time && <span className="upnext-time">{when2.time}</span>}</div>
     <AccountAvatar account={account} size={36} />
     <div className="body"><div className="row" style={{ gap: 8, marginBottom: 4 }}><b className="sm">{account?.account_name || account?.platform || "Account"}</b><StatusBadge status={post.status} post={post} /></div><div className="txt">{post.content || "Untitled post"}</div>
       {post.status === "failed" && <div className="xs" style={{ color: "var(--error)", marginTop: 6 }}>⚠ {failedBannerText(post, account)}</div>}</div>

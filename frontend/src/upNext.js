@@ -24,14 +24,21 @@ export function sortUpNext(posts) {
     .map((x) => x.p);
 }
 
-// "Nov 4 \u00b7 7:46 PM" in local time; year added when not the current year.
-export function upNextDateLabel(value, now = new Date()) {
+// Separate local date and time parts, e.g. { date: "Nov 4", time: "7:46 PM" }.
+// Year added to the date when not the current year. Missing time -> { date: "No time set", time: "" }.
+export function upNextDateParts(value, now = new Date()) {
   const t = ms(value);
-  if (t === null) return "No time set";
+  if (t === null) return { date: "No time set", time: "" };
   const d = new Date(t);
   const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   const h = d.getHours();
   const time = `${h % 12 || 12}:${String(d.getMinutes()).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`;
   const year = d.getFullYear() !== now.getFullYear() ? `, ${d.getFullYear()}` : "";
-  return `${months[d.getMonth()]} ${d.getDate()}${year} \u00b7 ${time}`;
+  return { date: `${months[d.getMonth()]} ${d.getDate()}${year}`, time };
+}
+
+// "Nov 4 \u00b7 7:46 PM" single-line label (local time).
+export function upNextDateLabel(value, now = new Date()) {
+  const { date, time } = upNextDateParts(value, now);
+  return time ? `${date} \u00b7 ${time}` : date;
 }

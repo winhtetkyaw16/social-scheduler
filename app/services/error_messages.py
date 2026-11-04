@@ -38,6 +38,7 @@ APP_BLOCKED = "app_not_authorized"
 DUPLICATE = "duplicate_content"
 RATE_LIMIT = "rate_limited"
 PLATFORM_DOWN = "platform_unavailable"
+NETWORK = "network_unreachable"
 TOO_LONG = "text_too_long"
 MEDIA_UNSUPPORTED = "media_not_supported"
 DESTINATION = "destination_missing"
@@ -115,6 +116,8 @@ def classify_error(code: str | None, message: str | None, platform: str | None, 
     if _has(text, ("could not download", "could not pull", "failed to download", "media url",
                    "could not fetch", "media container failed")):
         return MEDIA_FETCH
+    if code_l == "provider_request_error" and _has(text, ("could not connect to", "could not reach")):
+        return NETWORK
     if _has(text, ("timeout", "timed out", "still processing")):
         return TIMEOUT
     if status == 402 or _has(text, ("credits depleted", "credits-depleted", "payment required", "usagecapexceeded",
@@ -143,18 +146,22 @@ def classify_error(code: str | None, message: str | None, platform: str | None, 
         return DUPLICATE
     if _has(text, ("limited to", "too long", "character limit", "exceeds the maximum length")):
         return TOO_LONG
-    if _has(text, ("media upload is not implemented", "video upload is not implemented", "not implemented yet",
+    if _has(text, ("can't send photos or videos to", "media upload is not implemented", "video upload is not implemented", "not implemented yet",
                    "supports one image", "supports exactly one image", "carousels are not implemented")):
         return MEDIA_UNSUPPORTED
     if _has(text, ("needs a page or group id", "needs a board id", "profile id from", "channel id from",
                    "open_id from")):
         return DESTINATION
     if (status is not None and 500 <= status <= 599) or _has(text, (
-        "service unavailable", "temporarily unavailable", "could not connect", "internal server error",
+        "service unavailable", "temporarily unavailable", "internal server error",
         "bad gateway", "publish_interrupted", "did not return", "without returning",
     )) or code_l == "publish_interrupted":
         return PLATFORM_DOWN
     return FALLBACK
+
+
+def code_l_is_http(code: str | None) -> bool:
+    return (code or "").lower() in {"provider_http_error", "provider_error_response"}
 
 
 _RETRY = [{"id": "retry", "label": "Retry now"}, {"id": "reschedule", "label": "Save & reschedule"}]
@@ -249,6 +256,11 @@ def friendly_error(code: str | None, message: str | None, platform: str | None,
             f"{net} is limiting how often this account can post right now.",
             f"Too many posts or requests were sent to {net} in a short time, so it asked us to slow down.",
             "Wait a while (usually 15â€“60 minutes) and retry, or reschedule for later.", _RETRY),
+        NETWORK: (
+            f"SocialCastly couldn't reach {net}: no internet connection.",
+            f"The computer running SocialCastly couldn't connect to {net} (Wi-Fi dropped, no internet, or a firewall/VPN blocked it). "
+            f"Nothing was sent to {net}.",
+            "Check this computer's internet connection, then press Retry now.", _RETRY),
         PLATFORM_DOWN: (
             f"{net} had a problem on its side and didn't publish the post.",
             f"{net} returned a server error or didn't confirm the post. This isn't something you did.",
@@ -260,7 +272,7 @@ def friendly_error(code: str | None, message: str | None, platform: str | None,
         MEDIA_UNSUPPORTED: (
             f"SocialCastly can't send this kind of media to {net} yet.",
             f"Posting this media type or number of files to {net} isn't supported yet.",
-            f"Post text only, or use a single image, for {net}.", _EDIT),
+            f"Remove the photo/video for {net} (post text only there), or untick {net} for this post.", _EDIT),
         DESTINATION: (
             f"{net} needs a Page/channel picked for this account.",
             f"The connected {net} account has no Page, board, or channel to post to.",
@@ -268,6 +280,9 @@ def friendly_error(code: str | None, message: str | None, platform: str | None,
     }
     if category in copy:
         banner, what_happened, what_to_do, actions = copy[category]
+        # When the platform itself answered with an error, show its (sanitised) reason too.
+        if raw and code_l_is_http(code) and category == PLATFORM_DOWN:
+            what_happened = f'{what_happened} {net} said: "{raw}"'
     else:
         banner = f"{net} rejected this post: {raw}" if raw else f"We couldn't post this to {net}."
         if len(banner) > 140:
@@ -278,6 +293,8 @@ def friendly_error(code: str | None, message: str | None, platform: str | None,
     return {
         "category": category,
         "network": net,
+        # The platform's own (sanitised) reason, when it answered with an error.
+        "platform_reason": raw if raw and code_l_is_http(code) else None,
         "banner": banner,
         "what_happened": what_happened,
         "what_to_do": what_to_do,
@@ -308,6 +325,9 @@ def media_requirement_error(platform: str | None, media_urls: list | None, conte
         return f"Threads carousels can have up to 20 photos/videos. This post has {len(media)}; remove some."
     if key == "facebook" and len(media) > 1 and videos:
         return "Facebook posts from SocialCastly can have several photos or one video, not a mix. Remove the video or the photos."
+    if key in {"linkedin", "x", "twitter"} and media:
+        return (f"SocialCastly can't send photos or videos to {network_name(key)} yet. "
+                f"Remove the media for {network_name(key)} (text-only posts work), or untick it.")
     if key == "youtube" and (len(media) != 1 or len(videos) != 1):
         return "YouTube needs exactly one video. Add a video (photos and text-only posts can't go to YouTube)."
     if key == "tiktok" and (len(media) != 1 or len(videos) != 1):

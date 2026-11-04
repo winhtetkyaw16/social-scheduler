@@ -34,7 +34,8 @@ def _schedule_and_mark_published(client, headers, account, *, provider_post_id="
         json={
             "connected_account_id": account["id"],
             "content": "Hello remote delete",
-            "media_urls": [],
+            # TikTok/YouTube posts must carry one video (validated on create).
+            "media_urls": ["https://cdn.example.com/clip.mp4"] if account.get("platform") in {"tiktok", "youtube"} else [],
             "scheduled_at": scheduled_at,
             "idempotency_key": uuid4().hex,
             "post_metadata": {},

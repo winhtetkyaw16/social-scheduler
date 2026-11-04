@@ -6,12 +6,12 @@ from uuid import uuid4
 from app.integrations.base import ProviderPublishResult
 
 
-def _connect_x(client, headers, account_name="Brand"):
+def _connect_x(client, headers, account_name="Brand", platform="x"):
     response = client.post(
         "/api/v1/accounts",
         headers=headers,
         json={
-            "platform": "x",
+            "platform": platform,
             "platform_account_id": f"acct-{uuid4().hex[:8]}",
             "account_name": account_name,
             "access_token": "token-value",
@@ -105,7 +105,8 @@ def test_schedule_does_not_mark_published_and_dispatch_is_mocked(client, auth_he
 def test_approved_draft_creates_scheduled_posts(client, auth_headers, monkeypatch):
     headers, _tokens = auth_headers
     monkeypatch.setattr("app.tasks.publish_post.publish_post_task.apply_async", lambda *args, **kwargs: None)
-    account = _connect_x(client, headers, account_name="Approval brand")
+    # X can't take media yet (rejected before publishing), so use Facebook for a photo draft.
+    account = _connect_x(client, headers, account_name="Approval brand", platform="facebook")
     scheduled_at = (datetime.now(timezone.utc) + timedelta(days=2)).isoformat()
     draft = client.post(
         "/api/v1/publish/drafts",

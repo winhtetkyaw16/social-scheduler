@@ -743,6 +743,7 @@ function App() {
     if (account.platform === "facebook" && media.length > 1 && videoCount) warnings.push("Facebook posts from SocialCastly can have several photos or one video, not a mix. Remove the video or the photos.");
     if (account.platform === "youtube" && (media.length !== 1 || videoCount !== 1)) warnings.push("YouTube needs exactly one video. Add a video (photos and text-only posts can't go to YouTube).");
     if (account.platform === "tiktok" && (media.length !== 1 || videoCount !== 1)) warnings.push("TikTok needs exactly one video. Keep a single video and remove other files.");
+    if ((account.platform === "linkedin" || account.platform === "x") && media.length) warnings.push(`SocialCastly can't send photos or videos to ${channel?.label || account.platform} yet. Remove the media for ${channel?.label || account.platform} (text-only posts work), or untick it.`);
     return warnings.map((message) => ({ account, message }));
   }), [selectedAccounts, captionMode, captionsByAccount, useUniversalCaptionByAccount, caption, channelFiles, channelMediaUrlsByAccount, useSharedMediaByAccount, files, libraryMediaUrls, formatsByAccount, mediaDims]);
 

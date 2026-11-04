@@ -157,3 +157,15 @@ export function planResult(plan) {
   plan.entries.forEach((e) => { if (!e.skipped) selections[e.account.id] = e.indices; });
   return { selections, skip: plan.entries.filter((e) => e.skipped).map((e) => e.account.id), count: plan.counts.total };
 }
+
+/**
+ * Posting is blocked while any blocking error remains: a channel error (format, caption, limits, unreadable file)
+ * or a media problem "Fix for me" would change. Auto-fixed things (IG upscale/auto-fit, conversions) and warnings
+ * never reach these lists, so they never block. Save draft is always allowed.
+ */
+export function publishBlock({ channelWarnings = [], mediaReport = [] } = {}) {
+  const ids = new Set();
+  for (const w of channelWarnings) ids.add(w.account?.id);
+  for (const r of mediaReport) if (r.check?.problems?.length) ids.add(r.account?.id);
+  return { blocked: ids.size > 0, accounts: ids.size, hint: ids.size ? "Fix the errors above to post" : "" };
+}

@@ -39,6 +39,38 @@ def _attach_execution_summaries(db: Session, posts: list[ScheduledPost]) -> list
     return posts
 
 
+_VIDEO_FORMATS = {"Short", "Reel / Video"}
+
+
+def publish_problem(platform: str | None, media_urls: list | None, content: str | None, post_format: str | None = None) -> str | None:
+    """Blocking reason a post can't be scheduled/published (the composer disables posting for the same errors).
+
+    Things the app fixes on its own at publish (Instagram upscale/auto-fit, JPG and other conversions) never block.
+    Drafts are never checked.
+    """
+    from app.services.error_messages import is_video_url
+
+    media = [str(m) for m in (media_urls or [])]
+    if post_format in _VIDEO_FORMATS and not any(is_video_url(m) for m in media):
+        return f"Please include a video for this {'Short' if post_format == 'Short' else 'video post'}."
+    if post_format == "Story" and not media:
+        return "Add a photo or video to create this Story."
+    return media_requirement_error(platform, media, content)
+
+
+def _reject(account_name: str | None, problem: str | None) -> None:
+    if problem:
+        raise HTTPException(status_code=422, detail=f"{account_name or 'This channel'}: {problem}")
+
+
+def ensure_publishable(post: ScheduledPost) -> None:
+    """422 when a scheduled/queued post still has a blocking error (used by update and publish-now)."""
+    account = post.connected_account
+    meta = post.post_metadata if isinstance(post.post_metadata, dict) else {}
+    _reject(getattr(account, "account_name", None),
+            publish_problem(getattr(account, "platform", None), list(post.media_urls or []), post.content, meta.get("format")))
+
+
 def create_post(db: Session, user_id: UUID, payload: PostCreate) -> ScheduledPost:
     """Create an idempotent schedule for an active account owned by the user."""
     if not _aware(payload.scheduled_at):
@@ -63,9 +95,8 @@ def create_post(db: Session, user_id: UUID, payload: PostCreate) -> ScheduledPos
         if existing.user_id == user_id:
             return existing
         raise HTTPException(status_code=409, detail="Idempotency key is already in use")
-    problem = media_requirement_error(account.platform, [str(url) for url in payload.media_urls], payload.content)
-    if problem:
-        raise HTTPException(status_code=422, detail=f"{account.account_name}: {problem}")
+    _reject(account.account_name, publish_problem(account.platform, [str(url) for url in payload.media_urls], payload.content,
+                                                  (payload.post_metadata or {}).get("format")))
     post = ScheduledPost(
         user_id=user_id,
         connected_account_id=account.id,
@@ -166,6 +197,14 @@ def update_post(db: Session, post: ScheduledPost, payload: PostUpdate) -> Schedu
         post.attempt_count = 0
         post.last_error_code = None
         post.last_error_message = None
+    if post.status != "draft":
+        db.flush()
+        db.refresh(post, ["connected_account"])
+        try:
+            ensure_publishable(post)
+        except HTTPException:
+            db.rollback()
+            raise
     db.commit()
     db.refresh(post)
     _attach_execution_summaries(db, [post])
@@ -396,9 +435,7 @@ def materialize_draft_posts(
         account_media = _media_for_account(metadata, account.id, list(item.media_urls or []), account.platform)[:35]
         if account.platform == "instagram":
             post_metadata["ig_crop"] = _ig_crop_for_account(metadata, account.id, account_media)
-        problem = media_requirement_error(account.platform, account_media, content)
-        if problem:
-            raise HTTPException(status_code=422, detail=f"{account.account_name}: {problem}")
+        _reject(account.account_name, publish_problem(account.platform, account_media, content, post_metadata.get("format")))
         post = ScheduledPost(
             user_id=user_id,
             connected_account_id=account.id,

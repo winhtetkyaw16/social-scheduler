@@ -87,3 +87,17 @@ test("Fix for me count ignores what the app fixes on its own (small, odd-shaped,
   const rows = [ig, tt].map((account) => ({ account, format: "Post", infos, problems: checkMedia(account.platform, infos).problems.length }));
   assert.equal(buildFixPlan(rows).counts.changing, 0);
 });
+
+test("publishBlock: errors block posting, auto-fixed issues and warnings don't, and it re-enables once cleared", async () => {
+  const { publishBlock } = await import("./fixPlan.js");
+  const ig = { id: "ig", platform: "instagram" }, yt = { id: "yt", platform: "youtube" };
+  assert.deepEqual(publishBlock({}), { blocked: false, accounts: 0, hint: "" });
+  // Auto-fixed (IG upscale / auto-fit) leave no problems; warnings live in channelNotices, not here.
+  assert.equal(publishBlock({ mediaReport: [{ account: ig, check: { problems: [], notes: ["auto"], hints: [] } }] }).blocked, false);
+  const err = publishBlock({ channelWarnings: [{ account: yt, message: "Please include a video for this Short" }] });
+  assert.equal(err.blocked, true); assert.equal(err.hint, "Fix the errors above to post");
+  const media = publishBlock({ mediaReport: [{ account: ig, check: { problems: ["too many"] } }, { account: yt, check: { problems: [] } }] });
+  assert.equal(media.blocked, true); assert.equal(media.accounts, 1);
+  // After Fix for me / removing media / deselecting the channel the lists are empty again.
+  assert.equal(publishBlock({ channelWarnings: [], mediaReport: [{ account: ig, check: { problems: [] } }] }).blocked, false);
+});

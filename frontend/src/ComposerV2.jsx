@@ -8,7 +8,7 @@ import { ChannelFormatSelector, PlatformSettingsPopover } from "./ComposerChanne
 import { mediaKeyOf, summarize } from "./mediaRules.js";
 import useBodyScrollLock from "./useBodyScrollLock.js";
 import FixSheet from "./FixSheet.jsx";
-import { buildFixPlan } from "./fixPlan.js";
+import { buildFixPlan, publishBlock } from "./fixPlan.js";
 
 const LABELS = { x: "X", facebook: "Facebook", instagram: "Instagram", linkedin: "LinkedIn", tiktok: "TikTok", youtube: "YouTube", pinterest: "Pinterest", threads: "Threads" };
 const isVideo = (item) => typeof item === "string" ? /\.(mp4|mov|webm|m4v)(\?|$)/i.test(item) : String(item?.type || "").startsWith("video/");
@@ -111,8 +111,9 @@ export default function ComposerV2(props) {
     setMtoast({ count, undo });
     startToast();
   }
-  // Schedule is always enabled; while media problems remain it shows the fix first.
-  const guardedSubmit = (m) => { if (fixCount) { fixTrigger.current = document.activeElement; setSheetOpen(true); return; } submit(m); };
+  // Every publish action is disabled while a blocking error remains (Save draft stays enabled).
+  const block = publishBlock({ channelWarnings, mediaReport });
+  const guardedSubmit = (m) => { if (block.blocked) return; submit(m); };
 
   function insert(text) {
     const el = textarea.current; const start = el?.selectionStart ?? value.length; const end = el?.selectionEnd ?? start;
@@ -223,7 +224,7 @@ export default function ComposerV2(props) {
         {mtoast && <div className="mtoast" role="status" aria-live="polite" onMouseEnter={() => window.clearTimeout(toastTimer.current)} onMouseLeave={startToast} onFocus={() => window.clearTimeout(toastTimer.current)} onBlur={startToast}>Media updated for {mtoast.count} account{mtoast.count === 1 ? "" : "s"}. <button type="button" className="lnk" onClick={() => { window.clearTimeout(toastTimer.current); mtoast.undo(); setMtoast(null); }}>Undo</button></div>}
         {channelWarnings.length > 0 && <div className="c2-blockers" role="alert">{channelWarnings.map((w, i) => <p key={`${w.account.id}-${i}`} className="c2-hint over"><AlertCircle size={14} /><span><b>{LABELS[w.account.platform] || w.account.platform}{w.account.account_name ? ` · ${w.account.account_name}` : ""}:</b> {w.message}</span></p>)}</div>}
         {channelNotices.length > 0 && <div className="c2-blockers">{channelNotices.map((w, i) => <p key={`n-${w.account.id}-${i}`} className="c2-hint warn"><AlertCircle size={14} /><span><b>{LABELS[w.account.platform] || w.account.platform}:</b> {w.message}</span></p>)}</div>}
-          <PublishBar fixFirst={fixCount > 0} mode={publishMode} setMode={setPublishMode} busy={busy} submit={guardedSubmit} saveAsDraft={saveAsDraft} whenText={whenText} zoneText={zoneLabel(timeZone)} date={date} setDate={setDate} time={time} setTime={setTime} timeZone={timeZone} setTimeZone={setTimeZone} timezones={timezones} minDate={minDate} request={request} selectedAccounts={selectedAccounts} onSetupQueue={onSetupQueue} />
+          <PublishBar blocked={block.blocked} blockHint={block.hint} mode={publishMode} setMode={setPublishMode} busy={busy} submit={guardedSubmit} saveAsDraft={saveAsDraft} whenText={whenText} zoneText={zoneLabel(timeZone)} date={date} setDate={setDate} time={time} setTime={setTime} timeZone={timeZone} setTimeZone={setTimeZone} timezones={timezones} minDate={minDate} request={request} selectedAccounts={selectedAccounts} onSetupQueue={onSetupQueue} />
       </form>
       <aside className="c2-pv">
         {selectedAccounts.length ? <>

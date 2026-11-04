@@ -16,6 +16,7 @@ from app.services.posts import (
     archive_post,
     create_post,
     delete_post,
+    ensure_publishable,
     get_owned_post,
     list_posts,
     retry_post,
@@ -143,6 +144,7 @@ def publish_post_now(
             status_code=status.HTTP_409_CONFLICT,
             detail="Only draft, scheduled, or queued posts can be published now",
         )
+    ensure_publishable(post)  # a draft can be saved with errors, but never published
     now = datetime.now(timezone.utc)
     post.scheduled_at = now
     if post.status == "draft":

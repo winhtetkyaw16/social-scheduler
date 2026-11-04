@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { igCropPayload } from "./igFrame.js";
+import { SUPPORTED_FORMATS, channelErrors } from "./fixPlan.js";
 import { actionIndices, autoSplit, checkMedia, cropIndices, defaultIndices, mediaInfo, mediaKeyOf, selectionFor, splitLabel, igPhotoWarnings } from "./mediaRules.js";
 import { ChannelTile } from "./sc/ui.jsx";
 import { createPortal } from "react-dom";
@@ -68,13 +69,6 @@ const CHANNELS = [
   { id: "pinterest", label: "Pinterest", icon: "p", brand: "#BD081C", limit: 500 },
   { id: "threads", label: "Threads", icon: "@", brand: "#111827", limit: 500 },
 ];
-const SUPPORTED_FORMATS = {
-  x: ["Post", "Reel / Video"], facebook: ["Post", "Reel / Video", "Story"],
-  instagram: ["Post", "Reel / Video", "Story"], youtube: ["Post", "Reel / Video", "Short"],
-  tiktok: ["Post", "Reel / Video", "Story"], linkedin: ["Post", "Reel / Video"],
-  pinterest: ["Post", "Reel / Video"],
-  threads: ["Post"],
-};
 const DEFAULT_POST_SETTINGS = {
   tiktok: { audience: "Public", allow_comments: true, allow_duet: true, allow_stitch: true },
   youtube: { privacy_status: "Public", made_for_kids: false, category: "People & Blogs" },
@@ -730,12 +724,8 @@ function App() {
     const text = captionForAccount(account);
     const channel = CHANNELS.find((item) => item.id === account.platform);
     const limit = Math.min(channel?.limit || MAX_CHARS, MAX_CHARS);
-    const warnings = [];
-    if (!(SUPPORTED_FORMATS[account.platform] || ["Post"]).includes(format)) warnings.push(`${format} is not available for ${channel?.label || account.platform}; choose a supported format.`);
-    if (!text.trim()) warnings.push("Add a caption for this channel.");
-    if (text.length > limit) warnings.push(`Caption is over this channel’s ${limit.toLocaleString()} character limit.`);
-    if ((format === "Short" || format === "Reel / Video") && !hasVideo) warnings.push(`Please include a video for this ${format === "Short" ? "Short" : "video post"}.`);
-    if (format === "Story" && !media.length) warnings.push("Add a photo or video to create this Story.");
+    // Format / caption / video rules are shared with the post detail panel (fixPlan.channelErrors) so they can't drift.
+    const warnings = channelErrors({ platform: account.platform, label: channel?.label, format, text, limit, hasVideo, mediaCount: media.length });
     // Media mixing, counts, Instagram shape and video length rules live in mediaRules.js (the "Media needs a few
     // changes" panel + Fix for me). Only file-level limits that can't be fixed automatically stay here.
     if (account.platform === "instagram") {

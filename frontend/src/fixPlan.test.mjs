@@ -101,3 +101,22 @@ test("publishBlock: errors block posting, auto-fixed issues and warnings don't, 
   // After Fix for me / removing media / deselecting the channel the lists are empty again.
   assert.equal(publishBlock({ channelWarnings: [], mediaReport: [{ account: ig, check: { problems: [] } }] }).blocked, false);
 });
+
+test("savedPostBlock: same rules as the composer for a saved post; auto-fixed issues don't block", async () => {
+  const { savedPostBlock, channelErrors } = await import("./fixPlan.js");
+  const fb = { id: "fb", platform: "facebook" }, ig = { id: "ig", platform: "instagram" };
+  const post = (format, media, content = "Hi") => ({ content, media_urls: media, post_metadata: { format } });
+  const reel = savedPostBlock({ account: fb, post: post("Reel / Video", ["https://c/x.jpg"]), limit: 500 });
+  assert.equal(reel.blocked, true); assert.equal(reel.hint, "Fix the errors above to post");
+  assert.ok(reel.messages.some((m) => m.includes("include a video")));
+  assert.equal(savedPostBlock({ account: fb, post: post("Reel / Video", ["https://c/x.mp4"]), limit: 500 }).blocked, false);
+  // Caption is read live from the panel, so fixing it there clears the block.
+  assert.equal(savedPostBlock({ account: fb, post: post("Post", ["https://c/x.jpg"]), content: "  ", limit: 500 }).blocked, true);
+  assert.equal(savedPostBlock({ account: fb, post: post("Post", ["https://c/x.jpg"]), content: "ok", limit: 500 }).blocked, false);
+  // Instagram small/odd photos are upscaled/auto-fit at publish: no block (no dims known for a saved post).
+  assert.equal(savedPostBlock({ account: ig, post: post("Post", ["https://c/a.png", "https://c/b.jpg"]), limit: 2200 }).blocked, false);
+  // Media problems from checkMedia block too (TikTok can't mix a video and a photo).
+  assert.equal(savedPostBlock({ account: { id: "t", platform: "tiktok" }, post: post("Post", ["https://c/v.mp4", "https://c/p.jpg"]), limit: 2200 }).blocked, true);
+  // Composer and panel share channelErrors.
+  assert.deepEqual(channelErrors({ platform: "threads", format: "Story", text: "x", limit: 500, mediaCount: 1 }), ["Story is not available for threads; choose a supported format."]);
+});

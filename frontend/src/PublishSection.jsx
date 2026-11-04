@@ -5,6 +5,7 @@ import RenderErrorBoundary from "./RenderErrorBoundary.jsx";
 import { PostRowMenu, DeletePostModal, deleteCopy, failedBannerText, friendlyError } from "./sc/PostActions.jsx";
 import { AccountAvatar } from "./ManageAccounts.jsx";
 import { groupQueuePosts } from "./queueOrder.js";
+import { savedPostBlock } from "./fixPlan.js";
 import {
   Archive, ArrowLeft, ArrowRight, Bookmark, CalendarDays, Check, Clock3, Copy, FileText, Filter, Heart, Image, LayoutGrid, List, RotateCcw,
   Instagram, Linkedin, LoaderCircle, MessageCircle, MessageSquareText, MoreHorizontal, Pencil, Play, Plus, Send, Share2,
@@ -1150,6 +1151,9 @@ function PostEditModal({ post, accounts, request, onRefresh, onClose, onNavigate
   const [deleting, setDeleting] = useState(false);
   const characterLimit = Math.min(({ x: 280, instagram: 2200, linkedin: 3000, pinterest: 500, youtube: 5000 })[platform] || 63206, 10000);
   const canPostNow = ["draft", "scheduled"].includes(safePost.status);
+  // Same blocking rules as the composer (fixPlan.savedPostBlock → publishBlock); the server 422 is the backstop.
+  const block = savedPostBlock({ account, post: safePost, content, limit: characterLimit });
+  const isDraft = safePost.status === "draft";
   // The old time of a failed post is in the past: prefill the next free queue slot.
   useEffect(() => {
     if (!isFailed || !safePost.connected_account_id) return undefined;
@@ -1195,8 +1199,8 @@ function PostEditModal({ post, accounts, request, onRefresh, onClose, onNavigate
     if (a.id === "reconnect") { onClose(); onNavigate?.(a.target || "accounts"); }
     else if (a.id === "crop") { onClose(); onNavigate?.("media"); }
     else if (a.id === "edit") document.getElementById("edit-post-caption")?.focus();
-    else if (a.id === "retry") void retryNow();
-    else if (a.id === "reschedule") void save();
+    else if (a.id === "retry") { if (!block.blocked) void retryNow(); }
+    else if (a.id === "reschedule") { if (!saveDisabled) void save(); }
   }
   const fmtWhen = (v) => { try { const d = new Date(v); return `${d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })} · ${d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`; } catch { return ""; } };
   const failedAt = safePost.updated_at || safePost.scheduled_at;
@@ -1205,27 +1209,29 @@ function PostEditModal({ post, accounts, request, onRefresh, onClose, onNavigate
   const alertIco = ico(<><circle cx="12" cy="12" r="9" /><path d="M12 8v4M12 16h.01" /></>);
   const chev = ico(showDetails ? <path d="m6 15 6-6 6 6" /> : <path d="m6 9 6 6 6-6" />);
   const extraActions = (fe?.actions || []).filter((a) => ["reconnect", "crop", "edit"].includes(a.id));
-  const saveDisabled = !!busy || !scheduledAt || content.length > characterLimit;
+  const saveDisabled = !!busy || !scheduledAt || content.length > characterLimit || (block.blocked && !isDraft);
+  const blockTitle = block.blocked ? block.hint : undefined;
   const spin = (k) => (busy === k ? <LoaderCircle size={14} className="animate-spin" /> : null);
   const footer = isFailed
     ? <div className={`fe-foot${mobile ? " fe-foot-m" : ""}`}>
       {mobile ? <>
         <button type="button" className="btn btn-grad" disabled={saveDisabled} onClick={() => void save()}>{spin("save") || <Check size={14} />}Save &amp; reschedule</button>
-        <button type="button" className="btn btn-secondary" disabled={!!busy} onClick={() => void retryNow()}>{spin("retry") || <RotateCcw size={14} />}Retry now</button>
+        <button type="button" className="btn btn-secondary" disabled={!!busy || block.blocked} title={blockTitle} onClick={() => void retryNow()}>{spin("retry") || <RotateCcw size={14} />}Retry now</button>
         <button type="button" className="btn fe-del" disabled={!!busy} onClick={() => setDeleting(true)}><Trash2 size={14} />Delete post</button>
       </> : <>
         <button type="button" className="btn fe-del" disabled={!!busy} onClick={() => setDeleting(true)}><Trash2 size={14} />Delete</button>
         <span className="grow" />
         <button type="button" className="btn btn-ghost" disabled={!!busy} onClick={onClose}>Cancel</button>
-        <button type="button" className="btn btn-secondary" disabled={!!busy} onClick={() => void retryNow()}>{spin("retry") || <RotateCcw size={14} />}Retry now</button>
+        <button type="button" className="btn btn-secondary" disabled={!!busy || block.blocked} title={blockTitle} onClick={() => void retryNow()}>{spin("retry") || <RotateCcw size={14} />}Retry now</button>
         <button type="button" className="btn btn-grad" disabled={saveDisabled} onClick={() => void save()}>{spin("save") || <Check size={14} />}Save &amp; reschedule</button>
       </>}
     </div>
     : <div className="row" style={{ gap: 8, justifyContent: "flex-end", marginTop: 18 }}>
       <button type="button" className="btn btn-secondary" disabled={!!busy} onClick={onClose}>Cancel</button>
-      {canPostNow && <button type="button" className="btn btn-secondary" disabled={!!busy} onClick={() => void publishNow()}><Send size={14} />Post now</button>}
+      {canPostNow && <button type="button" className="btn btn-secondary" disabled={!!busy || block.blocked} title={blockTitle} onClick={() => void publishNow()}><Send size={14} />Post now</button>}
       <button type="button" className="btn btn-primary" disabled={saveDisabled} onClick={() => void save()}>{busy ? <LoaderCircle size={14} className="animate-spin" /> : <Check size={14} />}Save changes</button>
     </div>;
+  const blockHint = block.blocked ? <p className="xs subtle pe-block-hint" role="status" style={{ margin: "8px 0 0", textAlign: "right" }}>{block.hint}{isDraft ? " (you can still save the draft)" : ""}</p> : null;
   return createPortal(<div className="scd"><div className={`modal-wrap${isFailed ? " fe-wrap" : ""}${isFailed && mobile ? " fe-wrap-m" : ""}`} style={{ position: "fixed", zIndex: 80 }} onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}>
     <div className={`modal${isFailed ? " fe" : ""}`} role="dialog" aria-modal="true" aria-labelledby="edit-post-title" style={isFailed ? undefined : { padding: 20, maxWidth: 520, width: "100%" }}>
       <div className={isFailed ? "fe-mh" : "row between"} style={isFailed ? undefined : { marginBottom: 14 }}><div className="row" style={{ gap: 8, minWidth: 0 }}><Ch platform={platform} size="md" /><h3 id="edit-post-title" style={{ margin: 0 }}>Edit post <span className="fe-sub">· {network}{account?.account_name ? ` · ${account.account_name}` : ""}</span></h3></div><button type="button" className="pp-x" aria-label="Close" onClick={onClose}>×</button></div>
@@ -1246,6 +1252,7 @@ function PostEditModal({ post, accounts, request, onRefresh, onClose, onNavigate
         </div>
       </div>}
       {error && <div role="alert" className="alert error sm" style={{ marginBottom: 12 }}>{error}</div>}
+      {block.blocked && <div role="alert" className="alert error sm pe-block" style={{ marginBottom: 12 }}>{block.messages.map((m, i) => <div key={i}>{m}</div>)}</div>}
       <div className="col" style={{ gap: isFailed ? 14 : 12 }}>
         <label className="col" style={{ gap: 6 }}><span className="sm" style={{ fontWeight: 600 }}>Scheduled time</span><input className="input" type="datetime-local" value={scheduledAt} onChange={(e) => { setScheduledAt(e.target.value); setSlotHint(false); }} />
           {isFailed && slotHint && <span className="xs subtle fe-hint">{ico(<><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>)}Original time has passed · next available slot</span>}</label>
@@ -1258,6 +1265,7 @@ function PostEditModal({ post, accounts, request, onRefresh, onClose, onNavigate
       </div>
       </div>
       {footer}
+      {blockHint}
     </div>
   </div>
   {deleting && <DeletePostModal post={safePost} account={account} request={request} onClose={() => setDeleting(false)} onDeleted={async (p, info) => { onClose(); if (onDeleted) await onDeleted(p, info); else await onRefresh?.(); }} />}

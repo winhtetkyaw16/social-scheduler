@@ -1236,6 +1236,7 @@ function PostEditModal({ post, accounts, request, onRefresh, onClose, onNavigate
           <button type="button" className="fe-tog" aria-expanded={showDetails} onClick={() => setShowDetails((v) => !v)}>{showDetails ? "Hide details" : "Show details"}{chev}</button>
           {showDetails && <dl className="fe-dt">
             <dt>What happened</dt><dd>{fe.what_happened}</dd>
+            {fe.platform_reason && !String(fe.what_happened || "").includes(fe.platform_reason) && <><dt>{fe.network || "Platform"} said</dt><dd>“{fe.platform_reason}”</dd></>}
             <dt>What to do</dt><dd>{fe.what_to_do}{extraActions.map((a) => <span key={a.id}> <button type="button" className="fe-lk" onClick={() => runAction(a)}>{a.label}</button></span>)}</dd>
             <dt>When</dt><dd>Tried {fmtWhen(failedAt)} · {attempts} attempt{attempts === 1 ? "" : "s"}</dd>
           </dl>}

@@ -63,6 +63,9 @@ def create_post(db: Session, user_id: UUID, payload: PostCreate) -> ScheduledPos
         if existing.user_id == user_id:
             return existing
         raise HTTPException(status_code=409, detail="Idempotency key is already in use")
+    problem = media_requirement_error(account.platform, [str(url) for url in payload.media_urls], payload.content)
+    if problem:
+        raise HTTPException(status_code=422, detail=f"{account.account_name}: {problem}")
     post = ScheduledPost(
         user_id=user_id,
         connected_account_id=account.id,

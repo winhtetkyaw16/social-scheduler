@@ -1,4 +1,4 @@
-﻿"""Versioned endpoints for post lifecycle and publishing actions."""
+"""Versioned endpoints for post lifecycle and publishing actions."""
 
 import logging
 import threading
@@ -94,25 +94,13 @@ def add_post(
 
 @router.get("", response_model=list[PostRead])
 def get_posts(
-    background_tasks: BackgroundTasks,
+    response: Response,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> list[ScheduledPost]:
-    """List owned posts. Legacy rows marked published before a provider id existed are still dispatched.
-
-    Also opportunistically dispatches due scheduled/queued posts so local
-    schedules still fire when Celery/Redis is unavailable (in-process fallback
-    inside enqueue_immediate_publish).
-    """
-    posts = list_posts(db, user.id)
-    pending_ids = [
-        str(post.id)
-        for post in posts
-        if _is_pending_immediate_publish(post) or _is_due_scheduled_post(post)
-    ]
-    if pending_ids:
-        background_tasks.add_task(enqueue_immediate_posts, pending_ids)
-    return posts
+    """List owned posts. Read-only: publishing is driven by the background scheduler."""
+    response.headers["Cache-Control"] = "no-store"
+    return list_posts(db, user.id)
 
 
 @router.get("/{post_id}", response_model=PostRead)

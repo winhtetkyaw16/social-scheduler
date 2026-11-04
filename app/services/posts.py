@@ -258,17 +258,37 @@ def _caption_for_account(metadata: dict, account_id: UUID, fallback: str) -> str
     return universal
 
 
-def _media_for_account(metadata: dict, account_id: UUID, fallback: list[str]) -> list[str]:
+def _media_selection(metadata: dict, account_id: UUID, platform: str | None) -> list[str] | None:
+    """Per-channel media picks (composer "Fix for me" / ticks): account first, then network default.
+
+    Values are lists of shared media URLs. Missing keys mean "use the shared media" (old posts)."""
+    by_account = metadata.get("mediaSelectionByAccount")
+    picked = _metadata_value(by_account, account_id, None) if isinstance(by_account, dict) else None
+    if not isinstance(picked, list) and platform:
+        by_network = metadata.get("mediaSelectionByNetwork")
+        picked = by_network.get(platform.lower()) if isinstance(by_network, dict) else None
+    return [str(url) for url in picked if url] if isinstance(picked, list) else None
+
+
+def _media_for_account(metadata: dict, account_id: UUID, fallback: list[str], platform: str | None = None) -> list[str]:
     shared = metadata.get("sharedMediaUrls")
     if not isinstance(shared, list):
         shared = list(fallback or [])
     shared = [str(url) for url in shared if url]
+    picked = _media_selection(metadata, account_id, platform)
+    if picked is not None:
+        wanted = set(picked)
+        shared = [url for url in shared if url in wanted]
     if metadata.get("captionMode") != "custom":
+        if picked is not None:
+            return shared
         return shared or [str(url) for url in (fallback or [])]
     custom_raw = _metadata_value(metadata.get("channelMediaUrlsByAccount"), account_id, [])
     custom = [str(url) for url in custom_raw if url] if isinstance(custom_raw, list) else []
     inherit = _metadata_value(metadata.get("useSharedMediaByAccount"), account_id, True)
     chosen = (shared + custom) if inherit is not False else custom
+    if picked is not None:
+        return chosen
     return chosen or [str(url) for url in (fallback or [])]
 
 
@@ -359,7 +379,7 @@ def materialize_draft_posts(
         }
         if account.platform == "pinterest" and isinstance(account_settings, dict) and account_settings.get("destination_url"):
             post_metadata["destination_url"] = account_settings["destination_url"]
-        account_media = _media_for_account(metadata, account.id, list(item.media_urls or []))[:20]
+        account_media = _media_for_account(metadata, account.id, list(item.media_urls or []), account.platform)[:35]
         problem = media_requirement_error(account.platform, account_media, content)
         if problem:
             raise HTTPException(status_code=422, detail=f"{account.account_name}: {problem}")

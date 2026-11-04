@@ -10,11 +10,13 @@ from app.integrations.media_urls import guess_media_kind, local_upload_path, pub
 
 _DIRECT_INIT = "https://open.tiktokapis.com/v2/post/publish/video/init/"
 _INBOX_INIT = "https://open.tiktokapis.com/v2/post/publish/inbox/video/init/"
+_CONTENT_INIT = "https://open.tiktokapis.com/v2/post/publish/content/init/"
+MAX_PHOTOS = 35
 _CREATOR_INFO = "https://open.tiktokapis.com/v2/post/publish/creator_info/query/"
 
 
 class TikTokPlatform(SocialPlatform):
-    """Publish one video via TikTok Content Posting (direct when allowed, else inbox draft)."""
+    """Publish one video or 1-35 photos via TikTok Content Posting (direct when allowed, else inbox draft)."""
 
     platform = "tiktok"
     supports_remote_delete = False
@@ -26,12 +28,13 @@ class TikTokPlatform(SocialPlatform):
             raise ProviderConfigurationError(
                 "TikTok publishing requires exactly one video. Text-only posts are not supported by the Content Posting API."
             )
+        kinds = [guess_media_kind(m) for m in media_urls]
+        if all(k == "image" for k in kinds):
+            return _publish_photos(access_token, content, media_urls)
+        if "image" in kinds:
+            raise ProviderConfigurationError("TikTok posts one video or up to 35 photos, not a mix. Pick photos or the video.")
         if len(media_urls) != 1:
-            raise ProviderConfigurationError("TikTok publishing currently supports exactly one video per post.")
-        if guess_media_kind(media_urls[0]) == "image":
-            raise ProviderConfigurationError(
-                "TikTok photo posting is not implemented yet in SocialStudio. Attach one video file or URL."
-            )
+            raise ProviderConfigurationError("TikTok publishing supports exactly one video per post.")
 
         title = (content or "").strip()
         if len(title) > 2200:
@@ -89,6 +92,43 @@ class TikTokPlatform(SocialPlatform):
             "Remote delete is not supported for TikTok. "
             "Remove the video in the TikTok app, then delete it here, or leave it in SocialStudio."
         )
+
+
+def _publish_photos(access_token: str, content: str, media_urls: list[str]) -> ProviderPublishResult:
+    """Photo post (1-35 images). TikTok only supports PULL_FROM_URL for photos, so every image must be on a
+    public https URL whose domain/prefix is verified in the TikTok developer portal (URL properties)."""
+    if len(media_urls) > MAX_PHOTOS:
+        raise ProviderConfigurationError(f"TikTok photo posts can have up to {MAX_PHOTOS} photos. This post has {len(media_urls)}.")
+    urls = []
+    for url in media_urls:
+        public = public_media_url(url, platform="TikTok")
+        if not public.startswith("https://"):
+            raise ProviderConfigurationError(
+                "TikTok photo posts need https photo URLs on a domain verified in the TikTok developer portal. "
+                "Set PUBLIC_BASE_URL to that verified https origin."
+            )
+        urls.append(public)
+    text = (content or "").strip()
+    first_line = text.splitlines()[0] if text else ""
+    privacy = _privacy_level(access_token)
+    source_info = {"source": "PULL_FROM_URL", "photo_cover_index": 0, "photo_images": urls}
+    post_info = {
+        "title": first_line[:90],
+        "description": text[:4000],
+        "privacy_level": privacy,
+        "disable_comment": False,
+        "auto_add_music": True,
+    }
+    body = {"post_info": post_info, "source_info": source_info, "post_mode": "DIRECT_POST", "media_type": "PHOTO"}
+    direct = _tiktok_json_post(access_token, _CONTENT_INIT, body)
+    if direct is not None:
+        return _finish_tiktok_publish(access_token, direct, None, mode="direct")
+    # Without Direct Post approval, send to the creator's TikTok inbox (needs video.upload).
+    inbox_info = {k: post_info[k] for k in ("title", "description")}
+    body = {"post_info": inbox_info, "source_info": source_info, "post_mode": "MEDIA_UPLOAD", "media_type": "PHOTO"}
+    inbox = _tiktok_json_post(access_token, _CONTENT_INIT, body, raise_on_error=True)
+    assert inbox is not None
+    return _finish_tiktok_publish(access_token, inbox, None, mode="inbox")
 
 
 def _privacy_level(access_token: str) -> str:

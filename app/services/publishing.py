@@ -19,7 +19,14 @@ PublishResult = ProviderPublishResult
 
 
 def publish(platform: str, access_token: str, account_id: str, content: str, media_urls: list[str]) -> PublishResult:
-    """Publish through the registered platform adapter with normalized errors."""
+    """Publish through the registered platform adapter with normalized errors.
+
+    Media is first run through the automatic per-network conversions (JPG for Instagram, WebP for
+    LinkedIn/Facebook, PNG for TikTok photos, large Facebook photos, MOV->MP4 for LinkedIn with ffmpeg).
+    """
+    from app.services.media_convert import prepare_media
+
+    media_urls = prepare_media(platform, media_urls)
     try:
         return get_platform(platform).publish(access_token, account_id, content, media_urls)
     except ProviderHTTPError as exc:

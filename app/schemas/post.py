@@ -12,7 +12,7 @@ class PostCreate(BaseModel):
 
     connected_account_id: UUID
     content: str = Field(min_length=1, max_length=10000)
-    media_urls: list[HttpUrl] = Field(default_factory=list, max_length=20)
+    media_urls: list[HttpUrl] = Field(default_factory=list, max_length=35)
     scheduled_at: datetime
     idempotency_key: str = Field(min_length=1, max_length=128)
     post_metadata: dict[str, Any] = Field(default_factory=dict)
@@ -23,7 +23,7 @@ class PostUpdate(BaseModel):
 
     connected_account_id: UUID | None = None
     content: str | None = Field(default=None, min_length=1, max_length=10000)
-    media_urls: list[HttpUrl] | None = Field(default=None, max_length=20)
+    media_urls: list[HttpUrl] | None = Field(default=None, max_length=35)
     scheduled_at: datetime | None = None
     post_metadata: dict[str, Any] | None = None
 

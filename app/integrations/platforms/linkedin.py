@@ -38,6 +38,15 @@ VIDEO_MIN_SECONDS = 3                  # "Length: Three seconds to 30 minutes"
 VIDEO_MAX_SECONDS = 30 * 60
 VIDEO_PART_BYTES = 4 * 1024 * 1024     # parts are 4 MB byte ranges (0-4194303, ...); we follow uploadInstructions
 IMAGE_FORMATS = (".jpg", ".jpeg", ".png", ".gif")
+# Converted automatically at publish time (app/services/media_convert.py): WebP -> PNG/JPG, MOV -> MP4 (needs ffmpeg).
+CONVERTIBLE_IMAGE = (".webp",)
+CONVERTIBLE_VIDEO = (".mov", ".m4v")
+
+
+def ffmpeg_available() -> bool:
+    import shutil
+
+    return shutil.which("ffmpeg") is not None
 IMAGE_MAX_PIXELS = 36_152_320          # "Images with less than 36,152,320 pixels"
 GIF_MAX_FRAMES = 250
 MULTI_IMAGE_MIN = 2
@@ -158,7 +167,7 @@ def linkedin_media_problem(media_urls: list | None, *, inspect_files: bool = Tru
         return f"LinkedIn multi-photo posts can have up to {MULTI_IMAGE_MAX} photos. This post has {len(images)}; remove some."
     for url in videos:
         ext = _ext(url)
-        if ext and ext not in VIDEO_FORMATS:
+        if ext and ext not in VIDEO_FORMATS and not (ext in CONVERTIBLE_VIDEO and ffmpeg_available()):
             return f"LinkedIn accepts videos as MP4 only. {_name(url)} is {ext.lstrip('.').upper()}; convert it to MP4."
         local = local_upload_path(url) if inspect_files else None
         if local is not None:
@@ -170,7 +179,7 @@ def linkedin_media_problem(media_urls: list | None, *, inspect_files: bool = Tru
                 return f"LinkedIn videos must be 3 seconds to 30 minutes long. This one is {_mmss(duration)}."
     for url in images:
         ext = _ext(url)
-        if ext and ext not in IMAGE_FORMATS and guess_media_kind(url) == "image":
+        if ext and ext not in IMAGE_FORMATS and ext not in CONVERTIBLE_IMAGE and guess_media_kind(url) == "image":
             return f"LinkedIn accepts JPG, PNG or GIF photos. {_name(url)} is {ext.lstrip('.').upper()}; re-save it as JPG or PNG."
         local = local_upload_path(url) if inspect_files else None
         if local is not None:

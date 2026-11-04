@@ -5,6 +5,7 @@ import EmojiPicker from "./EmojiPicker.jsx";
 import PublishBar from "./sc/PublishBar.jsx";
 import PostPreview from "./PostPreviews.jsx";
 import { ChannelFormatSelector, PlatformSettingsPopover } from "./ComposerChannelEditor.jsx";
+import { mediaKeyOf, summarize } from "./mediaRules.js";
 
 const LABELS = { x: "X", facebook: "Facebook", instagram: "Instagram", linkedin: "LinkedIn", tiktok: "TikTok", youtube: "YouTube", pinterest: "Pinterest", threads: "Threads" };
 const isVideo = (item) => typeof item === "string" ? /\.(mp4|mov|webm|m4v)(\?|$)/i.test(item) : String(item?.type || "").startsWith("video/");
@@ -24,6 +25,20 @@ function Thumb({ item, onRemove, onEdit }) {
   </div>;
 }
 
+/** Per-channel media strip: tap a thumb to include/leave it out of this channel. */
+function TickThumb({ item, on, onToggle, n }) {
+  const url = useObjectUrl(item);
+  const video = isVideo(item);
+  return <button type="button" className={`mt ${on ? "" : "off"}`} aria-pressed={on} aria-label={`${on ? "Leave out" : "Include"} ${video ? "video" : "photo"} ${n}`} onClick={onToggle}>
+    {url ? (video ? <video src={url} muted preload="metadata" /> : <img src={url} alt="" />) : null}
+    {video && <span className="v">▶</span>}<span className="n">{n}</span>
+    <span className={`tk ${on ? "on" : ""}`}>{on && <Check size={10} strokeWidth={3.5} />}</span>
+  </button>;
+}
+function MiniStrip({ items, indices }) {
+  return <span className="mini">{indices.slice(0, 6).map((i) => <i key={i} className={isVideo(items[i]) ? "vd" : ""} />)}{indices.length > 6 && <em>+{indices.length - 6}</em>}</span>;
+}
+
 function zoneLabel(timeZone) {
   try { return new Intl.DateTimeFormat("en-US", { timeZone, timeZoneName: "shortOffset" }).formatToParts(new Date()).find((p) => p.type === "timeZoneName")?.value || timeZone; } catch { return timeZone; }
 }
@@ -38,6 +53,7 @@ export default function ComposerV2(props) {
     date, setDate, time, setTime, timeZone, setTimeZone, timezones, minDate,
     saving, uploadBusy, loadingAccounts, saveAsDraft, submit, onDiscard, previewId, setPreviewId,
     publishMode = "schedule", setPublishMode = () => {}, request, onSetupQueue,
+    mediaReport = [], sharedMedia = [], mediaSelectionByAccount = {}, setAccountMediaKeys = () => {}, applyMediaFix = () => ({ count: 0, undo() {} }), applyMediaAction = () => {},
   } = props;
   const [tab, setTab] = useState("all");
   const [aiOpen, setAiOpen] = useState(false);
@@ -46,6 +62,11 @@ export default function ComposerV2(props) {
   const [settingsOpen, setSettingsOpen] = useState("");
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [recentEmojis, setRecentEmojis] = useState([]);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [mtoast, setMtoast] = useState(null);
+  const toastTimer = useRef(0);
+  useEffect(() => () => window.clearTimeout(toastTimer.current), []);
   const textarea = useRef(null);
   const emojiBtn = useRef(null);
   const fileInput = useRef(null);
@@ -70,7 +91,20 @@ export default function ComposerV2(props) {
   const limit = strictest ? limitOf(strictest) : maxChars;
   const len = value.length;
   const cntCls = len > limit ? "over" : len >= limit * 0.9 ? "warn" : "";
-  const warnFor = (id) => channelWarnings.some((w) => w.account.id === id);
+  const mediaRow = (id) => mediaReport.find((r) => r.account.id === id);
+  const warnFor = (id) => channelWarnings.some((w) => w.account.id === id) || !!mediaRow(id)?.check.problems.length;
+  const summary = useMemo(() => summarize(mediaReport.map((r) => ({ account: r.account, platform: r.account.platform, infos: r.sharedInfos, indices: r.indices, check: r.check }))), [mediaReport]);
+  const mediaNotes = mediaReport.flatMap((r) => [...r.check.notes, ...r.check.hints].map((t) => ({ account: r.account, text: t })));
+  const nameOf = (a) => LABELS[a.platform] || a.platform;
+  function applyFix() {
+    const { count, undo } = applyMediaFix();
+    setSheetOpen(false); setReviewOpen(false);
+    window.clearTimeout(toastTimer.current);
+    setMtoast({ count, undo });
+    toastTimer.current = window.setTimeout(() => setMtoast(null), 10000);
+  }
+  // Schedule is always enabled; while media problems remain it shows the fix first.
+  const guardedSubmit = (m) => { if (summary.count) { setSheetOpen(true); return; } submit(m); };
 
   function insert(text) {
     const el = textarea.current; const start = el?.selectionStart ?? value.length; const end = el?.selectionEnd ?? start;
@@ -89,7 +123,7 @@ export default function ComposerV2(props) {
   }
   function addFiles(list) {
     const incoming = Array.from(list || []).filter((f) => f.type.startsWith("image/") || f.type.startsWith("video/"));
-    setFiles((old) => [...old, ...incoming].slice(0, 10));
+    setFiles((old) => [...old, ...incoming].slice(0, 35));
     if (incoming.length) onFilesAdded?.(incoming);
   }
 
@@ -101,7 +135,7 @@ export default function ComposerV2(props) {
   return <section className="c2 animate-fade-up">
     <div className="page-head c2-head"><h1>Create post</h1><div className="row" style={{ gap: 8 }}><button type="button" className="btn btn-ghost c2-m-draft" onClick={() => void saveAsDraft()} disabled={busy}>Save draft</button><button type="button" className="btn btn-ghost" onClick={onDiscard}>Discard</button></div></div>
     <div className="c2-grid">
-      <form className="card c2-form" onSubmit={(e) => { e.preventDefault(); submit(publishMode); }}>
+      <form className="card c2-form" onSubmit={(e) => { e.preventDefault(); guardedSubmit(publishMode); }}>
         <div className="c2-body">
           <div className="c2-chips" aria-label="Publish to">
             {active.map((a) => { const on = selectedIds.includes(a.id); return <button type="button" key={a.id} className={`chip2 ${on ? "on" : ""}`} aria-pressed={on} onClick={() => toggleAccount(a.id)} title={a.account_name || LABELS[a.platform]}>
@@ -118,15 +152,28 @@ export default function ComposerV2(props) {
           <div className="ed">
             {captionMode === "custom" && selectedAccounts.length > 0 && <div className="ctabs" role="tablist">
               <a role="tab" className={tab === "all" ? "active" : ""} onClick={() => setTab("all")}><LayoutGrid size={15} />All</a>
-              {selectedAccounts.map((a) => <a role="tab" key={a.id} className={tab === a.id ? "active" : ""} onClick={() => { setTab(a.id); setPreviewId(a.id); }}><ChannelTile platform={a.platform} size={18} />{LABELS[a.platform] || a.platform}{warnFor(a.id) && <span className="dot" title="Needs attention" />}</a>)}
+              {selectedAccounts.map((a) => <a role="tab" key={a.id} className={tab === a.id ? "active" : ""} onClick={() => { setTab(a.id); setPreviewId(a.id); }}><ChannelTile platform={a.platform} size={18} />{LABELS[a.platform] || a.platform}{selectedAccounts.length > 0 && <span className={`dot ${warnFor(a.id) ? "bad" : "ok"}`} title={warnFor(a.id) ? "Needs attention" : "Ready"} />}</a>)}
             </div>}
             <textarea ref={textarea} value={value} onChange={(e) => setValue(e.target.value)} rows={7} placeholder={tabAccount ? `Write a caption for ${LABELS[tabAccount.platform]}…` : "What do you want to share?"} aria-label="Caption" />
+            {tabAccount && sharedMedia.length > 0 ? (() => {
+              const row = mediaRow(tabAccount.id);
+              const on = new Set((row?.indices || []).map((i) => mediaKeyOf(sharedMedia[i])));
+              const picked = Array.isArray(mediaSelectionByAccount[tabAccount.id]);
+              const toggle = (item) => { const k = mediaKeyOf(item); const next = sharedMedia.map(mediaKeyOf).filter((x) => (x === k ? !on.has(x) : on.has(x))); setAccountMediaKeys(tabAccount.id, next); };
+              return <div className="mst">
+                <div className="mh"><span className="sm muted">Media for {nameOf(tabAccount)} · tap to include or leave out</span>{picked && <button type="button" className="btn btn-ghost btn-sm" onClick={() => setAccountMediaKeys(tabAccount.id, null)}>Reset to default</button>}</div>
+                <div className="mts">{sharedMedia.map((item, i) => <TickThumb key={mediaKeyOf(item)} item={item} n={i + 1} on={on.has(mediaKeyOf(item))} onToggle={() => toggle(item)} />)}
+                  <button type="button" className="add" aria-label="Add photos or videos" onClick={() => fileInput.current?.click()}>{uploadBusy ? <LoaderCircle size={18} className="animate-spin" /> : <Plus size={18} />}</button></div>
+                <input ref={fileInput} className="sr-only" type="file" accept="image/*,video/*" multiple onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
+              </div>;
+            })() : <>
             <div className="med">
               {files.map((f, i) => <Thumb key={`${f.name}-${f.lastModified}-${i}`} item={f} onEdit={() => onEditFile(f)} onRemove={() => setFiles((c) => c.filter((_, j) => j !== i))} />)}
               {libraryMediaUrls.map((u) => <Thumb key={u} item={u} onRemove={() => setLibraryMediaUrls((c) => c.filter((x) => x !== u))} />)}
               <button type="button" className="add" aria-label="Add photos or videos" onClick={() => fileInput.current?.click()} onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); addFiles(e.dataTransfer.files); }}>{uploadBusy ? <LoaderCircle size={18} className="animate-spin" /> : <Plus size={18} />}</button>
               <input ref={fileInput} className="sr-only" type="file" accept="image/*,video/*" multiple onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
             </div>
+            </>}
             <div className="tb">
               <button type="button" className="btn btn-ghost btn-icon btn-sm" aria-label="Add image or video" title="Image / video" onClick={() => fileInput.current?.click()}><ImageIcon size={17} /></button>
               <button ref={emojiBtn} type="button" className="btn btn-ghost btn-icon btn-sm" aria-label="Emoji" title="Emoji" aria-expanded={emojiOpen} onClick={() => setEmojiOpen((o) => !o)}><Smile size={17} /></button>
@@ -154,9 +201,26 @@ export default function ComposerV2(props) {
             {optsOpen && <div className="c2-opts-l">{selectedAccounts.map((a) => <div key={a.id} className="row" style={{ gap: 8 }}><ChannelTile platform={a.platform} size={18} /><span className="sm grow">{a.account_name || LABELS[a.platform]}</span><ChannelFormatSelector account={a} format={formatsByAccount[a.id] || "Post"} automatic={!formatOverridesByAccount[a.id]} onSelect={(f) => setAccountFormat(a.id, f)} /><PlatformSettingsPopover account={a} settings={platformSettingsByAccount[a.id] || {}} onChange={setPlatformSetting} open={settingsOpen === a.id} onToggle={() => setSettingsOpen((c) => c === a.id ? "" : a.id)} /></div>)}</div>}
           </div>}
         </div>
-        {channelWarnings.length > 0 && <div className="c2-blockers" role="alert">{channelWarnings.map((w, i) => <p key={`${w.account.id}-${i}`} className="c2-hint over"><AlertCircle size={14} /><span><b>{LABELS[w.account.platform] || w.account.platform}{w.account.account_name ? ` Â· ${w.account.account_name}` : ""}:</b> {w.message}</span></p>)}</div>}
+        {summary.count > 0 && <div className="mp" role="region" aria-label="Media check">
+          <div className="hd"><span className="mk"><AlertCircle size={16} /></span><div className="grow"><b>Media needs a few changes for {summary.count} channel{summary.count === 1 ? "" : "s"}</b>
+            {summary.fine.length > 0 && <p className="sm muted">Already fine: {summary.fine.join(" · ")}</p>}</div>
+            <div className="acts"><button type="button" className="btn btn-grad btn-sm" onClick={() => setSheetOpen(true)}><Sparkles size={14} />Fix for me</button><button type="button" className="btn btn-secondary btn-sm" aria-expanded={reviewOpen} onClick={() => setReviewOpen((o) => !o)}>Review</button></div></div>
+          {reviewOpen && summary.needs.map((r) => { const pr = r.check.problems[0]; return <div className="ln" key={r.account.id}>
+            <ChannelTile platform={r.account.platform} size={18} /><span className="grow"><b>{nameOf(r.account)}</b> <span className="d">{pr.title}{pr.detail ? ` — ${pr.detail}` : ""}</span></span>
+            {pr.action && <button type="button" className="btn btn-ghost btn-sm" onClick={() => { if (["add_media", "add_video"].includes(pr.action.id)) fileInput.current?.click(); else if (["shorten", "replace"].includes(pr.action.id)) { changeCaptionMode("custom"); setTab(r.account.id); } else applyMediaAction(r.account, pr.action); }}>{pr.action.label}</button>}
+          </div>; })}
+        </div>}
+        {mediaNotes.length > 0 && <div className="c2-notes">{mediaNotes.map((n, i) => <p key={`mn-${n.account.id}-${i}`} className="sm muted">{nameOf(n.account)}: {n.text}</p>)}</div>}
+        {sheetOpen && <div className="sheet" role="dialog" aria-modal="true" aria-label="Here's what each channel will get" onClick={(e) => { if (e.target === e.currentTarget) setSheetOpen(false); }}>
+          <div className="bx"><h3>Here's what each channel will get</h3>
+            {mediaReport.map((r) => <div className="r" key={r.account.id}><ChannelTile platform={r.account.platform} size={20} /><span className="grow"><b>{nameOf(r.account)}</b><span className="d">{r.splitLabel}</span></span><MiniStrip items={sharedMedia} indices={r.split} /></div>)}
+            <p className="sm muted">Nothing posts until you schedule. You can change any channel afterwards.</p>
+            <div className="row" style={{ gap: 8, justifyContent: "flex-end" }}><button type="button" className="btn btn-secondary" onClick={() => setSheetOpen(false)}>Cancel</button><button type="button" className="btn btn-grad" onClick={applyFix}>Apply</button></div>
+          </div></div>}
+        {mtoast && <div className="mtoast" role="status">Media sorted for {mtoast.count} account{mtoast.count === 1 ? "" : "s"}. <a role="button" tabIndex={0} onClick={() => { mtoast.undo(); setMtoast(null); }}>Undo</a></div>}
+        {channelWarnings.length > 0 && <div className="c2-blockers" role="alert">{channelWarnings.map((w, i) => <p key={`${w.account.id}-${i}`} className="c2-hint over"><AlertCircle size={14} /><span><b>{LABELS[w.account.platform] || w.account.platform}{w.account.account_name ? ` · ${w.account.account_name}` : ""}:</b> {w.message}</span></p>)}</div>}
         {channelNotices.length > 0 && <div className="c2-blockers">{channelNotices.map((w, i) => <p key={`n-${w.account.id}-${i}`} className="c2-hint warn"><AlertCircle size={14} /><span><b>{LABELS[w.account.platform] || w.account.platform}:</b> {w.message}</span></p>)}</div>}
-          <PublishBar blocked={channelWarnings.length > 0} blockedReason={channelWarnings[0]?.message} mode={publishMode} setMode={setPublishMode} busy={busy} submit={submit} saveAsDraft={saveAsDraft} whenText={whenText} zoneText={zoneLabel(timeZone)} date={date} setDate={setDate} time={time} setTime={setTime} timeZone={timeZone} setTimeZone={setTimeZone} timezones={timezones} minDate={minDate} request={request} selectedAccounts={selectedAccounts} onSetupQueue={onSetupQueue} />
+          <PublishBar fixFirst={summary.count > 0} mode={publishMode} setMode={setPublishMode} busy={busy} submit={guardedSubmit} saveAsDraft={saveAsDraft} whenText={whenText} zoneText={zoneLabel(timeZone)} date={date} setDate={setDate} time={time} setTime={setTime} timeZone={timeZone} setTimeZone={setTimeZone} timezones={timezones} minDate={minDate} request={request} selectedAccounts={selectedAccounts} onSetupQueue={onSetupQueue} />
       </form>
       <aside className="c2-pv">
         {selectedAccounts.length ? <>

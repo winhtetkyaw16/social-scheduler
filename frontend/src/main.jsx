@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { actionIndices, autoSplit, checkMedia, cropIndices, defaultIndices, mediaInfo, mediaKeyOf, selectionFor, splitLabel } from "./mediaRules.js";
 import { ChannelTile } from "./sc/ui.jsx";
 import { createPortal } from "react-dom";
 import { createRoot } from "react-dom/client";
@@ -555,6 +556,9 @@ function App() {
   const [channelFiles, setChannelFiles] = useState({});
   const [channelMediaUrlsByAccount, setChannelMediaUrlsByAccount] = useState({});
   const [useSharedMediaByAccount, setUseSharedMediaByAccount] = useState({});
+  // Per-channel media picks (lists of media keys / saved URLs) and accepted Instagram crops.
+  const [mediaSelectionByAccount, setMediaSelectionByAccount] = useState({});
+  const [cropOkByAccount, setCropOkByAccount] = useState({});
   const [writingTool, setWritingTool] = useState(null);
   const [title, setTitle] = useState("");
   const [files, setFiles] = useState([]);
@@ -673,18 +677,26 @@ function App() {
   };
   const postLimit = Math.min(previewChannel?.limit || MAX_CHARS, MAX_CHARS);
   const captionForAccount = (account) => captionMode === "custom" && useUniversalCaptionByAccount[account?.id] === false ? (captionsByAccount[account?.id] ?? caption) : caption;
+  const [mediaDims, setMediaDims] = useState({});
+  const sharedMedia = useMemo(() => [...files, ...libraryMediaUrls], [files, libraryMediaUrls]);
+  const sharedInfos = useMemo(() => sharedMedia.map((item) => mediaInfo(item, mediaDims[mediaKeyOf(item)])), [sharedMedia, mediaDims]);
+  // Indices into the shared media this account publishes: its own picks, else the default (YouTube takes just the video).
+  const mediaIndicesForAccount = (account) => {
+    const picked = selectionFor(account, { byAccount: mediaSelectionByAccount });
+    if (picked) return sharedMedia.map((item, i) => (picked.includes(mediaKeyOf(item)) ? i : -1)).filter((i) => i >= 0);
+    return defaultIndices(account?.platform, sharedInfos, { format: formatsByAccount[account?.id] || "Post" });
+  };
   const mediaForAccount = (account) => {
-    const shared = [...files, ...libraryMediaUrls];
+    const shared = mediaIndicesForAccount(account).map((i) => sharedMedia[i]);
     if (captionMode === "universal") return shared;
     const custom = Array.isArray(channelFiles[account?.id]) ? channelFiles[account.id] : [];
     const savedCustom = Array.isArray(channelMediaUrlsByAccount[account?.id]) ? channelMediaUrlsByAccount[account.id] : [];
     return useSharedMediaByAccount[account?.id] !== false ? [...shared, ...savedCustom, ...custom] : [...savedCustom, ...custom];
   };
   const previewCaption = captionForAccount(previewAccount);
-  const previewMediaItems = useMemo(() => mediaForAccount(previewAccount), [captionMode, channelFiles, channelMediaUrlsByAccount, useSharedMediaByAccount, files, libraryMediaUrls, previewAccount?.id]);
+  const previewMediaItems = useMemo(() => mediaForAccount(previewAccount), [captionMode, channelFiles, channelMediaUrlsByAccount, useSharedMediaByAccount, files, libraryMediaUrls, previewAccount?.id, mediaSelectionByAccount, sharedInfos, formatsByAccount]);
   const previewFiles = useMemo(() => previewMediaItems.filter((item) => typeof item !== "string"), [previewMediaItems]);
   const previewMediaUrls = useMemo(() => previewMediaItems.filter((item) => typeof item === "string"), [previewMediaItems]);
-  const [mediaDims, setMediaDims] = useState({});
   const mediaKey = (item) => typeof item === "string" ? item : item ? `${item.name}:${item.size}:${item.lastModified}` : "";
   useEffect(() => {
     const all = [...files, ...libraryMediaUrls, ...Object.values(channelFiles || {}).flat(), ...Object.values(channelMediaUrlsByAccount || {}).flat()];
@@ -713,38 +725,20 @@ function App() {
     if (text.length > limit) warnings.push(`Caption is over this channel’s ${limit.toLocaleString()} character limit.`);
     if ((format === "Short" || format === "Reel / Video") && !hasVideo) warnings.push(`Please include a video for this ${format === "Short" ? "Short" : "video post"}.`);
     if (format === "Story" && !media.length) warnings.push("Add a photo or video to create this Story.");
-    const videoCount = media.filter(isVideoMedia).length;
+    // Media mixing, counts, Instagram shape and video length rules live in mediaRules.js (the "Media needs a few
+    // changes" panel + Fix for me). Only file-level limits that can't be fixed automatically stay here.
     if (account.platform === "instagram") {
-      if (!media.length) warnings.push("Instagram needs at least one image or video; caption-only posts aren't allowed. Add a photo or video.");
-      else if (media.length > 10) warnings.push(`Instagram carousels can have up to 10 photos/videos. This post has ${media.length}; remove some.`);
-      // Photo rules (single photo and every carousel photo): 4:5 to 1.91:1, at least 320px wide, up to 8 MB.
-      const photos = media.filter((m) => !isVideoMedia(m));
-      photos.forEach((item, i) => {
-        const which = photos.length > 1 ? `Photo ${media.indexOf(item) + 1}` : "This photo";
+      media.filter((m) => !isVideoMedia(m)).forEach((item) => {
+        const which = media.length > 1 ? `Photo ${media.indexOf(item) + 1}` : "This photo";
         const dims = mediaDims[mediaKey(item)];
-        const ratio = dims?.width && dims?.height ? dims.width / dims.height : null;
-        const target = ratio && ratio < 0.795 ? "4:5" : "1.91:1";
-        if (ratio && (ratio < 0.795 || ratio > 1.915)) warnings.push(`${which} is ${dims.width}×${dims.height}, which is ${ratio < 0.795 ? "taller" : "wider"} than Instagram allows. ${photos.length > 1 ? `Crop it to ${target} (or 1:1) before posting.` : `Click "Adjust crop" in the Instagram preview to crop it to ${target} before posting.`}`);
         if (dims?.width && dims.width < 320) warnings.push(`${which} is only ${dims.width}px wide. Instagram needs photos at least 320px wide.`);
         if (typeof item !== "string" && item.size > 8 * 1024 * 1024) warnings.push(`${which} is ${(item.size / 1048576).toFixed(1)} MB. Instagram photos can be up to 8 MB.`);
       });
-      // Video limits (Meta): Reels 3 s–15 min, up to 300 MB; Story video 3–60 s, up to 100 MB.
-      const vid = media.find(isVideoMedia);
-      // A single video is published as a Reel (whatever format is picked), so Reel limits apply.
-      if (vid && media.length === 1) {
-        const vd = mediaDims[mediaKey(vid)]; const dur = vd?.duration; const mb = typeof vid !== "string" ? vid.size / 1048576 : 0;
-        const story = format === "Story"; const maxS = story ? 60 : 900; const maxMb = story ? 100 : 300; const what = story ? "Story videos" : "Reels";
-        if (Number.isFinite(dur) && dur < 3) warnings.push(`${what} must be at least 3 seconds long.`);
-        if (Number.isFinite(dur) && dur > maxS) warnings.push(`${what} can be up to ${story ? "60 seconds" : "15 minutes"} long. This one is ${Math.floor(dur / 60)}:${String(Math.round(dur % 60)).padStart(2, "0")}.`);
-        if (mb > maxMb) warnings.push(`${what} can be up to ${maxMb} MB. This one is ${mb.toFixed(0)} MB.`);
-      }
+      const vid = media.length === 1 && isVideoMedia(media[0]) ? media[0] : null;
+      const mb = vid && typeof vid !== "string" ? vid.size / 1048576 : 0;
+      const story = format === "Story";
+      if (mb > (story ? 100 : 300)) warnings.push(`${story ? "Story videos" : "Reels"} can be up to ${story ? 100 : 300} MB. This one is ${mb.toFixed(0)} MB.`);
     }
-    if (account.platform === "threads" && media.length > 20) warnings.push(`Threads carousels can have up to 20 photos/videos. This post has ${media.length}; remove some.`);
-    if (account.platform === "facebook" && media.length > 1 && videoCount) warnings.push("Facebook posts from SocialCastly can have several photos or one video, not a mix. Remove the video or the photos.");
-    if (account.platform === "youtube" && (media.length !== 1 || videoCount !== 1)) warnings.push("YouTube needs exactly one video. Add a video (photos and text-only posts can't go to YouTube).");
-    if (account.platform === "tiktok" && (media.length !== 1 || videoCount !== 1)) warnings.push("TikTok needs exactly one video. Keep a single video and remove other files.");
-    // X (docs.x.com/x-api/media/quickstart/best-practices): up to 4 photos (JPG/PNG/WEBP, 5 MB), or 1 GIF (15 MB, <=1280x1080),
-    // or 1 MP4 video (0.5 s-20 min, 32px-1920px, aspect 1:3-3:1, up to 8 GB). No mixing.
     if ((account.platform === "x" || account.platform === "twitter") && media.length) {
       const nameOf = (m) => typeof m === "string" ? decodeURIComponent(m.split(/[?#]/)[0].split("/").pop() || "") : (m.name || "");
       const extOf = (m) => (nameOf(m).match(/\.([a-z0-9]+)$/i)?.[1] || "").toLowerCase();
@@ -753,10 +747,6 @@ function App() {
       const mbOf = (n) => n >= 1048576 ? (n / 1048576).toFixed(1) + " MB" : Math.round(n / 1024) + " KB";
       const vids = media.filter(isVideoMedia); const gifs = media.filter((m) => !isVideoMedia(m) && isGif(m));
       const pics = media.filter((m) => !isVideoMedia(m) && !isGif(m));
-      if (vids.length && (pics.length || gifs.length)) warnings.push("X posts can have up to 4 photos, or 1 video, not a mix of photos and videos. Remove the video or the photos.");
-      else if (vids.length > 1) warnings.push(`X posts can have only one video. This post has ${vids.length}; keep one.`);
-      else if (gifs.length && (gifs.length > 1 || pics.length)) warnings.push("An animated GIF must be the only media on an X post (1 GIF, or up to 4 photos). Remove the other files.");
-      else if (pics.length > 4) warnings.push(`X posts can have up to 4 photos. This post has ${pics.length}; remove some.`);
       vids.forEach((v) => {
         const ext = extOf(v); const isMp4 = ext ? ext === "mp4" : (typeof v !== "string" && /mp4/i.test(v.type || ""));
         if (!isMp4 && (ext || typeof v !== "string")) warnings.push(`X accepts videos as MP4 only. ${nameOf(v) || "This video"} is ${(ext || v.type || "another format").toUpperCase()}; convert it to MP4.`);
@@ -765,7 +755,6 @@ function App() {
         if (Number.isFinite(d?.duration) && (d.duration < 0.5 || d.duration > 1200)) warnings.push(`X videos must be 0.5 seconds to 20 minutes long. ${nameOf(v) || "This video"} is ${Math.floor(d.duration / 60)}:${String(Math.round(d.duration % 60)).padStart(2, "0")}.`);
         if (d?.width && d?.height) {
           if (Math.min(d.width, d.height) < 32 || Math.max(d.width, d.height) > 1920) warnings.push(`X videos must be between 32x32 and 1920 pixels on the long side. ${nameOf(v) || "This video"} is ${d.width}x${d.height}; resize it (1280x720 or 720x1280 works best).`);
-          else if (d.width / d.height < 1 / 3 || d.width / d.height > 3) warnings.push(`X videos must have an aspect ratio between 1:3 and 3:1. ${nameOf(v) || "This video"} is ${d.width}x${d.height}; crop it.`);
         }
       });
       gifs.forEach((g) => {
@@ -785,39 +774,72 @@ function App() {
       const nameOf = (m) => typeof m === "string" ? decodeURIComponent(m.split(/[?#]/)[0].split("/").pop() || "") : (m.name || "");
       const extOf = (m) => (nameOf(m).match(/\.([a-z0-9]+)$/i)?.[1] || "").toLowerCase();
       const vids = media.filter(isVideoMedia); const pics = media.filter((m) => !isVideoMedia(m));
-      if (vids.length && pics.length) warnings.push("LinkedIn posts can have one video, one photo, or 2-20 photos, not a mix of photos and videos. Remove the video or the photos.");
-      else if (vids.length > 1) warnings.push(`LinkedIn posts can have only one video. This post has ${vids.length}; keep one.`);
-      else if (pics.length > 20) warnings.push(`LinkedIn multi-photo posts can have up to 20 photos. This post has ${pics.length}; remove some.`);
       vids.forEach((v) => {
         const ext = extOf(v); const isMp4 = ext ? ext === "mp4" : (typeof v !== "string" && /mp4/i.test(v.type || ""));
-        if (!isMp4 && (ext || typeof v !== "string")) warnings.push(`LinkedIn accepts videos as MP4 only. ${nameOf(v) || "This video"} is ${(ext || v.type || "another format").toUpperCase()}; convert it to MP4.`);
+        if (!isMp4 && !["mov", "m4v"].includes(ext) && (ext || typeof v !== "string")) warnings.push(`LinkedIn accepts videos as MP4 (MOV is converted). ${nameOf(v) || "This video"} is ${(ext || v.type || "another format").toUpperCase()}; convert it to MP4.`);
         if (typeof v !== "string" && (v.size < 75 * 1024 || v.size > 500 * 1024 * 1024)) warnings.push(`LinkedIn videos must be between 75 KB and 500 MB. This one is ${v.size >= 1048576 ? (v.size / 1048576).toFixed(1) + " MB" : Math.round(v.size / 1024) + " KB"}.`);
         const dur = mediaDims[mediaKey(v)]?.duration;
         if (Number.isFinite(dur) && (dur < 3 || dur > 1800)) warnings.push(`LinkedIn videos must be 3 seconds to 30 minutes long. This one is ${Math.floor(dur / 60)}:${String(Math.round(dur % 60)).padStart(2, "0")}.`);
       });
       pics.forEach((p) => {
-        const ext = extOf(p); const okType = ext ? ["jpg", "jpeg", "png", "gif"].includes(ext) : (typeof p === "string" || /^image\/(jpe?g|png|gif)$/i.test(p.type || ""));
+        const ext = extOf(p); const okType = ext ? ["jpg", "jpeg", "png", "gif", "webp"].includes(ext) : (typeof p === "string" || /^image\/(jpe?g|png|gif|webp)$/i.test(p.type || ""));
         if (!okType) warnings.push(`LinkedIn accepts JPG, PNG or GIF photos. ${nameOf(p) || "This photo"} is ${(ext || p.type || "another format").toUpperCase()}; re-save it as JPG or PNG.`);
         const d = mediaDims[mediaKey(p)];
         if (d?.width && d?.height && d.width * d.height >= 36152320) warnings.push(`LinkedIn photos must be under 36,152,320 pixels (about 6000x6000). ${nameOf(p) || "This photo"} is ${d.width}x${d.height}; resize it.`);
       });
     }
     return warnings.map((message) => ({ account, message }));
-  }), [selectedAccounts, captionMode, captionsByAccount, useUniversalCaptionByAccount, caption, channelFiles, channelMediaUrlsByAccount, useSharedMediaByAccount, files, libraryMediaUrls, formatsByAccount, mediaDims]);
+  }), [selectedAccounts, captionMode, captionsByAccount, useUniversalCaptionByAccount, caption, channelFiles, channelMediaUrlsByAccount, useSharedMediaByAccount, files, libraryMediaUrls, formatsByAccount, mediaDims, mediaSelectionByAccount]);
 
   // Non-blocking tips shown under the composer (publishing still allowed).
   const channelNotices = useMemo(() => selectedAccounts.flatMap((account) => {
     if (account.platform !== "instagram") return [];
     const media = mediaForAccount(account);
     const photos = media.filter((m) => !isVideoMedia(m));
-    const isJpeg = (item) => typeof item === "string" ? /\.(jpe?g)(\?|$)/i.test(item) || !/\.(png|webp|gif|heic|avif|bmp)(\?|$)/i.test(item) : /^image\/jpe?g$/i.test(item.type || "");
-    const notJpeg = photos.filter((item) => !isJpeg(item)).length;
     const notices = [];
-    if (notJpeg) notices.push({ account, message: `Instagram officially supports JPEG photos. ${notJpeg === 1 && photos.length === 1 ? "This photo isn't" : `${notJpeg} photo(s) aren't`} a JPEG, so Instagram may reject ${notJpeg === 1 ? "it" : "them"}. Re-save as JPG to be safe.` });
     if (media.length === 1 && isVideoMedia(media[0])) notices.push({ account, message: "This video will be published as an Instagram Reel (also shared to the feed)." });
     if (media.length > 1) notices.push({ account, message: `This will be published as an Instagram carousel of ${media.length} items. Instagram crops every slide to the first item's shape, so keep them the same size.` });
     return notices;
-  }), [selectedAccounts, captionMode, channelFiles, channelMediaUrlsByAccount, useSharedMediaByAccount, files, libraryMediaUrls]);
+  }), [selectedAccounts, captionMode, channelFiles, channelMediaUrlsByAccount, useSharedMediaByAccount, files, libraryMediaUrls, mediaSelectionByAccount]);
+
+  // Media rules per selected account (mediaRules.js): problems for the panel, muted conversion notes, hints.
+  const mediaReport = useMemo(() => selectedAccounts.map((account) => {
+    const format = formatForAccount(account);
+    const items = mediaForAccount(account);
+    const infos = items.map((item) => mediaInfo(item, mediaDims[mediaKeyOf(item)]));
+    const check = checkMedia(account.platform, infos, { format, cropOk: !!cropOkByAccount[account.id] });
+    const split = autoSplit(account.platform, sharedInfos, { format });
+    return {
+      account, format, infos, check, indices: mediaIndicesForAccount(account), sharedInfos,
+      split, splitLabel: splitLabel(account.platform, sharedInfos, split, { format, cropped: cropIndices(account.platform, sharedInfos, split, { format }) }),
+      picked: Array.isArray(mediaSelectionByAccount[account.id]),
+    };
+  }), [selectedAccounts, captionMode, channelFiles, channelMediaUrlsByAccount, useSharedMediaByAccount, sharedInfos, mediaDims, formatsByAccount, mediaSelectionByAccount, cropOkByAccount]);
+  const setAccountMediaKeys = (accountId, keys) => setMediaSelectionByAccount((cur) => {
+    const next = { ...cur };
+    if (keys === null) delete next[accountId]; else next[accountId] = keys;
+    return next;
+  });
+  // "Fix for me": every selected account gets its auto-split; Instagram crops are accepted. Returns an undo snapshot.
+  const applyMediaFix = () => {
+    const snapshot = { selection: mediaSelectionByAccount, cropOk: cropOkByAccount, captionMode };
+    const nextSel = { ...mediaSelectionByAccount };
+    const nextCrop = { ...cropOkByAccount };
+    mediaReport.forEach((row) => {
+      nextSel[row.account.id] = row.split.map((i) => mediaKeyOf(sharedMedia[i]));
+      if (row.account.platform === "instagram") nextCrop[row.account.id] = true;
+    });
+    setMediaSelectionByAccount(nextSel);
+    setCropOkByAccount(nextCrop);
+    if (captionMode !== "custom") changeCaptionMode("custom");
+    return { count: mediaReport.length, undo: () => { setMediaSelectionByAccount(snapshot.selection); setCropOkByAccount(snapshot.cropOk); setCaptionMode(snapshot.captionMode); } };
+  };
+  // One "Review" action for one account.
+  const applyMediaAction = (account, action) => {
+    if (action.id === "crop") { setCropOkByAccount((cur) => ({ ...cur, [account.id]: true })); return; }
+    const picks = actionIndices(action.id, account.platform, sharedInfos);
+    if (picks) { setAccountMediaKeys(account.id, picks.map((i) => mediaKeyOf(sharedMedia[i]))); if (captionMode !== "custom") changeCaptionMode("custom"); }
+  };
   // Swap one media item for a new File (used by the Instagram crop tool).
   const replaceMediaItem = (account, oldItem, newFile) => {
     if (!oldItem || !newFile) return;
@@ -927,6 +949,12 @@ function App() {
       }));
   }
 
+  // Translate per-account media keys to the uploaded/saved URLs (same order as [...files, ...libraryMediaUrls]).
+  function selectionUrls(sharedUrls) {
+    const keyToUrl = new Map(sharedMedia.map((item, i) => [mediaKeyOf(item), sharedUrls[i]]));
+    return Object.fromEntries(Object.entries(mediaSelectionByAccount).map(([id, keys]) => [id, (keys || []).map((k) => keyToUrl.get(k)).filter(Boolean)]));
+  }
+
   async function saveAsDraft() {
     if (!caption.trim() && !Object.values(captionsByAccount).some((value) => String(value || "").trim()) && !files.length && !libraryMediaUrls.length && !Object.values(channelFiles).some((items) => items?.length) && !Object.values(channelMediaUrlsByAccount).some((items) => items?.length)) {
       notify({ title: "Nothing to save yet", message: "Add a caption or media before saving this draft." });
@@ -953,10 +981,11 @@ function App() {
         formatsByAccount, formatOverridesByAccount, platformSettingsByAccount,
         useSharedMediaByAccount, scheduleMode, date, time, timeZone,
         sharedMediaUrls: sharedUrls, channelMediaUrlsByAccount: savedChannelUrls,
+        mediaSelectionByAccount: selectionUrls(sharedUrls), cropOkByAccount,
       };
       const payload = {
         content: captionMode === "custom" && primaryAccount ? (captionsByAccount[primaryAccount.id] ?? caption) : caption,
-        media_urls: [...sharedUrls, ...Object.values(savedChannelUrls).flat()].slice(0, 10),
+        media_urls: [...sharedUrls, ...Object.values(savedChannelUrls).flat()].slice(0, 35),
         post_format: primaryAccount ? formatForAccount(primaryAccount) : "Post",
         scheduled_at: scheduledAt,
         metadata,
@@ -971,7 +1000,7 @@ function App() {
       setEditingDraftId("");
       setFiles([]);
       setChannelFiles({});
-      setChannelMediaUrlsByAccount({}); setLibraryMediaUrls([]); setUseSharedMediaByAccount({});
+      setChannelMediaUrlsByAccount({}); setLibraryMediaUrls([]); setUseSharedMediaByAccount({}); setMediaSelectionByAccount({}); setCropOkByAccount({});
       setCaption(""); setCaptionsByAccount({}); setCaptionMode("universal"); setTitle("");
       setFormatsByAccount({}); formatOverridesRef.current = {}; setFormatOverridesByAccount({}); setPlatformSettingsByAccount({});
       setSelectedIds([]); setPreviewId(""); setScheduleMode("schedule");
@@ -1015,6 +1044,8 @@ function App() {
     setTimeZone(typeof metadata.timeZone === "string" ? metadata.timeZone : localZone);
     setLibraryMediaUrls(nextSharedUrls);
     setChannelMediaUrlsByAccount(nextChannelMedia);
+    setMediaSelectionByAccount(metadata.mediaSelectionByAccount && typeof metadata.mediaSelectionByAccount === "object" && !Array.isArray(metadata.mediaSelectionByAccount) ? metadata.mediaSelectionByAccount : {});
+    setCropOkByAccount(metadata.cropOkByAccount && typeof metadata.cropOkByAccount === "object" ? metadata.cropOkByAccount : {});
     setFiles([]);
     setChannelFiles({});
     setEditingDraftId(draft.id);
@@ -1065,15 +1096,17 @@ function App() {
       }
       const anyAccountInheritsShared = captionMode === "universal" || selectedAccounts.some((account) => useSharedMediaByAccount[account.id] !== false);
       const sharedUrls = anyAccountInheritsShared ? [...await uploadFiles(files), ...libraryMediaUrls] : [];
+      const pickedUrls = selectionUrls(sharedUrls);
       const results = await Promise.allSettled(selectedAccounts.map(async (account) => {
         const accountFiles = Array.isArray(channelFiles[account.id]) ? channelFiles[account.id] : [];
         const inheritShared = useSharedMediaByAccount[account.id] !== false;
         const customUrls = captionMode === "custom" ? [...(channelMediaUrlsByAccount[account.id] || []), ...(accountFiles.length ? await uploadFiles(accountFiles) : [])] : [];
-        const mediaUrls = inheritShared ? [...sharedUrls, ...customUrls] : customUrls;
+        const accountShared = mediaIndicesForAccount(account).map((i) => sharedUrls[i]).filter(Boolean);
+        const mediaUrls = (captionMode === "universal" || inheritShared) ? [...accountShared, ...customUrls] : customUrls;
         const when = mode === "queue" ? queueByAccount[account.id] : scheduledAt;
         return authenticatedFetch("/posts", {
           method: "POST",
-          body: JSON.stringify({ connected_account_id: account.id, content: captionForAccount(account).trim(), media_urls: mediaUrls, scheduled_at: when, idempotency_key: makeIdempotencyKey(), post_metadata: { format: formatForAccount(account), settings: platformSettingsByAccount[account.id] || {}, mode, ...(account.platform === "pinterest" && platformSettingsByAccount[account.id]?.destination_url ? { destination_url: platformSettingsByAccount[account.id].destination_url } : {}) } }),
+          body: JSON.stringify({ connected_account_id: account.id, content: captionForAccount(account).trim(), media_urls: mediaUrls, scheduled_at: when, idempotency_key: makeIdempotencyKey(), post_metadata: { format: formatForAccount(account), settings: platformSettingsByAccount[account.id] || {}, mode, ...(pickedUrls[account.id] ? { mediaSelectionByAccount: { [account.id]: pickedUrls[account.id] } } : {}), ...(cropOkByAccount[account.id] ? { crop_ok: true } : {}), ...(account.platform === "pinterest" && platformSettingsByAccount[account.id]?.destination_url ? { destination_url: platformSettingsByAccount[account.id].destination_url } : {}) } }),
         });
       }));
       const successCount = results.filter((result) => result.status === "fulfilled").length;
@@ -1095,7 +1128,7 @@ function App() {
         if (editingDraftId) {
           try { await authenticatedFetch(`/publish/drafts/${editingDraftId}`, { method: "DELETE" }); } catch { /* The published post remains successful if draft cleanup fails. */ }
         }
-        setEditingDraftId(""); setFiles([]); setChannelFiles({}); setChannelMediaUrlsByAccount({}); setUseSharedMediaByAccount({}); setLibraryMediaUrls([]); setCaption(""); setCaptionsByAccount({}); setUseUniversalCaptionByAccount({}); setCaptionMode("universal"); setTitle(""); setFormatsByAccount({}); formatOverridesRef.current = {}; setFormatOverridesByAccount({}); setPlatformSettingsByAccount({});
+        setEditingDraftId(""); setFiles([]); setChannelFiles({}); setChannelMediaUrlsByAccount({}); setUseSharedMediaByAccount({}); setMediaSelectionByAccount({}); setCropOkByAccount({}); setLibraryMediaUrls([]); setCaption(""); setCaptionsByAccount({}); setUseUniversalCaptionByAccount({}); setCaptionMode("universal"); setTitle(""); setFormatsByAccount({}); formatOverridesRef.current = {}; setFormatOverridesByAccount({}); setPlatformSettingsByAccount({});
         const refreshedCreated = (Array.isArray(postData) ? postData : []).filter((post) => createdIds.includes(post.id));
         const publishedCount = refreshedCreated.filter((post) => post.status === "published").length;
         const failedCount = refreshedCreated.filter((post) => post.status === "failed").length;
@@ -1289,12 +1322,12 @@ function App() {
           : activeTab === "biolink" ? <RenderErrorBoundary scope="Bio Link dashboard"><BioLinkDashboard user={user} accounts={accounts} posts={posts} /></RenderErrorBoundary> : activeTab === "accounts" ? <><ManageAccounts posts={posts} ownerName={user.full_name} accounts={accounts} channels={CHANNELS} request={authenticatedFetch} onConnect={connect} onChanged={() => loadWorkspace(token)} ChannelBrandImage={ChannelBrandImage} publishablePlatforms={PUBLISHABLE_PLATFORMS} /></> : <section className="animate-fade-up space-y-4">
             <RenderErrorBoundary scope="Composer"><ComposerV2 accounts={accounts} selectedIds={selectedIds} toggleAccount={toggleAccount} connect={connect} selectedAccounts={selectedAccounts} channels={CHANNELS} maxChars={MAX_CHARS}
               captionMode={captionMode} changeCaptionMode={changeCaptionMode} caption={caption} setCaption={setCaption} captionsByAccount={captionsByAccount} setCaptionsByAccount={setCaptionsByAccount} useUniversalCaptionByAccount={useUniversalCaptionByAccount} setUseUniversalCaptionByAccount={setUseUniversalCaptionByAccount}
-              captionForAccount={captionForAccount} mediaForAccount={mediaForAccount} channelWarnings={channelWarnings} channelNotices={channelNotices} onReplaceMedia={replaceMediaItem} templates={COMPOSER_TEMPLATES}
+              captionForAccount={captionForAccount} mediaForAccount={mediaForAccount} mediaReport={mediaReport} sharedMedia={sharedMedia} mediaSelectionByAccount={mediaSelectionByAccount} setAccountMediaKeys={setAccountMediaKeys} applyMediaFix={applyMediaFix} applyMediaAction={applyMediaAction} channelWarnings={channelWarnings} channelNotices={channelNotices} onReplaceMedia={replaceMediaItem} templates={COMPOSER_TEMPLATES}
               files={files} setFiles={setFiles} libraryMediaUrls={libraryMediaUrls} setLibraryMediaUrls={setLibraryMediaUrls} onFilesAdded={(incoming) => { void suggestFormatsForAccounts(incoming); }} onEditFile={(file) => { setQuickFile(file); setQuickTool(file.type.startsWith("video/") ? "video" : "image"); }}
               title={title} setTitle={setTitle} formatForAccount={formatForAccount} formatsByAccount={formatsByAccount} formatOverridesByAccount={formatOverridesByAccount} setAccountFormat={setAccountFormat} platformSettingsByAccount={platformSettingsByAccount} setPlatformSetting={setPlatformSetting}
               date={date} setDate={setDate} time={time} setTime={setTime} timeZone={timeZone} setTimeZone={setTimeZone} timezones={TIMEZONES} minDate={dateInZone(new Date(), timeZone)}
               saving={saving} uploadBusy={uploadBusy} loadingAccounts={loadingAccounts} saveAsDraft={saveAsDraft} submit={(m) => { setScheduleMode(m); void createPost({ preventDefault() {} }, m); }} publishMode={scheduleMode} setPublishMode={setScheduleMode} request={authenticatedFetch} onSetupQueue={() => goToTab("queue")}
-              onDiscard={() => { if ((caption || files.length || libraryMediaUrls.length) && !window.confirm("Discard this post?")) return; setCaption(""); setCaptionsByAccount({}); setUseUniversalCaptionByAccount({}); setCaptionMode("universal"); setTitle(""); setFiles([]); setLibraryMediaUrls([]); setChannelFiles({}); setChannelMediaUrlsByAccount({}); setEditingDraftId(""); }}
+              onDiscard={() => { if ((caption || files.length || libraryMediaUrls.length) && !window.confirm("Discard this post?")) return; setCaption(""); setCaptionsByAccount({}); setUseUniversalCaptionByAccount({}); setCaptionMode("universal"); setTitle(""); setFiles([]); setLibraryMediaUrls([]); setChannelFiles({}); setChannelMediaUrlsByAccount({}); setMediaSelectionByAccount({}); setCropOkByAccount({}); setEditingDraftId(""); }}
               previewId={previewId} setPreviewId={setPreviewId} /></RenderErrorBoundary>
           </section>}
         </div>

@@ -24,8 +24,8 @@ def _create(client, headers, account, media):
 
 
 @pytest.mark.parametrize("platform,media,needle", [
-    ("youtube", ["https://cdn.example.com/photo.jpg"], "YouTube needs exactly one video"),
-    ("tiktok", ["https://cdn.example.com/photo.jpg"], "TikTok needs exactly one video"),
+    ("youtube", ["https://cdn.example.com/photo.jpg"], "YouTube needs a video"),
+    ("tiktok", ["https://cdn.example.com/clip.mp4", "https://cdn.example.com/photo.jpg"], "not both"),
     ("linkedin", ["https://cdn.example.com/clip.mp4", "https://cdn.example.com/photo.jpg"], "not a mix of photos and videos"),
 ])
 def test_create_post_rejects_unpublishable_media(client, auth_headers, monkeypatch, platform, media, needle):

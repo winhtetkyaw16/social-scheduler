@@ -809,7 +809,6 @@ function App() {
     const photos = media.filter((m) => !isVideoMedia(m));
     const notices = [];
     if (media.length === 1 && isVideoMedia(media[0])) notices.push({ account, message: "This video will be published as an Instagram Reel (also shared to the feed)." });
-    if (media.length > 1) notices.push({ account, message: `This will be published as an Instagram carousel of ${media.length} items. Instagram crops every slide to the first item's shape, so keep them the same size.` });
     return notices;
   }), [selectedAccounts, captionMode, channelFiles, channelMediaUrlsByAccount, useSharedMediaByAccount, files, libraryMediaUrls, mediaSelectionByAccount]);
 

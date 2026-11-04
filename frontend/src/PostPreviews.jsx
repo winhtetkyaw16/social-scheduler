@@ -217,8 +217,8 @@ function InstagramPreview({ account, caption, capCls, media, format, igCrop, onI
     <div className="igp-top"><div className="fsw" role="tablist">{fm("feed", "Feed post")}{fm("reel", "Reel", hasVideo)}{fm("story", "Story")}</div><span className="igp-lbl">{label}</span></div>
     {view === "feed" && <>
       {feedCard}
-      {photoIdx.length > 0 && <div className="igc-note">
-        <span className="grow">{fitted ? `Photos auto-fitted to ${igChipLabel(box)} for Instagram` : `Instagram frame: ${igChipLabel(box)}`}</span>
+      {photoIdx.length > 0 && onIgCrop && <div className="igc-note">
+        <span className="grow" />
         {onIgCrop && <button type="button" className="btn btn-secondary btn-sm" onClick={() => setEditing(true)}>Adjust crop</button>}
       </div>}
       {editing && <IgCropEditor urls={urls} vids={vids} nats={nats} keys={keys} frame={box} crop={igCrop} onChange={onIgCrop} startIdx={idx} onClose={() => setEditing(false)} />}

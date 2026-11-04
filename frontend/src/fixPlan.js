@@ -114,8 +114,7 @@ export function rowText(platform, infos, indices, { format = "Post", suggested =
   const left = infos.length - picked.length;
   const choice = choiceOf(infos, indices);
   const changed = !same(indices, suggested);
-  if (cropped.length) line3 = `${plural(cropped.length, "photo")} auto-fitted for Instagram`;
-  else if (TOGGLE_NETWORKS.includes(p) && choice === "Video" && stills(infos).length) line3 = p === "x" ? "Photos and GIFs won't be posted here" : "Photos won't be posted here";
+  if (TOGGLE_NETWORKS.includes(p) && choice === "Video" && stills(infos).length) line3 = p === "x" ? "Photos and GIFs won't be posted here" : "Photos won't be posted here";
   else if (TOGGLE_NETWORKS.includes(p) && choice === "GIF") line3 = "Other items won't be posted here";
   else if (p === "x" && choice === "Photos" && photos(infos).length > LIMITS.x.photos) line3 = changed ? `${plural(photos(infos).length - s, "photo")} won't be posted here` : "X allows up to 4 — we'll use the first 4";
   else if (TOGGLE_NETWORKS.includes(p) && choice === "Photos" && videos(infos).length) line3 = `${NETWORK[p]} can't mix photos and a video`;

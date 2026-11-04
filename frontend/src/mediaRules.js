@@ -112,24 +112,14 @@ export function checkMedia(platform, infos, { format = "Post", igRatio = null } 
         if (d != null && d > LIMITS.instagram.reelMax) problems.push(P("video_long", "This video is too long", "Reels can be up to 15 minutes.", { id: "shorten", label: "Shorten video" }));
       }
     }
-    // Feed posts share ONE frame (first photo decides, like Instagram's Create post) and we crop every photo to it
-    // automatically at publish, for the Instagram version only. Never a problem, just a calm note.
-    if (format !== "Story") {
-      const frame = igFrameRatio(infos.map((m) => ({ video: m?.kind === "video", ratio: ratio(m) || 0 })), igRatio);
-      if (pics.some((i) => igNeedsCrop(ratio(infos[i]) || 0, frame))) notes.push(`Photos auto-fitted to ${igChipLabel(frame)} for Instagram`);
-    }
-    if (still.some((i) => infos[i].ext && infos[i].ext !== "jpg")) notes.push("We'll save photos as JPG for Instagram.");
+    // Feed photos are auto-fitted to one frame and saved as JPG at publish (Instagram only), silently.
   } else if (p === "facebook") {
     if (mixed) problems.push(P("mixed", "Use photos or the video, not both", "Facebook can't mix photos and a video in one post.", { id: "pick_photos", label: "Pick photos" }));
     else if (vids.length > 1) problems.push(P("too_many", "Too many videos", "Facebook posts take one video.", { id: "use_video", label: "Use the first video" }));
-    if (still.some((i) => infos[i].ext === "webp")) notes.push("We'll convert this photo so it works here.");
-    if (still.some((i) => infos[i].size > LIMITS.facebook.photoBytes)) notes.push("We'll make this photo smaller for Facebook.");
   } else if (p === "linkedin") {
     if (mixed) problems.push(P("mixed", "Use photos or the video, not both", "One video, or up to 20 photos.", { id: "pick_photos", label: "Pick photos" }));
     else if (vids.length > 1) problems.push(P("too_many", "Too many videos", "One video, or up to 20 photos.", { id: "use_video", label: "Use the first video" }));
     else if (still.length > LIMITS.linkedin.photos) problems.push(P("too_many", "Too many items", "LinkedIn takes up to 20 photos.", { id: "keep_first", label: "Keep first 20" }));
-    if (vids.some((i) => infos[i].ext && infos[i].ext !== "mp4")) notes.push("We'll convert the video for LinkedIn.");
-    if (still.some((i) => infos[i].ext === "webp")) notes.push("We'll convert this photo so it works here.");
   } else if (p === "x") {
     const tooMany = (vids.length && still.length) || vids.length > 1 || gifs.length > 1 || (gifs.length && pics.length) || pics.length > LIMITS.x.photos;
     if (tooMany) problems.push(P("too_many", "Too many items", "Up to 4 photos, 1 video, or 1 GIF.", pics.length ? { id: "keep_photos", label: `Keep ${Math.min(4, pics.length)} photo${Math.min(4, pics.length) === 1 ? "" : "s"}` } : vids.length ? { id: "use_video", label: "Use the video" } : { id: "use_gif", label: "Use the GIF" }));
@@ -142,7 +132,6 @@ export function checkMedia(platform, infos, { format = "Post", igRatio = null } 
     else if (mixed || gifs.length) problems.push(P("mixed", "Use photos or the video, not both", "TikTok posts one video, or up to 35 photos.", vids.length ? { id: "use_video", label: "Use the video" } : { id: "use_photos", label: "Use photos" }));
     else if (vids.length > 1) problems.push(P("too_many", "Too many videos", "TikTok posts one video, or up to 35 photos.", { id: "use_video", label: "Use the video" }));
     else if (pics.length > LIMITS.tiktok.photos) problems.push(P("too_many", "Too many items", "TikTok takes up to 35 photos.", { id: "keep_first", label: "Keep first 35" }));
-    if (pics.some((i) => infos[i].ext && !["jpg", "webp"].includes(infos[i].ext))) notes.push("We'll convert photos for TikTok.");
   } else if (p === "youtube") {
     if (!vids.length) problems.push(P("no_video", "Add a video", "YouTube posts need a video.", { id: "add_video", label: "Add a video" }));
     const v = vids.length ? infos[vids[0]] : null;
@@ -176,7 +165,7 @@ export function splitLabel(platform, infos, indices, { format = "Post", cropped 
   const picked = indices.map((i) => infos[i]).filter(Boolean);
   const v = picked.filter((m) => m.kind === "video").length;
   const s = picked.length - v;
-  const crop = cropped.length ? ` · ${cropped.map((i) => `Photo ${i + 1}`).join(", ")} auto-fitted` : "";
+  const crop = ""; // auto-fit happens silently at publish
   if (!picked.length) return p === "youtube" || p === "tiktok" ? "Needs a video" : "Text only";
   if ((p === "instagram" && format !== "Story") || p === "threads") {
     if (picked.length === 1) return (v ? "The video" : "1 photo") + crop;

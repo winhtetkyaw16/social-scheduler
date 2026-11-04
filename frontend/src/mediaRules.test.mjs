@@ -42,16 +42,12 @@ test("auto-split edge cases", () => {
 test("Instagram: mixed carousel of up to 20 is fine, odd-sized photos are auto-fitted (never a problem)", () => {
   const r = checkMedia("instagram", MIX);
   assert.deepEqual(codes(r), []);
-  assert.match(r.notes.join(" "), /Photos auto-fitted to (4:5|1:1|1\.91:1) for Instagram/);
   const tall = [{ kind: "photo", width: 1080, height: 2340 }, { kind: "photo", width: 1920, height: 1080 }, { kind: "video", width: 1920, height: 1080, duration: 20 }];
   assert.deepEqual(codes(checkMedia("instagram", tall)), []);
-  assert.ok(checkMedia("instagram", tall).notes.includes("Photos auto-fitted to 4:5 for Instagram"));
-  assert.ok(checkMedia("instagram", tall, { igRatio: 1 }).notes.includes("Photos auto-fitted to 1:1 for Instagram"));
-  assert.ok(!checkMedia("instagram", [{ kind: "photo", width: 1080, height: 1350 }]).notes.some((n) => /auto-fitted/.test(n)));
-  assert.ok(!checkMedia("instagram", tall, { format: "Story" }).notes.some((n) => /auto-fitted/.test(n)));
+  assert.deepEqual(checkMedia("instagram", tall).notes, []); // auto-fit is silent
   assert.deepEqual(codes(checkMedia("instagram", Array.from({ length: 20 }, () => pic()))), []);
   assert.deepEqual(codes(checkMedia("instagram", Array.from({ length: 21 }, () => pic()))), ["too_many"]);
-  assert.match(checkMedia("instagram", [pic(1080, 1080, "png")]).notes.join(), /JPG for Instagram/);
+  assert.deepEqual(checkMedia("instagram", [pic(1080, 1080, "png")]).notes, []); // JPG conversion is silent
 });
 
 test("Instagram Story limits are separate from feed limits", () => {
@@ -69,7 +65,7 @@ test("TikTok: 1 video or 1-35 photos, not mixed", () => {
   assert.deepEqual(codes(checkMedia("tiktok", Array.from({ length: 36 }, () => pic()))), ["too_many"]);
   assert.deepEqual(codes(checkMedia("tiktok", MIX)), ["mixed"]);
   assert.equal(checkMedia("tiktok", MIX).problems[0].action.id, "use_video");
-  assert.match(checkMedia("tiktok", [pic(1, 1, "png")]).notes.join(), /convert photos for TikTok/);
+  assert.deepEqual(checkMedia("tiktok", [pic(1, 1, "png")]).notes, []); // photo conversion is silent
 });
 
 test("X: 4 photos, 1 video, or 1 GIF", () => {
@@ -88,10 +84,10 @@ test("Facebook and LinkedIn: photos or one video; conversions are notes", () => 
   assert.deepEqual(codes(checkMedia("linkedin", Array.from({ length: 21 }, () => pic()))), ["too_many"]);
   const li = checkMedia("linkedin", [vid(10, 1, 1, "mov")]);
   assert.deepEqual(codes(li), []);
-  assert.match(li.notes.join(), /convert the video for LinkedIn/);
+  assert.deepEqual(li.notes, []);
   const fb = checkMedia("facebook", [pic(1, 1, "webp", 5 * 1024 * 1024)]);
   assert.deepEqual(codes(fb), []);
-  assert.equal(fb.notes.length, 2);
+  assert.equal(fb.notes.length, 0);
 });
 
 test("YouTube: needs a video, shape is only a hint", () => {
@@ -124,7 +120,7 @@ test("review actions pick media", () => {
 });
 
 test("labels, crops and summary", () => {
-  assert.equal(splitLabel("instagram", MIX, [0, 1, 2, 3, 4, 5], { cropped: [3] }), "Carousel · all 6 · Photo 4 auto-fitted");
+  assert.equal(splitLabel("instagram", MIX, [0, 1, 2, 3, 4, 5], { cropped: [3] }), "Carousel · all 6");
   assert.equal(splitLabel("facebook", MIX, [1, 2, 3, 4, 5]), "5 photos");
   assert.equal(splitLabel("x", MIX, [1, 2, 3, 4]), "First 4 photos");
   assert.equal(splitLabel("tiktok", MIX, [0]), "The video");
@@ -142,4 +138,21 @@ test("selection lookup: account, then network default", () => {
   assert.equal(selectionFor(a, {}), null);
   assert.deepEqual(selectionFor(a, { byNetwork: { instagram: ["k1"] } }), ["k1"]);
   assert.deepEqual(selectionFor(a, { byAccount: { a1: [] }, byNetwork: { instagram: ["k1"] } }), []);
+});
+
+test("auto-conversion info notes are never shown, blocking problems still are", () => {
+  const conv = [
+    ["instagram", [{ kind: "photo", width: 1080, height: 2340, ext: "png" }, { kind: "photo", width: 1920, height: 1080, ext: "webp" }]],
+    ["tiktok", [pic(1080, 1920, "png"), pic(1080, 1920, "heic")]],
+    ["facebook", [pic(1, 1, "webp", 9 * 1024 * 1024)]],
+    ["linkedin", [vid(10, 1, 1, "mov")]],
+  ];
+  for (const [net, items] of conv) {
+    const r = checkMedia(net, items);
+    assert.deepEqual(r.notes, [], net);
+    assert.ok(!r.notes.concat(r.hints).some((t) => /auto-fitted|JPG|convert|smaller/i.test(t)), net);
+  }
+  assert.deepEqual(codes(checkMedia("instagram", Array.from({ length: 21 }, () => pic()))), ["too_many"]);
+  assert.deepEqual(codes(checkMedia("tiktok", MIX)), ["mixed"]);
+  assert.deepEqual(codes(checkMedia("youtube", [pic()])), ["no_video"]);
 });

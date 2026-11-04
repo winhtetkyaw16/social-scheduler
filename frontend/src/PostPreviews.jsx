@@ -1,5 +1,5 @@
 import React, { memo, useEffect, useMemo, useRef, useState } from "react";
-import { Bookmark, ChartNoAxesColumn, Forward, Globe, Heart, ListPlus, MessageCircle, MessageSquare, MoreHorizontal, Repeat, Repeat2, Send, Share, ThumbsDown, ThumbsUp, Play } from "lucide-react";
+import { Bookmark, ChartNoAxesColumn, ChevronLeft, ChevronRight, Forward, Globe, Heart, ListPlus, MessageCircle, MessageSquare, MoreHorizontal, Repeat, Repeat2, Send, Share, ThumbsDown, ThumbsUp, Play } from "lucide-react";
 import { accountDisplayName, accountHandle, resolveAvatarUrl } from "./sc/ui.jsx";
 import ModalPortal from "./ModalPortal.jsx";
 import useBodyScrollLock from "./useBodyScrollLock.js";
@@ -7,6 +7,7 @@ import { focusNoScroll } from "./scrollLock.js";
 import { mediaKeyOf } from "./mediaRules.js";
 import { IG_CHIPS, igChipLabel, igDragOffset, igFrameRatio, igNeedsCrop, igObjectPosition } from "./igFrame.js";
 import { threadsLayout, fbGridLayout } from "./previewLayout.js";
+import { arrowsFor, keyDir, nearestIndex, stepIndex } from "./carouselNav.js";
 import brandMark from "./assets/brand/socialcastly-mark-256.png";
 
 const isVideo = (item) => typeof item === "string" ? /\.(mp4|mov|webm|m4v)(\?|$)/i.test(item) : String(item?.type || "").startsWith("video/");
@@ -199,14 +200,15 @@ function InstagramPreview({ account, caption, capCls, media, format, igCrop, onI
   const head = <div className="h"><Av account={account} size={32} /><b className="grow">{uname}</b><MoreHorizontal size={18} /></div>;
   const feedCard = <div className="pp2 igf">
     {head}
-    <div className="md" style={{ aspectRatio: box }}>
+    <div className="md cnv" style={{ aspectRatio: box }} {...navProps(idx, n, setIdx)}>
       <IgMedia url={cur} video={curVid} pos={pos} />
+      <NavArrows idx={idx} n={n} go={setIdx} />
       {curVid && cur && <span className="play"><Play size={18} fill="currentColor" /></span>}
       {cur && <span className="ig-dim">{rl}</span>}
       {n > 1 && <span className="ig-ct">{idx + 1}/{n}</span>}
     </div>
     <div className="ac ig"><Heart size={22} /><MessageCircle size={22} /><Send size={22} />
-      {n > 1 && <span className="ig-dots">{urls.map((_, i) => <i key={i} className={i === idx ? "on" : ""} onClick={() => setIdx(i)} />)}</span>}
+      <NavDots idx={idx} n={n} go={setIdx} cls="ig-dots" />
       <span className="grow" /><Bookmark size={22} /></div>
     <div className="ig-likes">1,284 likes</div>
     <div className={`${capCls} ig-capt`}><b>{uname}</b> <Txt text={t} />{more && <span className="mo">… more</span>}</div>
@@ -248,6 +250,21 @@ function sizeLabel(r) {
   for (const [v, a, b] of k) if (Math.abs(r - v) < 0.012) return [a, b];
   return r >= 1 ? [`${r.toFixed(2)}:1`, `1920×${Math.round(1920 / r)}`] : [`1:${(1 / r).toFixed(2)}`, `1080×${Math.round(1080 / r)}`];
 }
+// Shared carousel controls: arrows (hover / keyboard focus), dots, Left/Right keys.
+function NavArrows({ idx, n, go }) {
+  const a = arrowsFor(idx, n);
+  if (n < 2) return null;
+  return <>
+    {a.prev && <button type="button" className="cnav prev" aria-label="Previous item" onClick={(e) => { e.stopPropagation(); go(stepIndex(idx, n, -1)); }}><ChevronLeft size={16} /></button>}
+    {a.next && <button type="button" className="cnav next" aria-label="Next item" onClick={(e) => { e.stopPropagation(); go(stepIndex(idx, n, 1)); }}><ChevronRight size={16} /></button>}
+  </>;
+}
+function NavDots({ idx, n, go, cls = "cdots" }) {
+  if (n < 2) return null;
+  return <span className={cls} role="group" aria-label="Carousel items">{Array.from({ length: n }, (_, i) => <button type="button" key={i} className={i === idx ? "on" : ""} aria-label={`Go to item ${i + 1} of ${n}`} aria-current={i === idx ? "true" : undefined} onClick={(e) => { e.stopPropagation(); go(i); }}><i /></button>)}</span>;
+}
+const navProps = (idx, n, go) => n > 1 ? { tabIndex: 0, "aria-roledescription": "carousel", onKeyDown: (e) => { const d = keyDir(e.key); if (d && e.target === e.currentTarget) { e.preventDefault(); go(stepIndex(idx, n, d)); } } } : {};
+
 function useCarousel(media) {
   const urls = useUrls(media);
   const [idx, setIdx] = useState(0);
@@ -259,13 +276,14 @@ function useCarousel(media) {
 // Media box at a given ratio with ratio pill, 1/N badge, dots, optional duration badge.
 function CMd({ c, ratio, radius, inset, dur, pill = true }) {
   const [rl] = sizeLabel(ratio);
-  return <div className={`md${inset ? " cpv-inset" : ""}`} style={{ aspectRatio: ratio, borderRadius: radius }}>
+  return <div className={`md cnv${inset ? " cpv-inset" : ""}`} style={{ aspectRatio: ratio, borderRadius: radius }} {...navProps(c.idx, c.n, c.setIdx)}>
     <IgMedia url={c.cur} video={c.vid} />
     {c.vid && c.cur && <span className="play"><Play size={18} fill="currentColor" /></span>}
     {c.cur && pill && <span className="ig-dim">{rl}</span>}
     {c.n > 1 && <span className="ig-ct">{c.idx + 1}/{c.n}</span>}
     {dur ? <span className="cpv-dur">{fmtDur(dur)}</span> : null}
-    {c.n > 1 && <span className="cpv-dots">{c.urls.map((_, i) => <i key={i} className={i === c.idx ? "on" : ""} onClick={() => c.setIdx(i)} />)}</span>}
+    <NavArrows idx={c.idx} n={c.n} go={c.setIdx} />
+    <NavDots idx={c.idx} n={c.n} go={c.setIdx} cls="cpv-dots" />
   </div>;
 }
 function Cpv({ net, tabs, view, setView, label, foot, children }) {
@@ -281,7 +299,9 @@ function Cpv({ net, tabs, view, setView, label, foot, children }) {
 // 9:16 vertical frame (Reel / Story / Short / TikTok), reusing the Instagram .igv frame styles.
 function VFrame({ c, top, rail, ov, story, account, uname }) {
   const url = c.cur || c.vurl; const vid = c.cur ? c.vid : !!c.vurl;
-  return <div className="pp2 igv"><div className="md" style={{ aspectRatio: "9/16" }}><IgMedia url={url} video={vid} />
+  const nav = !story && c.n > 1 && c.cur;
+  return <div className="pp2 igv"><div className="md cnv" style={{ aspectRatio: "9/16" }} {...(nav ? navProps(c.idx, c.n, c.setIdx) : {})}><IgMedia url={url} video={vid} />
+    {nav && <><NavArrows idx={c.idx} n={c.n} go={c.setIdx} /><NavDots idx={c.idx} n={c.n} go={c.setIdx} cls="cpv-dots vf" /></>}
     {story ? <><div className="igs-zone top" /><div className="igs-zone bot" /><div className="igs-bar"><i /></div>
       <div className="igs-h"><Av account={account} size={28} /><b>{uname}</b><span>Just now</span></div></> : <>
       {top && <div className="igv-top">{top}</div>}
@@ -316,8 +336,19 @@ function ThreadsMedia({ urls, media }) {
   if (l.kind === "none") return null;
   if (l.kind === "single") return <div className="thm"><div className="thm-one" style={{ aspectRatio: l.ratio }}><Tile url={urls[0]} video={vids[0]} />
     {vids[0] && urls[0] && <span className="play"><Play size={18} fill="currentColor" /></span>}</div></div>;
-  return <div className="thm thm-row">{l.tiles.map((t, i) => <div key={i} className="thm-t" style={{ width: `calc(var(--threads-tile-h) * ${t.w})` }}>
-    <Tile url={urls[i]} video={vids[i]} />{vids[i] && urls[i] && <span className="play"><Play size={16} fill="currentColor" /></span>}</div>)}</div>;
+  return <ThreadsRow urls={urls} vids={vids} tiles={l.tiles} />;
+}
+function ThreadsRow({ urls, vids, tiles }) {
+  const row = useRef(null); const [idx, setIdx] = useState(0); const n = tiles.length;
+  const lefts = () => Array.from(row.current?.children || []).map((el) => el.offsetLeft);
+  const sync = () => { const r = row.current; if (r) setIdx(nearestIndex(r.scrollLeft, lefts(), r.scrollWidth - r.clientWidth)); };
+  useEffect(() => { sync(); }, [n]);
+  const go = (i) => { const r = row.current; const x = lefts()[i]; if (r && x != null) r.scrollTo({ left: x, behavior: "smooth" }); setIdx(i); };
+  return <div className="thm"><div className="thc cnv" {...navProps(idx, n, go)}>
+    <div className="thm-row" ref={row} onScroll={sync}>{tiles.map((t, i) => <div key={i} className="thm-t" style={{ width: `calc(var(--threads-tile-h) * ${t.w})` }}>
+      <Tile url={urls[i]} video={vids[i]} />{vids[i] && urls[i] && <span className="play"><Play size={16} fill="currentColor" /></span>}</div>)}</div>
+    <NavArrows idx={idx} n={n} go={go} />
+  </div><NavDots idx={idx} n={n} go={go} /></div>;
 }
 
 function FacebookPreview({ account, caption, capCls, media, format }) {

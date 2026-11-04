@@ -4,6 +4,7 @@ import { PostRowMenu, DeletePostModal, failedBannerText } from "./PostActions.js
 import markPng from "../assets/brand/socialcastly-mark-256.png";
 import lockupLight from "../assets/brand/socialcastly-lockup-light.png";
 import lockupDark from "../assets/brand/socialcastly-lockup-dark.png";
+import { sortUpNext, upNextTime, upNextDateLabel } from "../upNext.js";
 
 const DAY = 864e5;
 const when = (p) => p?.published_at || p?.scheduled_at || p?.created_at;
@@ -23,9 +24,8 @@ const I = {
 function splitTime(v) { const t = fmtTime(v); return [t.replace(/\s?(AM|PM)/i, ""), (t.match(/AM|PM/i) || [""])[0]]; }
 
 function PostRow({ post, account, onOpen, onRetry, onDelete }) {
-  const [t, ap] = splitTime(when(post));
   return <div className="post">
-    <div className="time">{t}<span>{ap}</span></div>
+    <div className="time" style={{ whiteSpace: "nowrap" }}>{upNextDateLabel(upNextTime(post))}</div>
     <AccountAvatar account={account} size={36} />
     <div className="body"><div className="row" style={{ gap: 8, marginBottom: 4 }}><b className="sm">{account?.account_name || account?.platform || "Account"}</b><StatusBadge status={post.status} post={post} /></div><div className="txt">{post.content || "Untitled post"}</div>
       {post.status === "failed" && <div className="xs" style={{ color: "var(--error)", marginTop: 6 }}>⚠ {failedBannerText(post, account)}</div>}</div>
@@ -78,8 +78,8 @@ export function Dashboard({ user, accounts, posts, approvals = [], goToTab, open
   const pubConfirmed = pub30.filter((p) => p.provider_post_id).length;
   const failed = posts.filter((p) => p.status === "failed");
   const failedPlats = [...new Set(failed.map((p) => meta(acc.get(p.connected_account_id)?.platform).label))];
-  const upcoming = posts.filter((p) => isLive(p) || p.status === "failed").filter((p) => new Date(p.scheduled_at) >= new Date(now.getFullYear(), now.getMonth(), now.getDate()) || p.status === "failed").sort((a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at)).slice(0, 6);
-  const nextDay = upcoming[0] ? new Date(upcoming[0].scheduled_at) : now;
+  const upcomingAll = posts.filter((p) => isLive(p) || p.status === "failed").filter((p) => new Date(p.scheduled_at) >= new Date(now.getFullYear(), now.getMonth(), now.getDate()) || p.status === "failed");
+  const upcoming = sortUpNext(upcomingAll).slice(0, 6);
   return <>
     <PageHead title={`${greet}${first ? `, ${first}` : ""} 👋`} sub={`Here's what's going out across your channels ${range === "today" ? "today" : range === "week" ? "this week" : "this month"}.`}><Seg value={range} onChange={setRange} options={[["today", "Today"], ["week", "This week"], ["month", "Month"]]} /></PageHead>
     {failed.length > 0 && <div className="alert error">{I.alert}<div className="grow sm"><b>{failed.length} post{failed.length === 1 ? "" : "s"} failed to publish{failedPlats.length ? ` on ${failedPlats.join(", ")}` : ""}.</b> <span className="muted">{failedBannerText(failed[0], acc.get(failed[0].connected_account_id))}</span></div><button type="button" className="btn btn-sm btn-secondary" onClick={() => goToTab("queue", { tab: "failed" })}>Review</button></div>}
@@ -90,7 +90,7 @@ export function Dashboard({ user, accounts, posts, approvals = [], goToTab, open
       <div className="card stat"><div className="sm muted">Failed posts</div><div className="v">{failed.length}</div><div className={`d ${failed.length ? "down" : ""}`}>{failed.length ? "Needs attention" : "All clear"}</div></div>
     </div>
     <div className="grid" style={{ gridTemplateColumns: "minmax(0,1.6fr) minmax(0,1fr)", alignItems: "start" }}>
-      <div className="card"><div className="card-head"><div><h2>Up next</h2><div className="xs subtle">{nextDay.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" })}</div></div><button type="button" className="btn btn-sm btn-ghost" onClick={() => goToTab("queue")}>View queue{I.arrow}</button></div>
+      <div className="card"><div className="card-head"><div><h2>Up next</h2><div className="xs subtle">Newest first</div></div><button type="button" className="btn btn-sm btn-ghost" onClick={() => goToTab("queue")}>View queue{I.arrow}</button></div>
         {upcoming.length ? upcoming.map((p) => <PostRow key={p.id} post={p} account={acc.get(p.connected_account_id)} onOpen={() => onOpenPost ? onOpenPost(p) : goToTab("queue")} onRetry={onRetryPost} onDelete={request ? setDeleting : null} />) : <Empty art={<img src={markPng} alt="" style={{ width: 48 }} />} title="Nothing scheduled yet" text="Schedule your first post and it'll appear here, ready to cast." action="Create a post" onAction={() => openStudio()} />}
       </div>
       <div className="col" style={{ gap: 20 }}>

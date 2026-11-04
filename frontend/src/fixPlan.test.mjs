@@ -194,3 +194,14 @@ test("media panel spacing: pulled up with even top/bottom gaps (no overlap: stay
   const above = 18 + Number(m[1]), below = Number(m[2]);
   assert.ok(above >= 8 && Math.abs(above - below) <= 4, `gap above ${above}px vs below ${below}px`);
 });
+
+test("schedule popover: Date/Time/Time zone read as inputs (border, radius, padding, dark border, no overflow)", async () => {
+  const { readFileSync } = await import("node:fs");
+  const css = readFileSync(new URL("./sc/composer-v2.css", import.meta.url), "utf8");
+  const rule = css.match(/^\.scd \.c2 \.c2-whenpop input,\.scd \.c2 \.c2-whenpop select\{([^}]*)\}/m);
+  assert.ok(rule, "light rule exists");
+  for (const d of ["border:1px solid #111", "border-radius:8px", "padding:6px 10px", "box-sizing:border-box", "width:100%"]) assert.ok(rule[1].includes(d), d);
+  assert.match(css, /\.scd\.dark \.c2 \.c2-whenpop input[^{]*\{border-color:rgba\(255,255,255,\.6\)/);
+  assert.match(css, /\.c2-whenpop input:focus-visible/);
+  assert.ok(!/\.c2-whenpop[^{]*\.btn[^{]*\{/.test(css), "Done button untouched");
+});

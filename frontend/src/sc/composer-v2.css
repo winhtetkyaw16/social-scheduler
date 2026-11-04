@@ -41,6 +41,11 @@
 .scd .c2 .menu .ico{width:16px;height:16px;color:var(--text-2)}
 .scd .c2 .menu hr{border:0;border-top:1px solid var(--border);margin:4px 0}
 .scd .c2 .c2-whenpop{left:auto;right:0;width:260px;padding:12px;display:flex;flex-direction:column;gap:10px}
+.scd .c2 .c2-whenpop .label{display:flex;flex-direction:column;gap:4px;min-width:0}
+.scd .c2 .c2-whenpop input,.scd .c2 .c2-whenpop select{display:block;box-sizing:border-box;width:100%;max-width:100%;min-width:0;border:1px solid #111;border-radius:8px;padding:6px 10px;background:var(--surface);color:var(--text);font:inherit;font-size:13px;outline:0}
+.scd .c2 .c2-whenpop input:focus-visible,.scd .c2 .c2-whenpop select:focus-visible{border-color:#4F46E5;box-shadow:0 0 0 3px rgba(79,70,229,.25)}
+.scd.dark .c2 .c2-whenpop input,.scd.dark .c2 .c2-whenpop select,.dark .c2 .c2-whenpop input,.dark .c2 .c2-whenpop select,[data-theme=dark] .c2 .c2-whenpop input,[data-theme=dark] .c2 .c2-whenpop select{border-color:rgba(255,255,255,.6);color-scheme:dark}
+.scd.dark .c2 .c2-whenpop input:focus-visible,.scd.dark .c2 .c2-whenpop select:focus-visible,.dark .c2 .c2-whenpop input:focus-visible,.dark .c2 .c2-whenpop select:focus-visible,[data-theme=dark] .c2 .c2-whenpop input:focus-visible,[data-theme=dark] .c2 .c2-whenpop select:focus-visible{border-color:#A5B4FC;box-shadow:0 0 0 3px rgba(165,180,252,.3)}
 .scd .c2 .c2-morepop{left:auto;right:0;width:170px}
 .scd .c2 .c2-opts-t{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--text-3);background:none;border:0;padding:0;cursor:pointer}
 .scd .c2 .c2-opts-l{display:flex;flex-direction:column;gap:8px;margin-top:10px}

@@ -47,7 +47,10 @@ LI_MEDIA = "linkedin_media_rules"
 LI_UPLOAD = "linkedin_upload_failed"
 LI_PROCESSING = "linkedin_processing_failed"
 LI_PERMISSION = "linkedin_permission_missing"
-_LI_REASON = {LI_UPLOAD, LI_PROCESSING, LI_PERMISSION}
+X_MEDIA = "x_media_rules"
+X_MEDIA_SCOPE = "x_media_permission_missing"
+X_PROCESSING = "x_processing_failed"
+_LI_REASON = {LI_UPLOAD, LI_PROCESSING, LI_PERMISSION, X_PROCESSING}
 # Back-compat alias for older imports.
 PLATFORM = PLATFORM_DOWN
 INSTAGRAM_RATIO = IG_RATIO
@@ -114,6 +117,14 @@ def classify_error(code: str | None, message: str | None, platform: str | None, 
         if status == 403 or _has(text, ("access_denied", "not enough permissions", "accessing this", "forbidden",
                                         "scope")):
             return LI_PERMISSION
+    if key in {"x", "twitter"}:
+        if _has(text, ("x posts can", "x videos", "x accepts", "x photos can", "x animated gifs",
+                       "an animated gif must be the only")):
+            return X_MEDIA
+        if "could not process the" in text:
+            return X_PROCESSING
+        if status == 403 and _has(text, ("x media upload failed", "media.write")):
+            return X_MEDIA_SCOPE
     if key == "instagram":
         if "aspect ratio" in text or "aspect_ratio" in text:
             return IG_RATIO
@@ -138,7 +149,7 @@ def classify_error(code: str | None, message: str | None, platform: str | None, 
         return NETWORK
     if _has(text, ("timeout", "timed out", "still processing")):
         return TIMEOUT
-    if status == 402 or _has(text, ("credits depleted", "credits-depleted", "payment required", "usagecapexceeded",
+    if status == 402 or _has(text, ("credits depleted", "credits-depleted", "creditsdepleted", "payment required", "usagecapexceeded",
                                     "usage cap")):
         return X_CREDITS if key in {"x", "twitter"} else RATE_LIMIT
     if status == 429 or _has(text, ("too many requests", "rate limit", "rate_limit", "(#4)", "(#17)", "(#32)",
@@ -248,10 +259,22 @@ def friendly_error(code: str | None, message: str | None, platform: str | None,
             "TikTok posts from SocialCastly must contain one video. Text-only, photo, or multi-video posts aren't accepted.",
             "Keep exactly one video in this post (remove other files), then try again.", _EDIT),
         X_CREDITS: (
-            "X's posting limit for this connected account is used up.",
-            "X refused the post because the posting allowance (credits) for this account's connection to X has run out. Your post itself is fine.",
-            "Wait until X's allowance resets, or upgrade/top up the X plan used for this connection, then retry. You can also reschedule for later.",
+            "X API has no credits: add credits in the X developer console to post.",
+            "X refused the request with \"payment required\" (402 / CreditsDepleted): the X developer app this connection uses has no API credits left. Your post itself is fine and nothing was published.",
+            "Add credits (or a plan) for the app in the X developer console (console.x.com), then retry. You can also reschedule for later.",
             _RETRY),
+        X_MEDIA: (
+            "X can't accept this media.",
+            sanitize_raw(message, 300) or "X accepts up to 4 photos (JPG/PNG/WEBP, 5 MB each), 1 GIF (15 MB) or 1 MP4 video.",
+            "Fix the media for X as described, then try again.", _EDIT),
+        X_MEDIA_SCOPE: (
+            "Reconnect X to allow media.",
+            "X refused the photo/video upload because this X connection was approved before SocialCastly asked for permission to upload media (media.write). Nothing was posted.",
+            "Reconnect X in Accounts and approve all requested permissions, then retry.", _reconnect("X") + _RETRY[:1]),
+        X_PROCESSING: (
+            "X couldn't process your video or GIF.",
+            "X received the file but its processing failed. This usually means the codec, length or resolution isn't supported. Nothing was posted.",
+            "Use an H.264/AAC MP4 (0.5 s to 20 min, up to 1920 px on the long side), then try again.", _EDIT + _RETRY[:1]),
         CONNECTION: (
             f"Your {net} connection has expired or was revoked.",
             f"{net} no longer accepts SocialCastly's sign-in for this account (it expired, the password changed, or access was removed).",
@@ -366,8 +389,11 @@ def media_requirement_error(platform: str | None, media_urls: list | None, conte
         if problem:
             return problem
     if key in {"x", "twitter"} and media:
-        return (f"SocialCastly can't send photos or videos to {network_name(key)} yet. "
-                f"Remove the media for {network_name(key)} (text-only posts work), or untick it.")
+        from app.integrations.platforms.x import x_media_problem
+
+        problem = x_media_problem(media)
+        if problem:
+            return problem
     if key == "youtube" and (len(media) != 1 or len(videos) != 1):
         return "YouTube needs exactly one video. Add a video (photos and text-only posts can't go to YouTube)."
     if key == "tiktok" and (len(media) != 1 or len(videos) != 1):

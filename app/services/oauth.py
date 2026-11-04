@@ -89,7 +89,7 @@ def _providers() -> dict[str, _ProviderOAuth]:
             client_id=x_id,
             client_secret=x_secret,
             redirect_uri=config.X_REDIRECT_URI,
-            scopes=("tweet.read", "tweet.write", "users.read", "offline.access"),
+            scopes=("tweet.read", "tweet.write", "users.read", "media.write", "offline.access"),
             use_pkce=True,
             missing_env=tuple(
                 name

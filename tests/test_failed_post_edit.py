@@ -28,7 +28,7 @@ def test_failed_post_friendly_error_and_reschedule(client, auth_headers, monkeyp
 
     got = client.get(f"/api/v1/posts/{created['id']}", headers=headers).json()
     assert got["friendly_error"]["category"] == "x_credits_depleted"
-    assert got["friendly_error"]["banner"] == "X's posting limit for this connected account is used up."
+    assert got["friendly_error"]["banner"] == "X API has no credits: add credits in the X developer console to post."
 
     new_time = (datetime.now(timezone.utc) + timedelta(days=2)).isoformat()
     patched = client.patch(f"/api/v1/posts/{created['id']}", headers=headers, json={"scheduled_at": new_time, "content": "Hello again"})

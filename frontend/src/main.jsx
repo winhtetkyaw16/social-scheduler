@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { igCropPayload } from "./igFrame.js";
 import { actionIndices, autoSplit, checkMedia, cropIndices, defaultIndices, mediaInfo, mediaKeyOf, selectionFor, splitLabel } from "./mediaRules.js";
 import { ChannelTile } from "./sc/ui.jsx";
 import { createPortal } from "react-dom";
@@ -567,6 +568,8 @@ function App() {
   // Per-channel media picks (lists of media keys / saved URLs) and accepted Instagram crops.
   const [mediaSelectionByAccount, setMediaSelectionByAccount] = useState({});
   const [cropOkByAccount, setCropOkByAccount] = useState({});
+  // Instagram-only crop: { [accountId]: { ratio?: 0.8|1|1.91, offsets: { [mediaKey]: [x, y] } } }. Shared files are never touched.
+  const [igCropByAccount, setIgCropByAccount] = useState({});
   const [writingTool, setWritingTool] = useState(null);
   const [title, setTitle] = useState("");
   const [files, setFiles] = useState([]);
@@ -815,14 +818,14 @@ function App() {
     const format = formatForAccount(account);
     const items = mediaForAccount(account);
     const infos = items.map((item) => mediaInfo(item, mediaDims[mediaKeyOf(item)]));
-    const check = checkMedia(account.platform, infos, { format, cropOk: !!cropOkByAccount[account.id] });
+    const check = checkMedia(account.platform, infos, { format, igRatio: igCropByAccount[account.id]?.ratio || null });
     const split = autoSplit(account.platform, sharedInfos, { format });
     return {
       account, format, infos, check, indices: mediaIndicesForAccount(account), sharedInfos,
-      split, splitLabel: splitLabel(account.platform, sharedInfos, split, { format, cropped: cropIndices(account.platform, sharedInfos, split, { format }) }),
+      split, splitLabel: splitLabel(account.platform, sharedInfos, split, { format, cropped: cropIndices(account.platform, sharedInfos, split, { format, igRatio: igCropByAccount[account.id]?.ratio || null }) }),
       picked: Array.isArray(mediaSelectionByAccount[account.id]),
     };
-  }), [selectedAccounts, captionMode, channelFiles, channelMediaUrlsByAccount, useSharedMediaByAccount, sharedInfos, mediaDims, formatsByAccount, mediaSelectionByAccount, cropOkByAccount]);
+  }), [selectedAccounts, captionMode, channelFiles, channelMediaUrlsByAccount, useSharedMediaByAccount, sharedInfos, mediaDims, formatsByAccount, mediaSelectionByAccount, cropOkByAccount, igCropByAccount]);
   const setAccountMediaKeys = (accountId, keys) => setMediaSelectionByAccount((cur) => {
     const next = { ...cur };
     if (keys === null) delete next[accountId]; else next[accountId] = keys;
@@ -856,20 +859,11 @@ function App() {
     const picks = actionIndices(action.id, account.platform, sharedInfos);
     if (picks) { setAccountMediaKeys(account.id, picks.map((i) => mediaKeyOf(sharedMedia[i]))); if (captionMode !== "custom") changeCaptionMode("custom"); }
   };
-  // Swap one media item for a new File (used by the Instagram crop tool).
-  const replaceMediaItem = (account, oldItem, newFile) => {
-    if (!oldItem || !newFile) return;
-    const id = account?.id;
-    if (typeof oldItem !== "string") {
-      if (files.includes(oldItem)) setFiles((cur) => cur.map((f) => (f === oldItem ? newFile : f)));
-      else if (id) setChannelFiles((cur) => ({ ...cur, [id]: (cur[id] || []).map((f) => (f === oldItem ? newFile : f)) }));
-    } else if (libraryMediaUrls.includes(oldItem)) {
-      setLibraryMediaUrls((cur) => cur.filter((u) => u !== oldItem)); setFiles((cur) => [...cur, newFile]);
-    } else if (id) {
-      setChannelMediaUrlsByAccount((cur) => ({ ...cur, [id]: (cur[id] || []).filter((u) => u !== oldItem) }));
-      setChannelFiles((cur) => ({ ...cur, [id]: [...(cur[id] || []), newFile] }));
-    }
-    notify({ title: "Photo cropped", message: "The cropped JPEG replaced the original in this post." });
+  // Instagram crop tweak (ratio chip + per-photo position). Stored per account and applied only when Instagram
+  // publishes (server-side), so Facebook and every other network keep the original files.
+  const setIgCrop = (account, next) => {
+    if (!account?.id) return;
+    setIgCropByAccount((cur) => ({ ...cur, [account.id]: { ...(cur[account.id] || {}), ...next, offsets: { ...(cur[account.id]?.offsets || {}), ...(next.offsets || {}) } } }));
   };
 
   async function suggestFormatsForAccounts(newFiles, targetAccounts = selectedAccounts) {
@@ -971,6 +965,12 @@ function App() {
     return Object.fromEntries(Object.entries(mediaSelectionByAccount).map(([id, keys]) => [id, (keys || []).map((k) => keyToUrl.get(k)).filter(Boolean)]));
   }
 
+  // Instagram crop offsets are keyed by media key; in a saved draft the shared files become URLs (their new keys).
+  function igCropForDraft(sharedUrls) {
+    const keyToUrl = new Map(sharedMedia.map((item, i) => [mediaKeyOf(item), sharedUrls[i]]));
+    return Object.fromEntries(Object.entries(igCropByAccount).map(([id, c]) => [id, { ...(c?.ratio ? { ratio: c.ratio } : {}), offsets: Object.fromEntries(Object.entries(c?.offsets || {}).map(([k, o]) => [keyToUrl.get(k) || k, o])) }]));
+  }
+
   async function saveAsDraft() {
     if (!caption.trim() && !Object.values(captionsByAccount).some((value) => String(value || "").trim()) && !files.length && !libraryMediaUrls.length && !Object.values(channelFiles).some((items) => items?.length) && !Object.values(channelMediaUrlsByAccount).some((items) => items?.length)) {
       notify({ title: "Nothing to save yet", message: "Add a caption or media before saving this draft." });
@@ -997,7 +997,7 @@ function App() {
         formatsByAccount, formatOverridesByAccount, platformSettingsByAccount,
         useSharedMediaByAccount, scheduleMode, date, time, timeZone,
         sharedMediaUrls: sharedUrls, channelMediaUrlsByAccount: savedChannelUrls,
-        mediaSelectionByAccount: selectionUrls(sharedUrls), cropOkByAccount,
+        mediaSelectionByAccount: selectionUrls(sharedUrls), cropOkByAccount, igCropByAccount: igCropForDraft(sharedUrls),
       };
       const payload = {
         content: captionMode === "custom" && primaryAccount ? (captionsByAccount[primaryAccount.id] ?? caption) : caption,
@@ -1016,7 +1016,7 @@ function App() {
       setEditingDraftId("");
       setFiles([]);
       setChannelFiles({});
-      setChannelMediaUrlsByAccount({}); setLibraryMediaUrls([]); setUseSharedMediaByAccount({}); setMediaSelectionByAccount({}); setCropOkByAccount({});
+      setChannelMediaUrlsByAccount({}); setLibraryMediaUrls([]); setUseSharedMediaByAccount({}); setMediaSelectionByAccount({}); setCropOkByAccount({}); setIgCropByAccount({});
       setCaption(""); setCaptionsByAccount({}); setCaptionMode("universal"); setTitle("");
       setFormatsByAccount({}); formatOverridesRef.current = {}; setFormatOverridesByAccount({}); setPlatformSettingsByAccount({});
       setSelectedIds([]); setPreviewId(""); setScheduleMode("schedule");
@@ -1062,6 +1062,7 @@ function App() {
     setChannelMediaUrlsByAccount(nextChannelMedia);
     setMediaSelectionByAccount(metadata.mediaSelectionByAccount && typeof metadata.mediaSelectionByAccount === "object" && !Array.isArray(metadata.mediaSelectionByAccount) ? metadata.mediaSelectionByAccount : {});
     setCropOkByAccount(metadata.cropOkByAccount && typeof metadata.cropOkByAccount === "object" ? metadata.cropOkByAccount : {});
+    setIgCropByAccount(metadata.igCropByAccount && typeof metadata.igCropByAccount === "object" && !Array.isArray(metadata.igCropByAccount) ? metadata.igCropByAccount : {});
     setFiles([]);
     setChannelFiles({});
     setEditingDraftId(draft.id);
@@ -1122,7 +1123,7 @@ function App() {
         const when = mode === "queue" ? queueByAccount[account.id] : scheduledAt;
         return authenticatedFetch("/posts", {
           method: "POST",
-          body: JSON.stringify({ connected_account_id: account.id, content: captionForAccount(account).trim(), media_urls: mediaUrls, scheduled_at: when, idempotency_key: makeIdempotencyKey(), post_metadata: { format: formatForAccount(account), settings: platformSettingsByAccount[account.id] || {}, mode, ...(pickedUrls[account.id] ? { mediaSelectionByAccount: { [account.id]: pickedUrls[account.id] } } : {}), ...(cropOkByAccount[account.id] ? { crop_ok: true } : {}), ...(account.platform === "pinterest" && platformSettingsByAccount[account.id]?.destination_url ? { destination_url: platformSettingsByAccount[account.id].destination_url } : {}) } }),
+          body: JSON.stringify({ connected_account_id: account.id, content: captionForAccount(account).trim(), media_urls: mediaUrls, scheduled_at: when, idempotency_key: makeIdempotencyKey(), post_metadata: { format: formatForAccount(account), settings: platformSettingsByAccount[account.id] || {}, mode, ...(pickedUrls[account.id] ? { mediaSelectionByAccount: { [account.id]: pickedUrls[account.id] } } : {}), ...(cropOkByAccount[account.id] ? { crop_ok: true } : {}), ...(account.platform === "instagram" ? { ig_crop: igCropPayload(igCropByAccount[account.id], mediaForAccount(account).map(mediaKeyOf)) } : {}), ...(account.platform === "pinterest" && platformSettingsByAccount[account.id]?.destination_url ? { destination_url: platformSettingsByAccount[account.id].destination_url } : {}) } }),
         });
       }));
       const successCount = results.filter((result) => result.status === "fulfilled").length;
@@ -1144,7 +1145,7 @@ function App() {
         if (editingDraftId) {
           try { await authenticatedFetch(`/publish/drafts/${editingDraftId}`, { method: "DELETE" }); } catch { /* The published post remains successful if draft cleanup fails. */ }
         }
-        setEditingDraftId(""); setFiles([]); setChannelFiles({}); setChannelMediaUrlsByAccount({}); setUseSharedMediaByAccount({}); setMediaSelectionByAccount({}); setCropOkByAccount({}); setLibraryMediaUrls([]); setCaption(""); setCaptionsByAccount({}); setUseUniversalCaptionByAccount({}); setCaptionMode("universal"); setTitle(""); setFormatsByAccount({}); formatOverridesRef.current = {}; setFormatOverridesByAccount({}); setPlatformSettingsByAccount({});
+        setEditingDraftId(""); setFiles([]); setChannelFiles({}); setChannelMediaUrlsByAccount({}); setUseSharedMediaByAccount({}); setMediaSelectionByAccount({}); setCropOkByAccount({}); setIgCropByAccount({}); setLibraryMediaUrls([]); setCaption(""); setCaptionsByAccount({}); setUseUniversalCaptionByAccount({}); setCaptionMode("universal"); setTitle(""); setFormatsByAccount({}); formatOverridesRef.current = {}; setFormatOverridesByAccount({}); setPlatformSettingsByAccount({});
         const refreshedCreated = (Array.isArray(postData) ? postData : []).filter((post) => createdIds.includes(post.id));
         const publishedCount = refreshedCreated.filter((post) => post.status === "published").length;
         const failedCount = refreshedCreated.filter((post) => post.status === "failed").length;
@@ -1338,12 +1339,12 @@ function App() {
           : activeTab === "biolink" ? <RenderErrorBoundary scope="Bio Link dashboard"><BioLinkDashboard user={user} accounts={accounts} posts={posts} /></RenderErrorBoundary> : activeTab === "accounts" ? <><ManageAccounts posts={posts} ownerName={user.full_name} accounts={accounts} channels={CHANNELS} request={authenticatedFetch} onConnect={connect} onChanged={() => loadWorkspace(token)} ChannelBrandImage={ChannelBrandImage} publishablePlatforms={PUBLISHABLE_PLATFORMS} /></> : <section className="animate-fade-up space-y-4">
             <RenderErrorBoundary scope="Composer"><ComposerV2 accounts={accounts} selectedIds={selectedIds} toggleAccount={toggleAccount} connect={connect} selectedAccounts={selectedAccounts} channels={CHANNELS} maxChars={MAX_CHARS}
               captionMode={captionMode} changeCaptionMode={changeCaptionMode} caption={caption} setCaption={setCaption} captionsByAccount={captionsByAccount} setCaptionsByAccount={setCaptionsByAccount} useUniversalCaptionByAccount={useUniversalCaptionByAccount} setUseUniversalCaptionByAccount={setUseUniversalCaptionByAccount}
-              captionForAccount={captionForAccount} mediaForAccount={mediaForAccount} mediaReport={mediaReport} sharedMedia={sharedMedia} mediaSelectionByAccount={mediaSelectionByAccount} setAccountMediaKeys={setAccountMediaKeys} applyMediaFix={applyMediaFix} applyMediaAction={applyMediaAction} channelWarnings={channelWarnings} channelNotices={channelNotices} onReplaceMedia={replaceMediaItem} templates={COMPOSER_TEMPLATES}
+              captionForAccount={captionForAccount} mediaForAccount={mediaForAccount} mediaReport={mediaReport} sharedMedia={sharedMedia} mediaSelectionByAccount={mediaSelectionByAccount} setAccountMediaKeys={setAccountMediaKeys} applyMediaFix={applyMediaFix} applyMediaAction={applyMediaAction} channelWarnings={channelWarnings} channelNotices={channelNotices} igCropByAccount={igCropByAccount} onIgCrop={setIgCrop} templates={COMPOSER_TEMPLATES}
               files={files} setFiles={setFiles} libraryMediaUrls={libraryMediaUrls} setLibraryMediaUrls={setLibraryMediaUrls} onFilesAdded={(incoming) => { void suggestFormatsForAccounts(incoming); }} onEditFile={(file) => { setQuickFile(file); setQuickTool(file.type.startsWith("video/") ? "video" : "image"); }}
               title={title} setTitle={setTitle} formatForAccount={formatForAccount} formatsByAccount={formatsByAccount} formatOverridesByAccount={formatOverridesByAccount} setAccountFormat={setAccountFormat} platformSettingsByAccount={platformSettingsByAccount} setPlatformSetting={setPlatformSetting}
               date={date} setDate={setDate} time={time} setTime={setTime} timeZone={timeZone} setTimeZone={setTimeZone} timezones={TIMEZONES} minDate={dateInZone(new Date(), timeZone)}
               saving={saving} uploadBusy={uploadBusy} loadingAccounts={loadingAccounts} saveAsDraft={saveAsDraft} submit={(m) => { setScheduleMode(m); void createPost({ preventDefault() {} }, m); }} publishMode={scheduleMode} setPublishMode={setScheduleMode} request={authenticatedFetch} onSetupQueue={() => goToTab("queue")}
-              onDiscard={() => { if ((caption || files.length || libraryMediaUrls.length) && !window.confirm("Discard this post?")) return; setCaption(""); setCaptionsByAccount({}); setUseUniversalCaptionByAccount({}); setCaptionMode("universal"); setTitle(""); setFiles([]); setLibraryMediaUrls([]); setChannelFiles({}); setChannelMediaUrlsByAccount({}); setMediaSelectionByAccount({}); setCropOkByAccount({}); setEditingDraftId(""); }}
+              onDiscard={() => { if ((caption || files.length || libraryMediaUrls.length) && !window.confirm("Discard this post?")) return; setCaption(""); setCaptionsByAccount({}); setUseUniversalCaptionByAccount({}); setCaptionMode("universal"); setTitle(""); setFiles([]); setLibraryMediaUrls([]); setChannelFiles({}); setChannelMediaUrlsByAccount({}); setMediaSelectionByAccount({}); setCropOkByAccount({}); setIgCropByAccount({}); setEditingDraftId(""); }}
               previewId={previewId} setPreviewId={setPreviewId} /></RenderErrorBoundary>
           </section>}
         </div>

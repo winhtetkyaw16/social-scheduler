@@ -7,6 +7,7 @@ import pytest
 from PIL import Image
 
 from app.core.exceptions import ProviderConfigurationError
+from app.integrations.base import ProviderPublishResult
 from app.integrations.platforms.tiktok import TikTokPlatform
 from app.services import media_convert
 from app.services.error_messages import media_requirement_error
@@ -113,7 +114,7 @@ def test_instagram_gets_jpg_and_center_crop(uploads):
     ok = uploads("ok.jpg", size=(1080, 1080))
     out = media_convert.prepare_media("instagram", [png, wide, ok, V])
     assert out[0].endswith(".jpg") and out[0] != png
-    assert _open(uploads, out[1]).size == (1910, 1000)
+    assert _open(uploads, out[1]).size == (1000, 1000)         # carousel shares the first photo's 1:1 frame
     assert out[2] == ok and out[3] == V                         # fine files and remote URLs untouched
     assert media_convert.prepare_media("instagram", [png]) == [out[0]]  # cached on retry
 
@@ -251,3 +252,91 @@ def test_facebook_video_choice_publishes_as_video(monkeypatch):
     assert result.post_id == "vid1"
     assert len(calls) == 1 and calls[0][1].endswith("/111/videos")
     assert calls[0][2]["json"]["file_url"].endswith("clip.mp4")
+
+
+# ---- Instagram shared frame (Instagram-only crop at publish) -------------------------------------
+
+def test_ig_frame_rules():
+    assert media_convert.ig_nearest_frame(1080 / 2340) == 0.8
+    assert media_convert.ig_nearest_frame(16 / 9) == 1.91
+    assert media_convert.ig_nearest_frame(1.05) == 1.0
+    assert media_convert.ig_frame_ratio([0.46], 3) == 0.8          # carousel: snap to nearest standard frame
+    assert media_convert.ig_frame_ratio([1.3], 1) == 1.3           # single photo: clamp only
+    assert media_convert.ig_frame_ratio([0.3], 1) == 0.8
+    assert media_convert.ig_frame_ratio([0.46], 3, chosen=1.91) == 1.91
+    assert media_convert.ig_frame_ratio([], 2) is None
+    assert media_convert.frame_crop_box(1000, 2000, 0.8) == (0, 375, 1000, 1625)
+    assert media_convert.frame_crop_box(1000, 2000, 0.8, 0.5, 0.0) == (0, 0, 1000, 1250)
+    assert media_convert.frame_crop_box(3000, 1000, 1.0, 1.0, 0.5) == (2000, 0, 3000, 1000)
+
+
+def test_ig_carousel_all_photos_cropped_to_first_photo_frame(uploads):
+    tall = uploads("tall.jpg", size=(1080, 2340))     # phone screenshot -> 4:5
+    wide = uploads("wide2.jpg", size=(1920, 1080))
+    sq = uploads("sq.jpg", size=(1000, 1000))
+    out = media_convert.prepare_media("instagram", [V, tall, wide, sq])
+    assert out[0] == V                                   # videos are never re-encoded
+    sizes = [_open(uploads, u).size for u in out[1:]]
+    assert all(abs(w / h - 0.8) < 0.01 for w, h in sizes), sizes
+    assert all(u != o for u, o in zip(out[1:], [tall, wide, sq]))
+
+
+def test_ig_crop_metadata_ratio_and_offsets(uploads):
+    tall = uploads("t2.png", size=(1000, 2000), noise=True)
+    wide = uploads("w2.jpg", size=(3000, 1000), noise=True)
+    crop = {"ratio": 1.0, "offsets": [[0.5, 0.0], [1.0, 0.5]]}
+    out = media_convert.prepare_media("instagram", [tall, wide], ig_crop=crop)
+    a, b = _open(uploads, out[0]), _open(uploads, out[1])
+    assert a.size == (1000, 1000) and b.size == (1000, 1000)
+    src_a = Image.open(uploads.dir / "t2.png").convert("RGB").crop((0, 0, 1000, 1000))
+    src_b = Image.open(uploads.dir / "w2.jpg").convert("RGB").crop((2000, 0, 3000, 1000))
+    diff = lambda x, y: sum(abs(p - q) for p, q in zip(x.resize((20, 20)).tobytes(), y.resize((20, 20)).tobytes())) / 1200
+    assert diff(a.convert("RGB"), src_a) < 25 and diff(b.convert("RGB"), src_b) < 25   # offsets picked the top / right
+    other = media_convert.prepare_media("instagram", [tall, wide], ig_crop={"ratio": 1.0})
+    assert other[0] != out[0]                            # different offsets -> different cached file
+
+
+def test_ig_crop_never_touches_other_networks(uploads):
+    tall = uploads("t3.jpg", size=(1080, 2340))
+    wide = uploads("w3.jpg", size=(1920, 1080))
+    crop = {"ratio": 1.0, "offsets": [[0.5, 0.0], [0.5, 0.5]]}
+    for net in ("facebook", "linkedin", "threads", "x"):
+        assert media_convert.prepare_media(net, [tall, wide], ig_crop=crop) == [tall, wide]
+    assert media_convert.prepare_media("instagram", [tall], ig_crop={"format": "Story"}) == [tall]
+
+
+def test_publish_task_passes_ig_crop_only_for_instagram():
+    from app.tasks.publish_post import _ig_crop_kwargs
+    meta = {"format": "Post", "ig_crop": {"ratio": 0.8}}
+    assert _ig_crop_kwargs("instagram", meta) == {"ig_crop": {"ratio": 0.8, "format": "Post"}}
+    assert _ig_crop_kwargs("facebook", meta) == {}
+    assert _ig_crop_kwargs("instagram", None) == {"ig_crop": {"format": None}}
+
+
+def test_publish_sends_cropped_urls_to_instagram(monkeypatch):
+    from app.services import publishing
+    seen = {}
+
+    def fake_prepare(platform, media, ig_crop=None):
+        seen["prepare"] = (platform, list(media), ig_crop)
+        return [u.replace(".png", "-ig.jpg") for u in media]
+
+    class Fake:
+        def publish(self, token, account, content, media):
+            seen["adapter"] = media
+            return ProviderPublishResult(post_id="p1", request_id="r", status_code=200)
+
+    monkeypatch.setattr(media_convert, "prepare_media", fake_prepare)
+    monkeypatch.setattr(publishing, "get_platform", lambda name: Fake())
+    publishing.publish("instagram", "tok", "acct", "hi", ["/static/uploads/a.png"], ig_crop={"ratio": 1.0})
+    assert seen["prepare"] == ("instagram", ["/static/uploads/a.png"], {"ratio": 1.0})
+    assert seen["adapter"] == ["/static/uploads/a-ig.jpg"]          # Instagram really gets the cropped files
+    publishing.publish("facebook", "tok", "acct", "hi", ["/static/uploads/a.png"], ig_crop={"ratio": 1.0})
+    assert seen["prepare"][2] is None                               # never forwarded to other networks
+
+
+def test_draft_ig_crop_maps_offsets_to_indices():
+    from app.services.posts import _ig_crop_for_account
+    meta = {"igCropByAccount": {"7": {"ratio": 1, "offsets": {"/static/uploads/b.jpg": [0.1, 0.9]}}}}
+    assert _ig_crop_for_account(meta, 7, ["/static/uploads/a.jpg", "/static/uploads/b.jpg"]) == {"ratio": 1.0, "offsets": [[0.5, 0.5], [0.1, 0.9]]}
+    assert _ig_crop_for_account({}, 7, ["x"]) == {}

@@ -39,15 +39,16 @@ test("auto-split edge cases", () => {
   assert.deepEqual(autoSplit("instagram", [vid(30), pic()], { format: "Story" }), [0]);
 });
 
-test("Instagram: mixed carousel of up to 20 is fine, too-wide photo offers a crop", () => {
+test("Instagram: mixed carousel of up to 20 is fine, odd-sized photos are auto-fitted (never a problem)", () => {
   const r = checkMedia("instagram", MIX);
-  assert.deepEqual(codes(r), ["too_wide"]);
-  assert.equal(r.problems[0].action.id, "crop");
-  assert.equal(r.problems[0].title, "Photo 4 is too wide");
-  assert.ok(r.problems[0].soft);
-  const ok = checkMedia("instagram", MIX, { cropOk: true });
-  assert.deepEqual(codes(ok), []);
-  assert.match(ok.notes.join(" "), /cropped to fit/);
+  assert.deepEqual(codes(r), []);
+  assert.match(r.notes.join(" "), /Photos auto-fitted to (4:5|1:1|1\.91:1) for Instagram/);
+  const tall = [{ kind: "photo", width: 1080, height: 2340 }, { kind: "photo", width: 1920, height: 1080 }, { kind: "video", width: 1920, height: 1080, duration: 20 }];
+  assert.deepEqual(codes(checkMedia("instagram", tall)), []);
+  assert.ok(checkMedia("instagram", tall).notes.includes("Photos auto-fitted to 4:5 for Instagram"));
+  assert.ok(checkMedia("instagram", tall, { igRatio: 1 }).notes.includes("Photos auto-fitted to 1:1 for Instagram"));
+  assert.ok(!checkMedia("instagram", [{ kind: "photo", width: 1080, height: 1350 }]).notes.some((n) => /auto-fitted/.test(n)));
+  assert.ok(!checkMedia("instagram", tall, { format: "Story" }).notes.some((n) => /auto-fitted/.test(n)));
   assert.deepEqual(codes(checkMedia("instagram", Array.from({ length: 20 }, () => pic()))), []);
   assert.deepEqual(codes(checkMedia("instagram", Array.from({ length: 21 }, () => pic()))), ["too_many"]);
   assert.match(checkMedia("instagram", [pic(1080, 1080, "png")]).notes.join(), /JPG for Instagram/);
@@ -111,7 +112,7 @@ test("Threads: carousel up to 20", () => {
 test("auto-split result always passes the rules", () => {
   for (const p of ["instagram", "threads", "facebook", "linkedin", "x", "tiktok", "youtube"]) {
     const picked = autoSplit(p, MIX).map((i) => MIX[i]);
-    assert.deepEqual(codes(checkMedia(p, picked, { cropOk: true })), [], p);
+    assert.deepEqual(codes(checkMedia(p, picked, {})), [], p);
   }
 });
 
@@ -123,7 +124,7 @@ test("review actions pick media", () => {
 });
 
 test("labels, crops and summary", () => {
-  assert.equal(splitLabel("instagram", MIX, [0, 1, 2, 3, 4, 5], { cropped: [3] }), "Carousel · all 6 · Photo 4 cropped to fit");
+  assert.equal(splitLabel("instagram", MIX, [0, 1, 2, 3, 4, 5], { cropped: [3] }), "Carousel · all 6 · Photo 4 auto-fitted");
   assert.equal(splitLabel("facebook", MIX, [1, 2, 3, 4, 5]), "5 photos");
   assert.equal(splitLabel("x", MIX, [1, 2, 3, 4]), "First 4 photos");
   assert.equal(splitLabel("tiktok", MIX, [0]), "The video");

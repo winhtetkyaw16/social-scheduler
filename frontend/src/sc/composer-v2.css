@@ -315,3 +315,21 @@ html.dark .scd .c2 .c2-pbtn,[data-theme=dark] .scd .c2 .c2-pbtn{background:linea
 }
 @media (max-height:520px){.scd .c2 .fx{padding:12px}.scd .c2 .fx .bx{max-height:calc(100vh - 24px)}.scd .c2 .fx .fh{padding:12px 20px 10px}}
 .scd .c2 .fx,.scd .c2 .fx .fb{overscroll-behavior:contain}
+/* Instagram crop editor (modal; Instagram-only crop, originals untouched) */
+.scd .c2 .igx .bx{width:460px}
+.scd .c2 .igx .fh{padding:18px 20px 8px}.scd .c2 .igx .fh h3{margin:0;font-size:17px}.scd .c2 .igx .fh p{margin:4px 0 0;font-size:13px;color:var(--fx-mute)}
+.scd .c2 .igx-body{padding:8px 20px 12px;overflow:auto;overscroll-behavior:contain;display:flex;flex-direction:column;gap:10px;min-height:0}
+.scd .c2 .igx-chips{display:flex;gap:6px}
+.scd .c2 .igx-chip{padding:6px 12px;border-radius:999px;border:1px solid var(--border);background:var(--fx-row);color:var(--text);font-size:13px;font-weight:600;cursor:pointer}
+.scd .c2 .igx-chip.on{background:var(--text);color:var(--fx-bg);border-color:var(--text)}
+.scd .c2 .igx-frame{position:relative;flex:none;margin:0 auto;border-radius:8px;overflow:hidden;background:#000;touch-action:none;cursor:grab;user-select:none}
+.scd .c2 .igx-frame:active{cursor:grabbing}
+.scd .c2 .igx-frame img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none;-webkit-user-drag:none}
+.scd .c2 .igx-grid{position:absolute;inset:0;pointer-events:none;background:linear-gradient(to right,transparent 33.2%,rgba(255,255,255,.45) 33.3%,transparent 33.6%,transparent 66.5%,rgba(255,255,255,.45) 66.6%,transparent 66.9%),linear-gradient(to bottom,transparent 33.2%,rgba(255,255,255,.45) 33.3%,transparent 33.6%,transparent 66.5%,rgba(255,255,255,.45) 66.6%,transparent 66.9%)}
+.scd .c2 .igx-hint{margin:0;font-size:12px;color:var(--fx-mute);text-align:center}
+.scd .c2 .igx-thumbs{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px}
+.scd .c2 .igx-th{position:relative;flex:0 0 54px;border-radius:6px;overflow:hidden;border:2px solid transparent;padding:0;background:#000;cursor:pointer}
+.scd .c2 .igx-th.on{border-color:var(--brand,#2563eb)}
+.scd .c2 .igx-th img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.scd .c2 .igx-ft{display:flex;align-items:center;gap:8px;padding:12px 20px 16px;border-top:1px solid var(--border)}
+.scd .igf .md video{object-fit:cover}

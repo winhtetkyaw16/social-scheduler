@@ -45,7 +45,7 @@ test("row text: summaries and notes, no sizes or formats", () => {
   assert.deepEqual(rowText("x", MIX, [0, 1, 2, 3], { suggested: [0, 1, 2, 3] }), { line2: "4 photos", line3: "X allows up to 4 — we'll use the first 4" });
   assert.equal(rowText("instagram", MIX, [0, 1, 2, 3, 4, 5, 6]).line2, "Carousel · 7 items");
   const crop = [{ kind: "photo", width: 1000, height: 3000 }, P(2)];
-  assert.equal(rowText("instagram", crop, [0, 1]).line3, "1 photo cropped to fit");
+  assert.equal(rowText("instagram", crop, [0, 1]).line3, "2 photos auto-fitted for Instagram"); // one 4:5 frame for both
   assert.equal(fmtDuration(42), "0:42"); assert.equal(fmtDuration(125), "2:05");
 });
 

@@ -18,7 +18,9 @@ class PublishingError(Exception):
 PublishResult = ProviderPublishResult
 
 
-def publish(platform: str, access_token: str, account_id: str, content: str, media_urls: list[str]) -> PublishResult:
+def publish(
+    platform: str, access_token: str, account_id: str, content: str, media_urls: list[str], *, ig_crop: dict | None = None
+) -> PublishResult:
     """Publish through the registered platform adapter with normalized errors.
 
     Media is first run through the automatic per-network conversions (JPG for Instagram, WebP for
@@ -26,7 +28,7 @@ def publish(platform: str, access_token: str, account_id: str, content: str, med
     """
     from app.services.media_convert import prepare_media
 
-    media_urls = prepare_media(platform, media_urls)
+    media_urls = prepare_media(platform, media_urls, ig_crop=ig_crop if platform == "instagram" else None)
     try:
         return get_platform(platform).publish(access_token, account_id, content, media_urls)
     except ProviderHTTPError as exc:

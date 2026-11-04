@@ -1,6 +1,11 @@
 import React, { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Bookmark, ChartNoAxesColumn, Forward, Globe, Heart, ListPlus, MessageCircle, MessageSquare, MoreHorizontal, Repeat, Repeat2, Send, Share, ThumbsDown, ThumbsUp, Play } from "lucide-react";
 import { accountDisplayName, accountHandle, resolveAvatarUrl } from "./sc/ui.jsx";
+import ModalPortal from "./ModalPortal.jsx";
+import useBodyScrollLock from "./useBodyScrollLock.js";
+import { focusNoScroll } from "./scrollLock.js";
+import { mediaKeyOf } from "./mediaRules.js";
+import { IG_CHIPS, igChipLabel, igDragOffset, igFrameRatio, igNeedsCrop, igObjectPosition } from "./igFrame.js";
 import brandMark from "./assets/brand/socialcastly-mark-256.png";
 
 const isVideo = (item) => typeof item === "string" ? /\.(mp4|mov|webm|m4v)(\?|$)/i.test(item) : String(item?.type || "").startsWith("video/");
@@ -63,8 +68,6 @@ const Txt = ({ text }) => <>{String(text || "").split(/(https?:\/\/\S+|#[\p{L}\p
 
 // ---------- Instagram: real-size preview (feed / reel / story) + crop ----------
 const IG_MIN = 4 / 5, IG_MAX = 1.91;
-const igClamp = (r) => Math.min(IG_MAX, Math.max(IG_MIN, r));
-const igInRange = (r) => r >= 0.795 && r <= 1.915;
 function igRatioLabel(r) {
   if (Math.abs(r - 1) < 0.01) return ["1:1", "1080×1080"];
   if (Math.abs(r - IG_MIN) < 0.006) return ["4:5", "1080×1350"];
@@ -91,62 +94,63 @@ const IgMedia = ({ url, video, pos = "50% 50%", children }) => <>
   {children}
 </>;
 
-async function cropToJpeg(url, nat, target, off, baseName) {
-  let src = url;
-  if (!/^blob:|^data:/.test(url)) { const res = await fetch(url, { credentials: "include" }); if (!res.ok) throw new Error("fetch"); src = URL.createObjectURL(await res.blob()); }
-  const img = await new Promise((ok, bad) => { const i = new Image(); i.onload = () => ok(i); i.onerror = bad; i.src = src; });
-  const W = img.naturalWidth, H = img.naturalHeight;
-  let sw = W, sh = H, sx = 0, sy = 0;
-  if (nat > target) { sw = Math.round(H * target); sx = Math.round((W - sw) * off); } else { sh = Math.round(W / target); sy = Math.round((H - sh) * off); }
-  const scale = Math.min(1, 1440 / sw);
-  const c = document.createElement("canvas"); c.width = Math.round(sw * scale); c.height = Math.round(sh * scale);
-  const ctx = c.getContext("2d"); ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height);
-  ctx.drawImage(img, sx, sy, sw, sh, 0, 0, c.width, c.height);
-  if (src !== url) URL.revokeObjectURL(src);
-  const blob = await new Promise((ok) => c.toBlob(ok, "image/jpeg", 0.92));
-  if (!blob) throw new Error("encode");
-  const stem = String(baseName || "photo").replace(/\.[^.]+$/, "");
-  return new File([blob], `${stem}-instagram.jpg`, { type: "image/jpeg", lastModified: Date.now() });
+// Natural ratios for every item (frame = first photo), cached in natRatio like useNatural.
+function useNaturals(urls, vids) {
+  const [, bump] = useState(0);
+  useEffect(() => {
+    let off = false;
+    urls.forEach((url, i) => {
+      if (!url || natRatio.get(url)) return;
+      const done = (w, h) => { if (!off && w > 0 && h > 0) { natRatio.set(url, w / h); bump((n) => n + 1); } };
+      if (vids[i]) { const v = document.createElement("video"); v.preload = "metadata"; v.muted = true; v.onloadedmetadata = () => done(v.videoWidth, v.videoHeight); v.src = url; }
+      else { const im = new Image(); im.onload = () => done(im.naturalWidth, im.naturalHeight); im.src = url; }
+    });
+    return () => { off = true; };
+  }, [urls.join("|"), vids.join("|")]);
+  return urls.map((u) => natRatio.get(u) || 0);
 }
 
-function IgCrop({ url, nat, target, item, onReplaceMedia, off, setOff }) {
-  const [editing, setEditing] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
-  const box = useRef(null); const drag = useRef(null);
-  const wide = nat > target;
-  const winW = wide ? (target / nat) * 100 : 100, winH = wide ? 100 : (nat / target) * 100;
-  const left = wide ? (100 - winW) * off : 0, top = wide ? 0 : (100 - winH) * off;
-  const label = target === IG_MIN ? "4:5" : "1.91:1";
+// Optional Instagram crop tweak: ratio chips for the whole carousel + drag each photo inside the frame.
+// Saved per account (Instagram only) and applied when Instagram publishes; other networks keep the originals.
+function IgCropEditor({ urls, vids, nats, keys, frame, crop, onChange, startIdx, onClose }) {
+  useBodyScrollLock(true);
+  const photos = urls.map((_, i) => i).filter((i) => !vids[i] && urls[i]);
+  const [sel, setSel] = useState(photos.includes(startIdx) ? startIdx : photos[0]);
+  const frameEl = useRef(null); const drag = useRef(null); const done = useRef(null);
+  useEffect(() => { focusNoScroll(done.current); }, []);
+  const offs = crop?.offsets || {};
+  const off = offs[keys[sel]] || [0.5, 0.5];
   const move = (e) => {
-    if (!drag.current || !box.current) return;
-    const r = box.current.getBoundingClientRect();
-    const free = wide ? r.width * (1 - winW / 100) : r.height * (1 - winH / 100);
-    const d = wide ? e.clientX - drag.current.x : e.clientY - drag.current.y;
-    setOff(Math.min(1, Math.max(0, drag.current.off + (free ? d / free : 0))));
+    const d = drag.current; const el = frameEl.current;
+    if (!d || !el) return;
+    const r = el.getBoundingClientRect();
+    onChange({ offsets: { [keys[sel]]: igDragOffset(d.off, e.clientX - d.x, e.clientY - d.y, r.width, r.height, nats[sel] || frame) } });
   };
-  const apply = async () => {
-    setBusy(true); setErr("");
-    try { const f = await cropToJpeg(url, nat, target, off, item?.name); onReplaceMedia?.(item, f); setEditing(false); setOff(0.5); }
-    catch { setErr("Couldn't crop this photo here. Crop it to " + label + " in a photo editor, then add it again."); }
-    finally { setBusy(false); }
-  };
-  return <div className="igc">
-    <div ref={box} className={`igc-v${editing ? " edit" : ""}`} style={{ aspectRatio: nat }}
-      onPointerMove={move} onPointerUp={() => { drag.current = null; }} onPointerCancel={() => { drag.current = null; }}>
-      <img src={url} alt="" />
-      <div className="igc-win" style={{ left: `${left}%`, top: `${top}%`, width: `${winW}%`, height: `${winH}%` }}
-        onPointerDown={editing ? (e) => { e.currentTarget.setPointerCapture?.(e.pointerId); drag.current = { x: e.clientX, y: e.clientY, off }; e.preventDefault(); } : undefined} />
+  const end = () => { drag.current = null; };
+  return <ModalPortal inner="c2"><div className="fx igx" onClick={(ev) => { if (ev.target === ev.currentTarget) onClose(); }} onKeyDown={(ev) => { if (ev.key === "Escape") onClose(); }}>
+    <div className="bx" role="dialog" aria-modal="true" aria-labelledby="igx-title">
+      <div className="fh"><h3 id="igx-title">Adjust Instagram crop</h3><p>Only the Instagram version changes. Other networks keep your original photos.</p></div>
+      <div className="igx-body">
+        <div className="igx-chips" role="radiogroup" aria-label="Frame">
+          {IG_CHIPS.map(([lbl, v]) => <button key={lbl} type="button" role="radio" aria-checked={Math.abs(frame - v) < 0.006} className={`igx-chip${Math.abs(frame - v) < 0.006 ? " on" : ""}`} onClick={() => onChange({ ratio: v })}>{lbl}</button>)}
+        </div>
+        {sel != null && <div ref={frameEl} className="igx-frame" style={{ aspectRatio: frame, width: `min(100%, calc(52vh * ${frame}))` }}
+          onPointerDown={(e) => { e.currentTarget.setPointerCapture?.(e.pointerId); drag.current = { x: e.clientX, y: e.clientY, off }; e.preventDefault(); }}
+          onPointerMove={move} onPointerUp={end} onPointerCancel={end}>
+          <img src={urls[sel]} alt="" draggable={false} style={{ objectPosition: igObjectPosition(off) }} />
+          <span className="igx-grid" aria-hidden="true" />
+        </div>}
+        <p className="igx-hint">Drag the photo to choose what stays in the frame.</p>
+        {photos.length > 1 && <div className="igx-thumbs">{photos.map((i) => <button key={i} type="button" className={`igx-th${i === sel ? " on" : ""}`} style={{ aspectRatio: frame }} onClick={() => setSel(i)} aria-label={`Photo ${i + 1}`}>
+          <img src={urls[i]} alt="" style={{ objectPosition: igObjectPosition(offs[keys[i]]) }} /></button>)}</div>}
+      </div>
+      <div className="igx-ft">
+        <button type="button" className="btn btn-ghost btn-sm" onClick={() => onChange({ ratio: null, offsets: Object.fromEntries(keys.map((k) => [k, undefined])) })}>Reset</button>
+        <span className="grow" />
+        <button ref={done} type="button" className="btn btn-primary btn-sm" onClick={onClose}>Done</button>
+      </div>
     </div>
-    <div className="igc-note">
-      <span className="grow">{editing ? `Drag the frame to choose what stays in.` : `This photo will be cropped to ${label} for Instagram. Crop it before posting.`}</span>
-      {editing ? <><button type="button" className="btn btn-ghost btn-sm" onClick={() => { setEditing(false); setOff(0.5); }} disabled={busy}>Cancel</button>
-        <button type="button" className="btn btn-primary btn-sm" onClick={apply} disabled={busy || !onReplaceMedia}>{busy ? "Cropping…" : "Apply crop"}</button></>
-        : <button type="button" className="btn btn-secondary btn-sm" onClick={() => setEditing(true)}>Adjust crop</button>}
-    </div>
-    {err && <p className="igp-err">{err}</p>}
-    <p className="igp-cap">Your post will look like this:</p>
-  </div>;
+  </div></ModalPortal>;
 }
 function fmtDur(s) { if (!Number.isFinite(s)) return ""; const m = Math.floor(s / 60), r = Math.round(s % 60); return `${m}:${String(r).padStart(2, "0")}`; }
 function useVideoMeta(url, video) {
@@ -155,7 +159,7 @@ function useVideoMeta(url, video) {
   return d;
 }
 
-function InstagramPreview({ account, caption, capCls, media, format, onReplaceMedia }) {
+function InstagramPreview({ account, caption, capCls, media, format, igCrop, onIgCrop }) {
   const urls = useUrls(media);
   const hasVideo = media.some(isVideo);
   const initial = format === "Story" ? "story" : format === "Reel / Video" && hasVideo ? "reel" : "feed";
@@ -165,15 +169,19 @@ function InstagramPreview({ account, caption, capCls, media, format, onReplaceMe
   const [idx, setIdx] = useState(0);
   useEffect(() => { if (idx >= urls.length) setIdx(0); }, [urls.length, idx]);
   const cur = urls[idx] || ""; const curItem = media[idx]; const curVid = curItem ? isVideo(curItem) : false;
-  const nat = useNatural(cur, curVid);
-  const [cropOff, setCropOff] = useState(0.5);
-  useEffect(() => { setCropOff(0.5); }, [cur]);
+  const vids = media.map(isVideo);
+  const nats = useNaturals(urls, vids);
+  const keys = media.map(mediaKeyOf);
+  const [editing, setEditing] = useState(false);
   const vi = media.findIndex(isVideo); const vurl = vi >= 0 ? urls[vi] : "";
   const dur = useVideoMeta(vurl, true);
   const [t, more] = clip(caption, 90);
   const uname = igName(account);
-  const box = nat ? igClamp(nat) : 1;
-  const needsCrop = view === "feed" && cur && !curVid && nat && !igInRange(nat);
+  // ONE frame for the whole feed post (first photo decides, or the user's chip); every item is cover-fitted in it.
+  const box = igFrameRatio(media.map((_, i) => ({ video: vids[i], ratio: nats[i] })), igCrop?.ratio || null);
+  const photoIdx = urls.map((_, i) => i).filter((i) => !vids[i] && urls[i]);
+  const fitted = photoIdx.some((i) => igNeedsCrop(nats[i], box));
+  const pos = curVid ? "50% 50%" : igObjectPosition(igCrop?.offsets?.[keys[idx]]);
   const [rl] = igRatioLabel(box);
   const label = view === "feed" ? igRatioLabel(box).join(" · ") : "9:16 · 1080×1920";
   const n = urls.length;
@@ -191,7 +199,7 @@ function InstagramPreview({ account, caption, capCls, media, format, onReplaceMe
   const feedCard = <div className="pp2 igf">
     {head}
     <div className="md" style={{ aspectRatio: box }}>
-      <IgMedia url={cur} video={curVid} pos={needsCrop ? (nat > 1 ? `${cropOff * 100}% 50%` : `50% ${cropOff * 100}%`) : "50% 50%"} />
+      <IgMedia url={cur} video={curVid} pos={pos} />
       {curVid && cur && <span className="play"><Play size={18} fill="currentColor" /></span>}
       {cur && <span className="ig-dim">{rl}</span>}
       {n > 1 && <span className="ig-ct">{idx + 1}/{n}</span>}
@@ -205,8 +213,12 @@ function InstagramPreview({ account, caption, capCls, media, format, onReplaceMe
   return <div className="igp">
     <div className="igp-top"><div className="fsw" role="tablist">{fm("feed", "Feed post")}{fm("reel", "Reel", hasVideo)}{fm("story", "Story")}</div><span className="igp-lbl">{label}</span></div>
     {view === "feed" && <>
-      {needsCrop && <IgCrop key={cur} url={cur} nat={nat} target={nat < 1 ? IG_MIN : IG_MAX} item={curItem} onReplaceMedia={onReplaceMedia} off={cropOff} setOff={setCropOff} />}
       {feedCard}
+      {photoIdx.length > 0 && <div className="igc-note">
+        <span className="grow">{fitted ? `Photos auto-fitted to ${igChipLabel(box)} for Instagram` : `Instagram frame: ${igChipLabel(box)}`}</span>
+        {onIgCrop && <button type="button" className="btn btn-secondary btn-sm" onClick={() => setEditing(true)}>Adjust crop</button>}
+      </div>}
+      {editing && <IgCropEditor urls={urls} vids={vids} nats={nats} keys={keys} frame={box} crop={igCrop} onChange={onIgCrop} startIdx={idx} onClose={() => setEditing(false)} />}
       <p className="igp-cap">Shown at Instagram's real proportions.{hasVideo ? " Reel appears because this post has a video." : ""}</p>
     </>}
     {view === "reel" && <div className="igr-wrap">
@@ -360,7 +372,7 @@ function YouTubePreview({ account, caption, media, title, format }) {
 }
 
 export default function PostPreview(
-{ account, caption, media = [], title = "", format = "Post", settings = {}, onReplaceMedia }) {
+{ account, caption, media = [], title = "", format = "Post", settings = {}, igCrop = null, onIgCrop }) {
   const urls = useUrls(media);
   const first = urls[0] || ""; const vid = media[0] ? isVideo(media[0]) : false;
   const p = account?.platform;
@@ -371,7 +383,7 @@ export default function PostPreview(
 
   if (p === "facebook") return <FacebookPreview account={account} caption={cap} capCls={capCls} media={media} format={format} />;
 
-  if (p === "instagram") return <InstagramPreview account={account} caption={cap} capCls={capCls} media={media} format={format} onReplaceMedia={onReplaceMedia} />;
+  if (p === "instagram") return <InstagramPreview account={account} caption={cap} capCls={capCls} media={media} format={format} igCrop={igCrop} onIgCrop={onIgCrop} />;
 
   if (p === "x" || p === "twitter") return <InsetPreview net="X" account={account} caption={cap} capCls={capCls} media={media} fit="x" uname={name(account)} sub={`${handle(account)} · now`}
     actions={<><span><MessageCircle size={15} />0</span><span><Repeat2 size={15} />0</span><span><Heart size={15} />0</span><span><ChartNoAxesColumn size={15} />0</span></>} />;

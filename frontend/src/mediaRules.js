@@ -1,3 +1,4 @@
+import { igChipLabel, igFrameRatio, igNeedsCrop } from "./igFrame.js";
 // Pure media rules engine + auto-split for the composer ("Media needs a few changes" panel, Fix for me).
 // Sources: design/screens/media-rules-spec.html and research/api-media-rules.md (official API docs).
 // No React, no DOM: safe to unit test with `node --test frontend/src/mediaRules.test.mjs`.
@@ -85,9 +86,9 @@ const P = (code, title, detail, action, extra = {}) => ({ code, title, detail, a
  *  problems: things the user (or Fix for me) must change, each with one action {id,label}
  *  notes:    automatic conversions, shown muted (never a problem)
  *  hints:    soft tips (YouTube shape), never a block
- * `cropOk` marks Instagram crops the user accepted (or Fix for me applied); they become notes.
+ * `igRatio` is the Instagram frame the user picked (4:5 / 1:1 / 1.91:1); otherwise the first photo decides.
  */
-export function checkMedia(platform, infos, { format = "Post", cropOk = false } = {}) {
+export function checkMedia(platform, infos, { format = "Post", igRatio = null } = {}) {
   const p = net(platform);
   const problems = [], notes = [], hints = [];
   const n = infos.length;
@@ -111,15 +112,12 @@ export function checkMedia(platform, infos, { format = "Post", cropOk = false } 
         if (d != null && d > LIMITS.instagram.reelMax) problems.push(P("video_long", "This video is too long", "Reels can be up to 15 minutes.", { id: "shorten", label: "Shorten video" }));
       }
     }
-    const cropped = [];
-    pics.forEach((i) => {
-      const r = ratio(infos[i]);
-      if (r == null || (r >= LIMITS.instagram.minRatio && r <= LIMITS.instagram.maxRatio)) return;
-      if (format === "Story") return; // Stories are cropped/letterboxed by Instagram
-      if (cropOk) { cropped.push(i); return; }
-      problems.push(P(r > LIMITS.instagram.maxRatio ? "too_wide" : "too_tall", `Photo ${num(i)} is too ${r > LIMITS.instagram.maxRatio ? "wide" : "tall"}`, mixed ? "Photos and the video can stay together. We'll crop it to fit." : "We'll crop it to fit Instagram.", { id: "crop", label: `Crop photo ${num(i)}` }, { soft: true, index: i }));
-    });
-    if (cropped.length) notes.push(`${cropped.map((i) => `Photo ${num(i)}`).join(", ")} cropped to fit`);
+    // Feed posts share ONE frame (first photo decides, like Instagram's Create post) and we crop every photo to it
+    // automatically at publish, for the Instagram version only. Never a problem, just a calm note.
+    if (format !== "Story") {
+      const frame = igFrameRatio(infos.map((m) => ({ video: m?.kind === "video", ratio: ratio(m) || 0 })), igRatio);
+      if (pics.some((i) => igNeedsCrop(ratio(infos[i]) || 0, frame))) notes.push(`Photos auto-fitted to ${igChipLabel(frame)} for Instagram`);
+    }
     if (still.some((i) => infos[i].ext && infos[i].ext !== "jpg")) notes.push("We'll save photos as JPG for Instagram.");
   } else if (p === "facebook") {
     if (mixed) problems.push(P("mixed", "Use photos or the video, not both", "Facebook can't mix photos and a video in one post.", { id: "pick_photos", label: "Pick photos" }));
@@ -178,7 +176,7 @@ export function splitLabel(platform, infos, indices, { format = "Post", cropped 
   const picked = indices.map((i) => infos[i]).filter(Boolean);
   const v = picked.filter((m) => m.kind === "video").length;
   const s = picked.length - v;
-  const crop = cropped.length ? ` · ${cropped.map((i) => `Photo ${i + 1}`).join(", ")} cropped to fit` : "";
+  const crop = cropped.length ? ` · ${cropped.map((i) => `Photo ${i + 1}`).join(", ")} auto-fitted` : "";
   if (!picked.length) return p === "youtube" || p === "tiktok" ? "Needs a video" : "Text only";
   if ((p === "instagram" && format !== "Story") || p === "threads") {
     if (picked.length === 1) return (v ? "The video" : "1 photo") + crop;
@@ -190,10 +188,11 @@ export function splitLabel(platform, infos, indices, { format = "Post", cropped 
   return `${s} photo${s === 1 ? "" : "s"}`;
 }
 
-/** Indices of Instagram photos that will be center-cropped (outside 4:5 .. 1.91:1). */
-export function cropIndices(platform, infos, indices, { format = "Post" } = {}) {
+/** Indices of Instagram feed photos that will be cropped to the post's shared frame. */
+export function cropIndices(platform, infos, indices, { format = "Post", igRatio = null } = {}) {
   if (net(platform) !== "instagram" || format === "Story") return [];
-  return indices.filter((i) => { const m = infos[i]; const r = m && m.kind === "photo" ? ratio(m) : null; return r != null && (r < LIMITS.instagram.minRatio || r > LIMITS.instagram.maxRatio); });
+  const frame = igFrameRatio(indices.map((i) => ({ video: infos[i]?.kind === "video", ratio: ratio(infos[i]) || 0 })), igRatio);
+  return indices.filter((i) => { const m = infos[i]; const r = m && m.kind === "photo" ? ratio(m) : null; return r != null && igNeedsCrop(r, frame); });
 }
 
 /** Center-crop box {x,y,width,height} that brings a photo into Instagram's 4:5 .. 1.91:1 range. */

@@ -270,6 +270,20 @@ def _media_selection(metadata: dict, account_id: UUID, platform: str | None) -> 
     return [str(url) for url in picked if url] if isinstance(picked, list) else None
 
 
+def _ig_crop_for_account(metadata: dict, account_id, media: list[str]) -> dict:
+    """Draft ``igCropByAccount`` ({ratio, offsets by URL}) -> post ``ig_crop`` ({ratio, offsets by index})."""
+    all_crops = metadata.get("igCropByAccount") if isinstance(metadata.get("igCropByAccount"), dict) else {}
+    crop = all_crops.get(str(account_id)) if isinstance(all_crops.get(str(account_id)), dict) else {}
+    out: dict = {}
+    if isinstance(crop.get("ratio"), (int, float)) and crop["ratio"]:
+        out["ratio"] = float(crop["ratio"])
+    offs = crop.get("offsets") if isinstance(crop.get("offsets"), dict) else {}
+    picked = [offs.get(u) if isinstance(offs.get(u), list) and len(offs.get(u)) == 2 else None for u in media]
+    if any(picked):
+        out["offsets"] = [o or [0.5, 0.5] for o in picked]
+    return out
+
+
 def _media_for_account(metadata: dict, account_id: UUID, fallback: list[str], platform: str | None = None) -> list[str]:
     shared = metadata.get("sharedMediaUrls")
     if not isinstance(shared, list):
@@ -380,6 +394,8 @@ def materialize_draft_posts(
         if account.platform == "pinterest" and isinstance(account_settings, dict) and account_settings.get("destination_url"):
             post_metadata["destination_url"] = account_settings["destination_url"]
         account_media = _media_for_account(metadata, account.id, list(item.media_urls or []), account.platform)[:35]
+        if account.platform == "instagram":
+            post_metadata["ig_crop"] = _ig_crop_for_account(metadata, account.id, account_media)
         problem = media_requirement_error(account.platform, account_media, content)
         if problem:
             raise HTTPException(status_code=422, detail=f"{account.account_name}: {problem}")

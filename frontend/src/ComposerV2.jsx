@@ -50,7 +50,7 @@ export default function ComposerV2(props) {
   const {
     accounts, selectedIds, toggleAccount, connect, selectedAccounts, channels, maxChars,
     captionMode, changeCaptionMode, caption, setCaption, captionsByAccount, setCaptionsByAccount, useUniversalCaptionByAccount, setUseUniversalCaptionByAccount,
-    captionForAccount, mediaForAccount, channelWarnings, channelNotices = [], onReplaceMedia, templates,
+    captionForAccount, mediaForAccount, channelWarnings, channelNotices = [], igCropByAccount = {}, onIgCrop, templates,
     files, setFiles, libraryMediaUrls, setLibraryMediaUrls, onFilesAdded, onEditFile,
     title, setTitle, formatForAccount, formatsByAccount, formatOverridesByAccount, setAccountFormat, platformSettingsByAccount, setPlatformSetting,
     date, setDate, time, setTime, timeZone, setTimeZone, timezones, minDate,
@@ -228,7 +228,7 @@ export default function ComposerV2(props) {
       <aside className="c2-pv">
         {selectedAccounts.length ? <>
           <div className="pvh" role="tablist">{selectedAccounts.map((a) => <a role="tab" key={a.id} className={previewAccount?.id === a.id ? "active" : ""} onClick={() => setPreviewId(a.id)} title={a.account_name}><ChannelTile platform={a.platform} size={18} /><span className={previewAccount?.id === a.id ? "" : "sr-only"}>{LABELS[a.platform]}</span></a>)}</div>
-          {previewAccount && <PostPreview account={previewAccount} caption={captionForAccount(previewAccount)} media={mediaForAccount(previewAccount)} title={title} format={formatForAccount(previewAccount)} settings={platformSettingsByAccount[previewAccount.id] || {}} onReplaceMedia={onReplaceMedia ? (oldItem, file) => onReplaceMedia(previewAccount, oldItem, file) : undefined} />}
+          {previewAccount && <PostPreview account={previewAccount} caption={captionForAccount(previewAccount)} media={mediaForAccount(previewAccount)} title={title} format={formatForAccount(previewAccount)} settings={platformSettingsByAccount[previewAccount.id] || {}} igCrop={igCropByAccount[previewAccount.id] || null} onIgCrop={onIgCrop ? (next) => onIgCrop(previewAccount, next) : undefined} />}
         </> : <div className="card card-pad sm muted">Select a channel to see a preview.</div>}
       </aside>
     </div>

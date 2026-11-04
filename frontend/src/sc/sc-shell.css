@@ -15,6 +15,11 @@
   .scd .content .grid.g4 { grid-template-columns: 1fr 1fr; }
   .scd .content .grid.media-grid { grid-template-columns: repeat(3, 1fr) !important; }
   .scd .post { flex-wrap: wrap; }
+/* Dashboard Up next: date on top (muted), time below; fixed column fits "Dec 31, 2025" and never touches the avatar */
+.scd .post .time.upnext-when { width: auto; min-width: 96px; flex: none; margin-right: 12px; display: flex; flex-direction: column; gap: 2px; line-height: 1.25; }
+.scd .post .time.upnext-when > span { display: block; white-space: nowrap; overflow: visible; }
+.scd .post .time.upnext-when .upnext-date { color: var(--text-3); font-weight: 500; font-size: 12px; }
+.scd .post .time.upnext-when .upnext-time { color: var(--text); font-weight: 600; font-size: var(--fs-sm); }
   .scd .table { display: block; overflow-x: auto; }
   .scd .sc-mtab { display: grid; position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; }
   .scd .sc-more { display: block; position: fixed; right: 12px; bottom: 84px; width: 240px; z-index: 45; padding: 8px; box-shadow: var(--shadow-lg, 0 12px 32px rgba(0,0,0,.18)); }

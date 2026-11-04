@@ -237,3 +237,7 @@ html.dark .scd .c2 .c2-pbtn,[data-theme=dark] .scd .c2 .c2-pbtn{background:linea
   .scd .c2 .sheet{place-items:end center}.scd .c2 .sheet .bx{border-radius:16px 16px 0 0;width:100vw}
   .scd .c2 .mtoast{bottom:84px}
 }
+
+/* scroll lock: the sheet scrolls itself, never the page */
+.scd .c2 .sheet{overscroll-behavior:contain;touch-action:none}
+.scd .c2 .sheet .bx{overscroll-behavior:contain;-webkit-overflow-scrolling:touch;touch-action:pan-y}

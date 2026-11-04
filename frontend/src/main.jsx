@@ -11,6 +11,7 @@ import EmojiPicker from "./EmojiPicker.jsx";
 import RenderErrorBoundary from "./RenderErrorBoundary.jsx";
 import Landing from "./Landing.jsx";
 import ComposerV2 from "./ComposerV2.jsx";
+import useBodyScrollLock from "./useBodyScrollLock.js";
 import "./sc/composer-v2.css";
 import ManageAccounts, { AccountAvatar, DestinationPicker } from "./ManageAccounts.jsx";
 import {
@@ -469,6 +470,7 @@ function QuickStudioDialog({ tool, files, selectedFile, onClose, onToast }) {
 }
 
 function QuickStudioDialogContent({ tool, file, brightness, setBrightness, contrast, setContrast, fit, setFit, onClose, onToast }) {
+  useBodyScrollLock(true);
   const fileUrl = useObjectUrl(file);
   return <div className="modal-wrap sc-modal-wrap" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}><section role="dialog" aria-modal="true" aria-labelledby="quick-studio-title" className="modal sc-modal max-w-lg">
     <div className="flex items-start justify-between"><div><span className="xs muted sc-eyebrow">QUICK CREATIVE TOOLS</span><h2 id="quick-studio-title" className="mt-1  text-xl font-extrabold">{tool === "image" ? "Mini Canva / Image Editor" : "Video Studio"}</h2></div><button onClick={onClose} className="btn btn-ghost btn-icon" aria-label="Close"><XIcon size={17} /></button></div>
@@ -478,6 +480,7 @@ function QuickStudioDialogContent({ tool, file, brightness, setBrightness, contr
 }
 
 function ConnectDialog({ channel, onClose, onConnect, busy, error }) {
+  useBodyScrollLock(!!channel);
   if (!channel) return null;
   const supported = OAUTH_PLATFORMS.has(channel.id);
   const canPublish = PUBLISHABLE_PLATFORMS.has(channel.id);
@@ -495,6 +498,7 @@ function ConnectDialog({ channel, onClose, onConnect, busy, error }) {
 }
 
 function ConnectChannelPicker({ open, onClose, onPick, onRequestChannel }) {
+  useBodyScrollLock(!!open);
   if (!open) return null;
   const hints = {
     x: "Profile",

@@ -6,6 +6,7 @@ import PublishBar from "./sc/PublishBar.jsx";
 import PostPreview from "./PostPreviews.jsx";
 import { ChannelFormatSelector, PlatformSettingsPopover } from "./ComposerChannelEditor.jsx";
 import { mediaKeyOf, summarize } from "./mediaRules.js";
+import useBodyScrollLock from "./useBodyScrollLock.js";
 
 const LABELS = { x: "X", facebook: "Facebook", instagram: "Instagram", linkedin: "LinkedIn", tiktok: "TikTok", youtube: "YouTube", pinterest: "Pinterest", threads: "Threads" };
 const isVideo = (item) => typeof item === "string" ? /\.(mp4|mov|webm|m4v)(\?|$)/i.test(item) : String(item?.type || "").startsWith("video/");
@@ -64,6 +65,7 @@ export default function ComposerV2(props) {
   const [recentEmojis, setRecentEmojis] = useState([]);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
+  useBodyScrollLock(sheetOpen);
   const [mtoast, setMtoast] = useState(null);
   const toastTimer = useRef(0);
   useEffect(() => () => window.clearTimeout(toastTimer.current), []);

@@ -340,3 +340,12 @@ def test_draft_ig_crop_maps_offsets_to_indices():
     meta = {"igCropByAccount": {"7": {"ratio": 1, "offsets": {"/static/uploads/b.jpg": [0.1, 0.9]}}}}
     assert _ig_crop_for_account(meta, 7, ["/static/uploads/a.jpg", "/static/uploads/b.jpg"]) == {"ratio": 1.0, "offsets": [[0.5, 0.5], [0.1, 0.9]]}
     assert _ig_crop_for_account({}, 7, ["x"]) == {}
+
+
+def test_threads_and_facebook_publish_original_media_for_any_count(uploads):
+    # The Threads/Facebook preview layouts are display-only; publishing keeps every original URL.
+    sizes = [(1080, 1920), (1920, 1080), (1000, 1000), (1080, 2340), (2400, 1000), (800, 1000)]
+    urls = [uploads(f"pv{i}.jpg", size=s) for i, s in enumerate(sizes)]
+    for net in ("threads", "facebook"):
+        for n in (1, 2, 3, 4, 6):
+            assert media_convert.prepare_media(net, urls[:n]) == urls[:n]

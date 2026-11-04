@@ -6,6 +6,7 @@ import useBodyScrollLock from "./useBodyScrollLock.js";
 import { focusNoScroll } from "./scrollLock.js";
 import { mediaKeyOf } from "./mediaRules.js";
 import { IG_CHIPS, igChipLabel, igDragOffset, igFrameRatio, igNeedsCrop, igObjectPosition } from "./igFrame.js";
+import { threadsLayout, fbGridLayout } from "./previewLayout.js";
 import brandMark from "./assets/brand/socialcastly-mark-256.png";
 
 const isVideo = (item) => typeof item === "string" ? /\.(mp4|mov|webm|m4v)(\?|$)/i.test(item) : String(item?.type || "").startsWith("video/");
@@ -291,6 +292,34 @@ function VFrame({ c, top, rail, ov, story, account, uname }) {
 }
 const viewFrom = (format, map, dflt) => map[format] || dflt;
 
+// Display only: thumbnails are cover-fitted in the frame; the uploaded files are never changed.
+function Tile({ url, video }) {
+  return url ? (video ? <video src={url} muted playsInline preload="metadata" /> : <img src={url} alt="" />) : <img className="ph" src={brandMark} alt="" width={40} height={40} />;
+}
+function FbGrid({ urls, media }) {
+  const vids = media.map(isVideo);
+  const nats = useNaturals(urls, vids);
+  const g = fbGridLayout(nats.slice(0, urls.length));
+  return <div className="fbg" style={{ aspectRatio: g.ratio, gridTemplateColumns: g.cols, gridTemplateRows: g.rows }} data-kind={g.kind}>
+    {g.cells.map((cell, j) => <div key={cell.i} className="fbg-c" style={{ gridArea: cell.area }}>
+      <Tile url={urls[cell.i]} video={vids[cell.i]} />
+      {vids[cell.i] && urls[cell.i] && <span className="play"><Play size={16} fill="currentColor" /></span>}
+      {g.more > 0 && j === g.cells.length - 1 && <span className="fbg-more">+{g.more}</span>}
+    </div>)}
+    <span className="fbg-lbl">Approximate layout</span>
+  </div>;
+}
+function ThreadsMedia({ urls, media }) {
+  const vids = media.map(isVideo);
+  const nats = useNaturals(urls, vids);
+  const l = threadsLayout(nats.slice(0, urls.length));
+  if (l.kind === "none") return null;
+  if (l.kind === "single") return <div className="thm"><div className="thm-one" style={{ aspectRatio: l.ratio }}><Tile url={urls[0]} video={vids[0]} />
+    {vids[0] && urls[0] && <span className="play"><Play size={18} fill="currentColor" /></span>}</div></div>;
+  return <div className="thm thm-row">{l.tiles.map((t, i) => <div key={i} className="thm-t" style={{ width: `calc(var(--threads-tile-h) * ${t.w})` }}>
+    <Tile url={urls[i]} video={vids[i]} />{vids[i] && urls[i] && <span className="play"><Play size={16} fill="currentColor" /></span>}</div>)}</div>;
+}
+
 function FacebookPreview({ account, caption, capCls, media, format }) {
   const c = useCarousel(media);
   const init = viewFrom(format, { "Reel / Video": "reel", Story: "story" }, "post");
@@ -298,12 +327,13 @@ function FacebookPreview({ account, caption, capCls, media, format }) {
   const nat = useNatural(c.cur, c.vid);
   const box = nat ? FIT.fb(nat) : (c.vid ? 16 / 9 : 1);
   const [t, more] = clip(caption, 110);
-  const label = view === "post" ? (c.cur ? sizeLabel(box).join(" · ") : "Text post") : "9:16 · 1080×1920";
+  const label = view === "post" ? (c.n > 1 ? `${c.n} items · Approximate layout` : c.cur ? sizeLabel(box).join(" · ") : "Text post") : "9:16 · 1080×1920";
   return <Cpv net="Facebook" tabs={[["post", "Post"], ["reel", "Reel"], ["story", "Story"]]} view={view} setView={setView} label={label}>
     {view === "post" && <div className="pp2">
       <div className="h"><Av account={account} size={32} /><div className="grow"><b>{name(account)}</b><div className="sub">Just now · <Globe size={11} /></div></div><MoreHorizontal size={18} /></div>
       <div className={`${capCls} cpv-capt`}><Txt text={t} />{more && <>… <span className="mo">more</span></>}</div>
-      {c.cur && <CMd c={c} ratio={box} radius={0} />}
+      {c.n === 1 && <CMd c={c} ratio={box} radius={0} />}
+      {c.n > 1 && <FbGrid urls={c.urls} media={media} />}
       <div className="ac fb"><span><ThumbsUp size={15} />Like</span><span><MessageCircle size={15} />Comment</span><span><Forward size={15} />Share</span></div>
     </div>}
     {view === "reel" && <VFrame c={c} top="Reels" rail={<><span><ThumbsUp size={22} />1.2K</span><span><MessageCircle size={22} />48</span><span><Forward size={22} /></span><span><MoreHorizontal size={20} /></span></>}
@@ -332,13 +362,14 @@ function InsetPreview({ net, account, caption, capCls, media, fit, uname, sub, a
   const nat = useNatural(c.cur, c.vid);
   const box = nat ? FIT[fit](nat) : (c.vid ? 16 / 9 : 1);
   const [t, more] = clip(caption, 140);
-  return <Cpv net={net} label={c.cur ? sizeLabel(box).join(" · ") : "Text post"}>
+  const lbl = !c.cur ? "Text post" : net === "Threads" ? (c.n > 1 ? `${c.n} items · swipe row` : "Feed fit") : sizeLabel(box).join(" · ");
+  return <Cpv net={net} label={lbl}>
     <div className="pp2 cpv-row">
       <Av account={account} size={32} />
       <div className="grow" style={{ minWidth: 0 }}>
         <div className="cpv-nm"><b>{uname}</b> <span className="sub">{sub}</span><span className="grow" /><MoreHorizontal size={16} /></div>
         <div className={`${capCls} cpv-capt`} style={{ padding: "2px 0 0" }}><Txt text={t} />{more && <>… <span className="mo">more</span></>}</div>
-        {c.cur && <div className={`cpv-media ${inset || ""}`}><CMd c={c} ratio={box} radius={12} inset /></div>}
+        {c.cur && (net === "Threads" ? <ThreadsMedia urls={c.urls} media={media} /> : <div className={`cpv-media ${inset || ""}`}><CMd c={c} ratio={box} radius={12} inset /></div>)}
         <div className="ac cpv-ac">{actions}</div>
       </div>
     </div>

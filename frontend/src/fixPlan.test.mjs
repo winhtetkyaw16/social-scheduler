@@ -185,3 +185,12 @@ test("composer CSS shows the 'Fix the errors' hint on desktop whenever posting i
   // Top-level rule (not indented inside a mobile-only @media block).
   assert.match(css, /^\.scd \.c2 \.c2-pbar\.fix-first \.c2-fixhint\{display:block\}/m);
 });
+
+test("media panel spacing: pulled up with even top/bottom gaps (no overlap: stays inside the body's 18px padding)", async () => {
+  const { readFileSync } = await import("node:fs");
+  const css = readFileSync(new URL("./sc/composer-v2.css", import.meta.url), "utf8");
+  const m = css.match(/^\.scd \.c2 \.mp\{margin:(-?\d+)px 16px (\d+)px;/m);
+  assert.ok(m);
+  const above = 18 + Number(m[1]), below = Number(m[2]);
+  assert.ok(above >= 8 && Math.abs(above - below) <= 4, `gap above ${above}px vs below ${below}px`);
+});

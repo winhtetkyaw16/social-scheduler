@@ -108,3 +108,23 @@ test("fbPostState: a Facebook Page post never previews two videos", async () => 
   assert.equal(fbPostState(["video"]), "ok");
   assert.equal(fbPostState(["photo", "photo"]), "ok");
 });
+
+test("oneVideoGate: every single-video network shows the placeholder until a video is picked, then only that video", async () => {
+  const { oneVideoGate } = await import("./previewLayout.js");
+  const { indicesForChoice, urlsForSelection } = await import("./fixPlan.js");
+  const infos = [{ kind: "video", name: "a.mp4" }, { kind: "video", name: "b.mp4" }, { kind: "photo", name: "p.jpg" }];
+  const urls = ["/m/a.mp4", "/m/b.mp4", "/m/p.jpg"];
+  const nets = { facebook: "Facebook", linkedin: "LinkedIn", tiktok: "TikTok", x: "X", youtube: "YouTube" };
+  for (const [p, net] of Object.entries(nets)) {
+    const none = oneVideoGate(p, ["video", "video"]);
+    assert.equal(none.state, "choose_video", p);
+    assert.equal(none.title, `Choose which video goes to ${net}`);
+    assert.match(none.line, /carries one video.*Use Fix for me to pick it\./);
+    const picked = indicesForChoice(p, infos, "Video", { video: 1 });
+    const sent = urlsForSelection(urls, picked);
+    assert.deepEqual(sent, ["/m/b.mp4"], `${p} previews/sends only the chosen video`);
+    assert.equal(oneVideoGate(p, picked.map((i) => infos[i].kind)).state, "ok", `${p} shows the real preview after a pick`);
+  }
+  assert.equal(oneVideoGate("facebook", ["video", "video"]).line, "A Page post carries one video. Use Fix for me to pick it.");
+  for (const p of ["instagram", "threads"]) assert.equal(oneVideoGate(p, ["video", "video", "photo"]).state, "ok", `${p} carousel keeps both videos`);
+});

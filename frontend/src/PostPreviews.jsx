@@ -6,7 +6,7 @@ import useBodyScrollLock from "./useBodyScrollLock.js";
 import { focusNoScroll } from "./scrollLock.js";
 import { mediaInfo, mediaKeyOf } from "./mediaRules.js";
 import { IG_CHIPS, igChipLabel, igDragOffset, igFrameRatio, igNeedsCrop, igObjectPosition } from "./igFrame.js";
-import { fbPostState, threadsLayout, fbGridLayout, xLayout, liLayout } from "./previewLayout.js";
+import { oneVideoGate, threadsLayout, fbGridLayout, xLayout, liLayout } from "./previewLayout.js";
 import { arrowsFor, keyDir, nearestIndex, stepIndex } from "./carouselNav.js";
 import brandMark from "./assets/brand/socialcastly-mark-256.png";
 
@@ -286,6 +286,23 @@ function CMd({ c, ratio, radius, inset, dur, pill = true }) {
     <NavDots idx={c.idx} n={c.n} go={c.setIdx} cls="cpv-dots" />
   </div>;
 }
+/** Shared "Choose which video goes to <Network>" placeholder (Facebook, LinkedIn, TikTok, X, YouTube). */
+function ChooseVideo({ gate }) {
+  return <div className="cpv-blocked" role="status" style={{ aspectRatio: "16 / 9", display: "grid", placeItems: "center", textAlign: "center", padding: 16, background: "var(--surface-2, #f0f2f5)", color: "var(--muted, #65676b)", fontSize: 13 }}>
+    <div><b style={{ display: "block", color: "var(--text, #1c1e21)", marginBottom: 4 }}>{gate.title}</b>{gate.line}</div></div>;
+}
+
+/** Non-Facebook single-video networks: whole preview gated until a video is picked. */
+function GatedPreview({ account, gate, caption, capCls }) {
+  return <Cpv net={gate.net} label="Blocked · choose one video">
+    <div className="pp2">
+      <div className="h"><Av account={account} size={32} /><div className="grow"><b>{name(account)}</b><div className="sub">Now</div></div><MoreHorizontal size={18} /></div>
+      <div className={`${capCls} cpv-capt`}><Txt text={clip(caption, 110)[0]} /></div>
+      <ChooseVideo gate={gate} />
+    </div>
+  </Cpv>;
+}
+
 function Cpv({ net, tabs, view, setView, label, foot, children }) {
   return <div className="igp cpv">
     <div className="igp-top">
@@ -387,14 +404,13 @@ function FacebookPreview({ account, caption, capCls, media, format }) {
   const nat = useNatural(c.cur, c.vid);
   const box = nat ? FIT.fb(nat) : (c.vid ? 16 / 9 : 1);
   const [t, more] = clip(caption, 110);
-  const fbState = fbPostState((media || []).map((m) => mediaInfo(m).kind));
+  const gate = oneVideoGate("facebook", (media || []).map((m) => mediaInfo(m).kind)); const fbState = gate.state;
   const label = view === "post" && fbState !== "ok" ? "Blocked · choose one video" : view === "post" ? (c.n > 1 ? `${c.n} items · Approximate layout` : c.cur ? sizeLabel(box).join(" · ") : "Text post") : "9:16 · 1080×1920";
   return <Cpv net="Facebook" tabs={[["post", "Post"], ["reel", "Reel"], ["story", "Story"]]} view={view} setView={setView} label={label}>
     {view === "post" && <div className="pp2">
       <div className="h"><Av account={account} size={32} /><div className="grow"><b>{name(account)}</b><div className="sub">Just now · <Globe size={11} /></div></div><MoreHorizontal size={18} /></div>
       <div className={`${capCls} cpv-capt`}><Txt text={t} />{more && <>… <span className="mo">more</span></>}</div>
-      {fbState !== "ok" && <div className="cpv-blocked" role="status" style={{ aspectRatio: "16 / 9", display: "grid", placeItems: "center", textAlign: "center", padding: 16, background: "var(--surface-2, #f0f2f5)", color: "var(--muted, #65676b)", fontSize: 13 }}>
-        <div><b style={{ display: "block", color: "var(--text, #1c1e21)", marginBottom: 4 }}>{fbState === "choose_video" ? "Choose which video goes to Facebook" : "Facebook posts a video on its own"}</b>A Page post carries one video. Use Fix for me to pick it.</div></div>}
+      {gate.state !== "ok" && <ChooseVideo gate={gate} />}
       {fbState === "ok" && c.n === 1 && <CMd c={c} ratio={box} radius={0} />}
       {fbState === "ok" && c.n > 1 && <FbGrid urls={c.urls} media={media} />}
       <div className="ac fb"><span><ThumbsUp size={15} />Like</span><span><MessageCircle size={15} />Comment</span><span><Forward size={15} />Share</span></div>
@@ -474,6 +490,9 @@ export default function PostPreview(
   const cap = empty ? "Your caption will appear here." : caption;
   const capCls = empty ? "tx ph-t" : "tx";
   const vertical = ["Short", "Reel / Video", "Story"].includes(format);
+
+  const gate = oneVideoGate(p, media.map((m) => mediaInfo(m).kind));
+  if (p !== "facebook" && gate.state !== "ok") return <GatedPreview account={account} gate={gate} caption={cap} capCls={capCls} />;
 
   if (p === "facebook") return <FacebookPreview account={account} caption={cap} capCls={capCls} media={media} format={format} />;
 

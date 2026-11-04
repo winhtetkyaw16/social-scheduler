@@ -87,3 +87,23 @@ export function fbPostState(kinds = []) {
   if (v === 1 && kinds.length > 1) return "mixed";
   return "ok";
 }
+
+/** Networks whose preview carries one video per post (Instagram/Threads carousels are not gated). */
+export const ONE_VIDEO_PREVIEW = { facebook: "Facebook", linkedin: "LinkedIn", tiktok: "TikTok", x: "X", twitter: "X", youtube: "YouTube" };
+
+/** Shared gate for every single-video network preview: until one video is picked (2+ videos in the
+ *  account's media), show "Choose which video goes to <Network>". Facebook Page posts also gate video+photos.
+ *  Returns { state: "ok" | "choose_video" | "mixed", net, title, line }. */
+export function oneVideoGate(platform, kinds = []) {
+  const key = String(platform || "").toLowerCase();
+  const net = ONE_VIDEO_PREVIEW[key];
+  if (!net) return { state: "ok", net: null };
+  let state = fbPostState(kinds);
+  if (state === "mixed" && key !== "facebook") state = "ok";
+  if (state === "ok") return { state, net };
+  return {
+    state, net,
+    title: state === "choose_video" ? `Choose which video goes to ${net}` : `${net} posts a video on its own`,
+    line: `${key === "facebook" ? "A Page post" : `${net}`} carries one video${key === "facebook" ? "" : " per post"}. Use Fix for me to pick it.`,
+  };
+}

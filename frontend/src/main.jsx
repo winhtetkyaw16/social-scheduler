@@ -743,7 +743,42 @@ function App() {
     if (account.platform === "facebook" && media.length > 1 && videoCount) warnings.push("Facebook posts from SocialCastly can have several photos or one video, not a mix. Remove the video or the photos.");
     if (account.platform === "youtube" && (media.length !== 1 || videoCount !== 1)) warnings.push("YouTube needs exactly one video. Add a video (photos and text-only posts can't go to YouTube).");
     if (account.platform === "tiktok" && (media.length !== 1 || videoCount !== 1)) warnings.push("TikTok needs exactly one video. Keep a single video and remove other files.");
-    if (account.platform === "x" && media.length) warnings.push(`SocialCastly can't send photos or videos to ${channel?.label || account.platform} yet. Remove the media for ${channel?.label || account.platform} (text-only posts work), or untick it.`);
+    // X (docs.x.com/x-api/media/quickstart/best-practices): up to 4 photos (JPG/PNG/WEBP, 5 MB), or 1 GIF (15 MB, <=1280x1080),
+    // or 1 MP4 video (0.5 s-20 min, 32px-1920px, aspect 1:3-3:1, up to 8 GB). No mixing.
+    if ((account.platform === "x" || account.platform === "twitter") && media.length) {
+      const nameOf = (m) => typeof m === "string" ? decodeURIComponent(m.split(/[?#]/)[0].split("/").pop() || "") : (m.name || "");
+      const extOf = (m) => (nameOf(m).match(/\.([a-z0-9]+)$/i)?.[1] || "").toLowerCase();
+      const isGif = (m) => extOf(m) === "gif" || (typeof m !== "string" && /^image\/gif$/i.test(m.type || ""));
+      const sizeOf = (m) => (typeof m !== "string" ? m.size : 0);
+      const mbOf = (n) => n >= 1048576 ? (n / 1048576).toFixed(1) + " MB" : Math.round(n / 1024) + " KB";
+      const vids = media.filter(isVideoMedia); const gifs = media.filter((m) => !isVideoMedia(m) && isGif(m));
+      const pics = media.filter((m) => !isVideoMedia(m) && !isGif(m));
+      if (vids.length && (pics.length || gifs.length)) warnings.push("X posts can have up to 4 photos, or 1 video, not a mix of photos and videos. Remove the video or the photos.");
+      else if (vids.length > 1) warnings.push(`X posts can have only one video. This post has ${vids.length}; keep one.`);
+      else if (gifs.length && (gifs.length > 1 || pics.length)) warnings.push("An animated GIF must be the only media on an X post (1 GIF, or up to 4 photos). Remove the other files.");
+      else if (pics.length > 4) warnings.push(`X posts can have up to 4 photos. This post has ${pics.length}; remove some.`);
+      vids.forEach((v) => {
+        const ext = extOf(v); const isMp4 = ext ? ext === "mp4" : (typeof v !== "string" && /mp4/i.test(v.type || ""));
+        if (!isMp4 && (ext || typeof v !== "string")) warnings.push(`X accepts videos as MP4 only. ${nameOf(v) || "This video"} is ${(ext || v.type || "another format").toUpperCase()}; convert it to MP4.`);
+        if (sizeOf(v) > 8 * 1024 ** 3) warnings.push(`X videos can be up to 8 GB. ${nameOf(v) || "This video"} is ${mbOf(sizeOf(v))}.`);
+        const d = mediaDims[mediaKey(v)];
+        if (Number.isFinite(d?.duration) && (d.duration < 0.5 || d.duration > 1200)) warnings.push(`X videos must be 0.5 seconds to 20 minutes long. ${nameOf(v) || "This video"} is ${Math.floor(d.duration / 60)}:${String(Math.round(d.duration % 60)).padStart(2, "0")}.`);
+        if (d?.width && d?.height) {
+          if (Math.min(d.width, d.height) < 32 || Math.max(d.width, d.height) > 1920) warnings.push(`X videos must be between 32x32 and 1920 pixels on the long side. ${nameOf(v) || "This video"} is ${d.width}x${d.height}; resize it (1280x720 or 720x1280 works best).`);
+          else if (d.width / d.height < 1 / 3 || d.width / d.height > 3) warnings.push(`X videos must have an aspect ratio between 1:3 and 3:1. ${nameOf(v) || "This video"} is ${d.width}x${d.height}; crop it.`);
+        }
+      });
+      gifs.forEach((g) => {
+        if (sizeOf(g) > 15 * 1024 * 1024) warnings.push(`X animated GIFs can be up to 15 MB. ${nameOf(g) || "This GIF"} is ${mbOf(sizeOf(g))}.`);
+        const d = mediaDims[mediaKey(g)];
+        if (d?.width && d?.height && (d.width > 1280 || d.height > 1080)) warnings.push(`X animated GIFs can be up to 1280x1080. ${nameOf(g) || "This GIF"} is ${d.width}x${d.height}; resize it.`);
+      });
+      pics.forEach((p) => {
+        const ext = extOf(p); const ok = ext ? ["jpg", "jpeg", "png", "webp"].includes(ext) : (typeof p === "string" || /^image\/(jpe?g|png|webp)$/i.test(p.type || ""));
+        if (!ok) warnings.push(`X accepts JPG, PNG, GIF or WEBP photos. ${nameOf(p) || "This photo"} is ${(ext || p.type || "another format").toUpperCase()}; re-save it as JPG or PNG.`);
+        if (sizeOf(p) > 5 * 1024 * 1024) warnings.push(`X photos can be up to 5 MB. ${nameOf(p) || "This photo"} is ${mbOf(sizeOf(p))}; compress or resize it.`);
+      });
+    }
     // LinkedIn (learn.microsoft.com/linkedin Videos/Images/MultiImage APIs): one MP4 video (75 KB-500 MB, 3 s-30 min),
     // one JPG/PNG/GIF photo, or 2-20 photos; photos under 36,152,320 pixels.
     if (account.platform === "linkedin" && media.length) {

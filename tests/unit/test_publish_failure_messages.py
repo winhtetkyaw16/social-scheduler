@@ -50,7 +50,8 @@ def test_non_http_errors_do_not_quote_raw():
     ("linkedin", ["https://a.test/p.webp"], True),
     ("linkedin", ["https://a.test/p.jpg"], False),
     ("linkedin", ["https://a.test/v.mp4"], False),
-    ("x", ["https://a.test/v.mp4"], True),
+    ("x", ["https://a.test/v.mp4"], False),
+    ("x", ["https://a.test/v.mp4", "https://a.test/p.jpg"], True),
     ("linkedin", [], False),
     ("x", [], False),
 ])
@@ -59,8 +60,9 @@ def test_prepublish_media_rules(platform, media, blocked):
 
 
 def test_linkedin_media_message_classifies_as_unsupported():
-    msg = media_requirement_error("x", ["https://a.test/p.jpg"], "hi")
-    assert classify_error("provider_not_configured", msg, "x") == "media_not_supported"
+    assert media_requirement_error("x", ["https://a.test/p.jpg"], "hi") is None
+    msg = media_requirement_error("x", [f"https://a.test/{i}.jpg" for i in range(5)], "hi")
+    assert classify_error("provider_not_configured", msg, "x") == "x_media_rules"
     msg = media_requirement_error("linkedin", ["https://a.test/v.mp4", "https://a.test/p.jpg"], "hi")
     assert classify_error("provider_not_configured", msg, "linkedin") == "linkedin_media_rules"
     fe = friendly_error("provider_not_configured", "LinkedIn media upload is not implemented; schedule text-only posts", "linkedin")

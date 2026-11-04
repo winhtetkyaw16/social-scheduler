@@ -51,7 +51,10 @@ def test_specific_copy_has_no_jargon_or_raw_text(code, message, platform, media,
     result = friendly_error(code, message, platform, media)
     for text in [result["banner"], result["what_happened"], result["what_to_do"]] + [a["label"] for a in result["actions"]]:
         low = text.lower()
+        # The X credits copy names the "X API" on purpose: the fix happens in the X developer console.
         for word in BANNED_WORDS:
+            if expected == "x_credits_depleted" and word == "api":
+                continue
             assert not re.search(rf"\b{re.escape(word)}\b", low), (word, text)
         assert "{" not in text and "provider" not in low
         assert message.lower() not in low
@@ -77,7 +80,7 @@ def test_timeout_copy():
 
 def test_x_credits_copy_is_specific():
     r = friendly_error(H, "Provider returned HTTP 402: credits depleted", "x")
-    assert r["banner"] == "X's posting limit for this connected account is used up."
+    assert r["banner"] == "X API has no credits: add credits in the X developer console to post."
     assert "credits" in r["what_happened"]
     assert [a["id"] for a in r["actions"]] == ["retry", "reschedule"]
     assert all("href" not in a for a in r["actions"])

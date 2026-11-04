@@ -209,7 +209,7 @@ def test_validation_inspects_local_files(monkeypatch, tmp_path):
     assert "75 KB and 500 MB" in media_requirement_error("linkedin", ["/static/uploads/tiny.mp4"])
     assert "36,152,320 pixels" in media_requirement_error("linkedin", ["/static/uploads/big.png"])
     assert media_requirement_error("linkedin", ["/static/uploads/ok.mp4"]) is None
-    assert media_requirement_error("x", ["https://a.test/1.jpg"]).startswith("SocialCastly can't send photos or videos to X")
+    assert media_requirement_error("x", ["https://a.test/1.jpg"]) is None
 
 
 def test_parsers():

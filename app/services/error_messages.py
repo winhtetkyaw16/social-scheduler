@@ -43,6 +43,11 @@ TOO_LONG = "text_too_long"
 MEDIA_UNSUPPORTED = "media_not_supported"
 DESTINATION = "destination_missing"
 FALLBACK = "unknown"
+LI_MEDIA = "linkedin_media_rules"
+LI_UPLOAD = "linkedin_upload_failed"
+LI_PROCESSING = "linkedin_processing_failed"
+LI_PERMISSION = "linkedin_permission_missing"
+_LI_REASON = {LI_UPLOAD, LI_PROCESSING, LI_PERMISSION}
 # Back-compat alias for older imports.
 PLATFORM = PLATFORM_DOWN
 INSTAGRAM_RATIO = IG_RATIO
@@ -96,6 +101,19 @@ def classify_error(code: str | None, message: str | None, platform: str | None, 
     if key == "tiktok" and _has(text, ("exactly one video", "video file is empty", "no video",
                                        "photo posting is not implemented", "text-only posts are not supported")):
         return TIKTOK_VIDEO
+    if key == "linkedin":
+        if _has(text, ("linkedin posts can have", "linkedin videos must", "linkedin accepts", "linkedin photos must",
+                       "linkedin multi-photo")):
+            return LI_MEDIA
+        if _has(text, ("processing_failed", "could not process the video")):
+            return LI_PROCESSING
+        if "still processing" in text:
+            return TIMEOUT
+        if _has(text, ("linkedin upload failed", "expired_upload_url", "media_asset_waiting_upload")):
+            return LI_UPLOAD
+        if status == 403 or _has(text, ("access_denied", "not enough permissions", "accessing this", "forbidden",
+                                        "scope")):
+            return LI_PERMISSION
     if key == "instagram":
         if "aspect ratio" in text or "aspect_ratio" in text:
             return IG_RATIO
@@ -269,6 +287,22 @@ def friendly_error(code: str | None, message: str | None, platform: str | None,
             f"The caption is too long for {net}.",
             f"{net} limits how many characters a post can have, and this caption is over it.",
             "Shorten the caption, then try again.", _EDIT),
+        LI_MEDIA: (
+            "LinkedIn can't accept this media.",
+            sanitize_raw(message, 300) or "LinkedIn accepts one MP4 video, one photo, or 2-20 JPG/PNG/GIF photos.",
+            "Fix the media for LinkedIn as described, then try again.", _EDIT),
+        LI_UPLOAD: (
+            "Your media didn't finish uploading to LinkedIn.",
+            "SocialCastly started sending the photo or video to LinkedIn, but the upload was refused or interrupted. Nothing was posted.",
+            "Retry now. If it keeps failing, re-upload the file or use a smaller one.", _RETRY),
+        LI_PROCESSING: (
+            "LinkedIn couldn't process your video.",
+            "LinkedIn received the video but its processing failed. This usually means the format, length or size isn't supported. Nothing was posted.",
+            "Use an MP4 video (3 seconds to 30 minutes, 75 KB to 500 MB), then try again.", _EDIT + _RETRY[:1]),
+        LI_PERMISSION: (
+            "SocialCastly doesn't have permission to post this to LinkedIn.",
+            "LinkedIn said the connection is missing a permission (posting needs the w_member_social scope from the Share on LinkedIn product), or the account doesn't own this media.",
+            "Reconnect LinkedIn and approve all requested permissions, then retry.", _reconnect("LinkedIn") + _RETRY[:1]),
         MEDIA_UNSUPPORTED: (
             f"SocialCastly can't send this kind of media to {net} yet.",
             f"Posting this media type or number of files to {net} isn't supported yet.",
@@ -281,7 +315,7 @@ def friendly_error(code: str | None, message: str | None, platform: str | None,
     if category in copy:
         banner, what_happened, what_to_do, actions = copy[category]
         # When the platform itself answered with an error, show its (sanitised) reason too.
-        if raw and code_l_is_http(code) and category == PLATFORM_DOWN:
+        if raw and ((code_l_is_http(code) and category == PLATFORM_DOWN) or category in _LI_REASON):
             what_happened = f'{what_happened} {net} said: "{raw}"'
     else:
         banner = f"{net} rejected this post: {raw}" if raw else f"We couldn't post this to {net}."
@@ -325,7 +359,13 @@ def media_requirement_error(platform: str | None, media_urls: list | None, conte
         return f"Threads carousels can have up to 20 photos/videos. This post has {len(media)}; remove some."
     if key == "facebook" and len(media) > 1 and videos:
         return "Facebook posts from SocialCastly can have several photos or one video, not a mix. Remove the video or the photos."
-    if key in {"linkedin", "x", "twitter"} and media:
+    if key == "linkedin" and media:
+        from app.integrations.platforms.linkedin import linkedin_media_problem
+
+        problem = linkedin_media_problem(media)
+        if problem:
+            return problem
+    if key in {"x", "twitter"} and media:
         return (f"SocialCastly can't send photos or videos to {network_name(key)} yet. "
                 f"Remove the media for {network_name(key)} (text-only posts work), or untick it.")
     if key == "youtube" and (len(media) != 1 or len(videos) != 1):

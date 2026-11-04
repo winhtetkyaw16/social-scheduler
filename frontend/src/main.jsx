@@ -743,7 +743,30 @@ function App() {
     if (account.platform === "facebook" && media.length > 1 && videoCount) warnings.push("Facebook posts from SocialCastly can have several photos or one video, not a mix. Remove the video or the photos.");
     if (account.platform === "youtube" && (media.length !== 1 || videoCount !== 1)) warnings.push("YouTube needs exactly one video. Add a video (photos and text-only posts can't go to YouTube).");
     if (account.platform === "tiktok" && (media.length !== 1 || videoCount !== 1)) warnings.push("TikTok needs exactly one video. Keep a single video and remove other files.");
-    if ((account.platform === "linkedin" || account.platform === "x") && media.length) warnings.push(`SocialCastly can't send photos or videos to ${channel?.label || account.platform} yet. Remove the media for ${channel?.label || account.platform} (text-only posts work), or untick it.`);
+    if (account.platform === "x" && media.length) warnings.push(`SocialCastly can't send photos or videos to ${channel?.label || account.platform} yet. Remove the media for ${channel?.label || account.platform} (text-only posts work), or untick it.`);
+    // LinkedIn (learn.microsoft.com/linkedin Videos/Images/MultiImage APIs): one MP4 video (75 KB-500 MB, 3 s-30 min),
+    // one JPG/PNG/GIF photo, or 2-20 photos; photos under 36,152,320 pixels.
+    if (account.platform === "linkedin" && media.length) {
+      const nameOf = (m) => typeof m === "string" ? decodeURIComponent(m.split(/[?#]/)[0].split("/").pop() || "") : (m.name || "");
+      const extOf = (m) => (nameOf(m).match(/\.([a-z0-9]+)$/i)?.[1] || "").toLowerCase();
+      const vids = media.filter(isVideoMedia); const pics = media.filter((m) => !isVideoMedia(m));
+      if (vids.length && pics.length) warnings.push("LinkedIn posts can have one video, one photo, or 2-20 photos, not a mix of photos and videos. Remove the video or the photos.");
+      else if (vids.length > 1) warnings.push(`LinkedIn posts can have only one video. This post has ${vids.length}; keep one.`);
+      else if (pics.length > 20) warnings.push(`LinkedIn multi-photo posts can have up to 20 photos. This post has ${pics.length}; remove some.`);
+      vids.forEach((v) => {
+        const ext = extOf(v); const isMp4 = ext ? ext === "mp4" : (typeof v !== "string" && /mp4/i.test(v.type || ""));
+        if (!isMp4 && (ext || typeof v !== "string")) warnings.push(`LinkedIn accepts videos as MP4 only. ${nameOf(v) || "This video"} is ${(ext || v.type || "another format").toUpperCase()}; convert it to MP4.`);
+        if (typeof v !== "string" && (v.size < 75 * 1024 || v.size > 500 * 1024 * 1024)) warnings.push(`LinkedIn videos must be between 75 KB and 500 MB. This one is ${v.size >= 1048576 ? (v.size / 1048576).toFixed(1) + " MB" : Math.round(v.size / 1024) + " KB"}.`);
+        const dur = mediaDims[mediaKey(v)]?.duration;
+        if (Number.isFinite(dur) && (dur < 3 || dur > 1800)) warnings.push(`LinkedIn videos must be 3 seconds to 30 minutes long. This one is ${Math.floor(dur / 60)}:${String(Math.round(dur % 60)).padStart(2, "0")}.`);
+      });
+      pics.forEach((p) => {
+        const ext = extOf(p); const okType = ext ? ["jpg", "jpeg", "png", "gif"].includes(ext) : (typeof p === "string" || /^image\/(jpe?g|png|gif)$/i.test(p.type || ""));
+        if (!okType) warnings.push(`LinkedIn accepts JPG, PNG or GIF photos. ${nameOf(p) || "This photo"} is ${(ext || p.type || "another format").toUpperCase()}; re-save it as JPG or PNG.`);
+        const d = mediaDims[mediaKey(p)];
+        if (d?.width && d?.height && d.width * d.height >= 36152320) warnings.push(`LinkedIn photos must be under 36,152,320 pixels (about 6000x6000). ${nameOf(p) || "This photo"} is ${d.width}x${d.height}; resize it.`);
+      });
+    }
     return warnings.map((message) => ({ account, message }));
   }), [selectedAccounts, captionMode, captionsByAccount, useUniversalCaptionByAccount, caption, channelFiles, channelMediaUrlsByAccount, useSharedMediaByAccount, files, libraryMediaUrls, formatsByAccount, mediaDims]);
 

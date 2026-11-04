@@ -13,7 +13,7 @@ CASES = [
     (H, "Provider returned HTTP 402: Payment Required | credits depleted | type=credits-depleted", "x", [], "x_credits_depleted"),
     (H, "Provider returned HTTP 400: (#200) Cannot call API for app 12345 on behalf of user", "facebook", None, "app_not_authorized"),
     (H, "Provider returned HTTP 400: (#200) The user hasn't authorized the application to perform this action", "facebook", None, "permission_missing"),
-    (H, "Provider returned HTTP 403: Forbidden", "linkedin", None, "permission_missing"),
+    (H, "Provider returned HTTP 403: Forbidden", "linkedin", None, "linkedin_permission_missing"),
     (H, "Provider returned HTTP 429: Too Many Requests", "x", None, "rate_limited"),
     (H, "Provider returned HTTP 503: Service Unavailable", "linkedin", None, "platform_unavailable"),
     (H, "Provider returned HTTP 400: Timeout", "instagram", ["https://x.test/a.mp4"], "timeout"),

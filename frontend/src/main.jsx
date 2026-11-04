@@ -12,6 +12,7 @@ import RenderErrorBoundary from "./RenderErrorBoundary.jsx";
 import Landing from "./Landing.jsx";
 import ComposerV2 from "./ComposerV2.jsx";
 import useBodyScrollLock from "./useBodyScrollLock.js";
+import ModalPortal from "./ModalPortal.jsx";
 import "./sc/composer-v2.css";
 import ManageAccounts, { AccountAvatar, DestinationPicker } from "./ManageAccounts.jsx";
 import {
@@ -472,11 +473,11 @@ function QuickStudioDialog({ tool, files, selectedFile, onClose, onToast }) {
 function QuickStudioDialogContent({ tool, file, brightness, setBrightness, contrast, setContrast, fit, setFit, onClose, onToast }) {
   useBodyScrollLock(true);
   const fileUrl = useObjectUrl(file);
-  return <div className="modal-wrap sc-modal-wrap" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}><section role="dialog" aria-modal="true" aria-labelledby="quick-studio-title" className="modal sc-modal max-w-lg">
+  return <ModalPortal><div className="modal-wrap sc-modal-wrap" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}><section role="dialog" aria-modal="true" aria-labelledby="quick-studio-title" className="modal sc-modal max-w-lg">
     <div className="flex items-start justify-between"><div><span className="xs muted sc-eyebrow">QUICK CREATIVE TOOLS</span><h2 id="quick-studio-title" className="mt-1  text-xl font-extrabold">{tool === "image" ? "Mini Canva / Image Editor" : "Video Studio"}</h2></div><button onClick={onClose} className="btn btn-ghost btn-icon" aria-label="Close"><XIcon size={17} /></button></div>
     {!file ? <div className="mt-5 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-7 text-center dark:border-slate-700 dark:bg-slate-800"><ImagePlus size={24} className="mx-auto text-indigo-500" /><p className="mt-2 text-sm font-bold">Add {tool === "video" ? "a video" : "an image"} to get started</p><p className="mt-1 text-xs text-slate-500">Your media will appear here as soon as you upload it in the composer.</p></div> : tool === "image" ? <div className="mt-4 space-y-4"><div className="overflow-hidden rounded-2xl bg-slate-100 dark:bg-slate-800"><img src={fileUrl} alt="Image editing preview" className="max-h-72 w-full object-contain" style={{ filter: `brightness(${brightness}%) contrast(${contrast}%)`, objectFit: fit }} /></div><label className="label">Brightness · {brightness}%<input type="range" min="50" max="150" value={brightness} onChange={(e) => setBrightness(+e.target.value)} /></label><label className="label">Contrast · {contrast}%<input type="range" min="50" max="150" value={contrast} onChange={(e) => setContrast(+e.target.value)} /></label><label className="label">Image crop<select value={fit} onChange={(e) => setFit(e.target.value)}><option value="cover">Fill frame</option><option value="contain">Fit entire image</option></select></label><p className="text-[10px] leading-4 text-slate-500">Adjustments are a live preview. The original uploaded image remains unchanged.</p></div> : <div className="mt-4 space-y-3"><video controls playsInline src={fileUrl} className="max-h-72 w-full rounded-2xl bg-black" /><p className="text-xs leading-5 text-slate-500">Review your video here before scheduling. Trim and export tools depend on a media editing service, which is not part of this API.</p></div>}
     <div className="mt-5 flex justify-end"><button onClick={() => { onToast({ title: "Preview ready", message: "Your media preview is up to date." }); onClose(); }} className="btn btn-primary !px-5 !py-2.5">Done</button></div>
-  </section></div>;
+  </section></div></ModalPortal>;
 }
 
 function ConnectDialog({ channel, onClose, onConnect, busy, error }) {
@@ -494,7 +495,7 @@ function ConnectDialog({ channel, onClose, onConnect, busy, error }) {
     pinterest: "Pinterest boards you can pin to (user login is kept as parent).",
     threads: "Your Threads profile via the Meta Threads API.",
   };
-  return <div className="modal-wrap sc-modal-wrap" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}><div className="modal sc-modal max-w-md" role="dialog" aria-modal="true" aria-labelledby="connect-title"><div className="flex items-start justify-between"><div><span className="xs muted sc-eyebrow">CONNECT SOCIAL ACCOUNT</span><h2 id="connect-title" className="mt-1  text-xl font-extrabold">Connect {channel.label}</h2></div><button type="button" onClick={onClose} className="btn btn-ghost btn-icon"><XIcon size={17} /></button></div>{supported ? <><p className="mt-2 text-xs leading-5 text-slate-500">You'll continue to {channel.label} to authorize SocialCastly. Tokens are encrypted on the server and never returned to the browser.</p><p className="mt-2 text-xs leading-5 text-slate-500">{typeHints[channel.id] || ""}</p><p className="mt-2 text-[11px] font-semibold text-slate-500">{canPublish ? "Scheduling/publishing is available for this network." : "Connect works; publishing needs a publish-ready destination (e.g. Facebook Page) and valid tokens."}</p></> : <p className="mt-2 text-xs leading-5 text-slate-500">{channel.label} is not a connectable network in SocialCastly yet.</p>}{error && <p role="alert" className="mt-3 rounded-xl bg-rose-50 p-3 text-xs text-rose-700">{error}</p>}<div className="mt-5 flex justify-end gap-2"><button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>{supported && <button type="button" disabled={busy} onClick={() => onConnect(channel.id)} className="btn btn-primary !px-5 !py-2.5">{busy ? "Redirecting…" : `Continue with ${channel.label}`}</button>}</div></div></div>;
+  return <ModalPortal><div className="modal-wrap sc-modal-wrap" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}><div className="modal sc-modal max-w-md" role="dialog" aria-modal="true" aria-labelledby="connect-title"><div className="flex items-start justify-between"><div><span className="xs muted sc-eyebrow">CONNECT SOCIAL ACCOUNT</span><h2 id="connect-title" className="mt-1  text-xl font-extrabold">Connect {channel.label}</h2></div><button type="button" onClick={onClose} className="btn btn-ghost btn-icon"><XIcon size={17} /></button></div>{supported ? <><p className="mt-2 text-xs leading-5 text-slate-500">You'll continue to {channel.label} to authorize SocialCastly. Tokens are encrypted on the server and never returned to the browser.</p><p className="mt-2 text-xs leading-5 text-slate-500">{typeHints[channel.id] || ""}</p><p className="mt-2 text-[11px] font-semibold text-slate-500">{canPublish ? "Scheduling/publishing is available for this network." : "Connect works; publishing needs a publish-ready destination (e.g. Facebook Page) and valid tokens."}</p></> : <p className="mt-2 text-xs leading-5 text-slate-500">{channel.label} is not a connectable network in SocialCastly yet.</p>}{error && <p role="alert" className="mt-3 rounded-xl bg-rose-50 p-3 text-xs text-rose-700">{error}</p>}<div className="mt-5 flex justify-end gap-2"><button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>{supported && <button type="button" disabled={busy} onClick={() => onConnect(channel.id)} className="btn btn-primary !px-5 !py-2.5">{busy ? "Redirecting…" : `Continue with ${channel.label}`}</button>}</div></div></div></ModalPortal>;
 }
 
 function ConnectChannelPicker({ open, onClose, onPick, onRequestChannel }) {
@@ -511,7 +512,7 @@ function ConnectChannelPicker({ open, onClose, onPick, onRequestChannel }) {
     threads: "Profile",
   };
   return (
-    <div className="modal-wrap sc-modal-wrap" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <ModalPortal><div className="modal-wrap sc-modal-wrap" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal sc-modal max-w-2xl p-5 sm:p-6" role="dialog" aria-modal="true" aria-labelledby="connect-picker-title">
         <div className="flex items-start justify-between gap-3">
           <h2 id="connect-picker-title" className=" text-xl font-extrabold tracking-tight">Connect a channel</h2>
@@ -539,7 +540,7 @@ function ConnectChannelPicker({ open, onClose, onPick, onRequestChannel }) {
           </button>
         </div>
       </div>
-    </div>
+    </div></ModalPortal>
   );
 }
 

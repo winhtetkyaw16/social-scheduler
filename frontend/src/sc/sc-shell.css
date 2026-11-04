@@ -236,3 +236,8 @@ html.dark .scd .fe .btn-grad,[data-theme=dark] .scd .fe .btn-grad,.dark .scd .fe
 .c2-blockers { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 10px; }
 .c2-blockers .c2-hint { margin: 0; align-items: flex-start; }
 
+/* Portalled modals (ModalPortal): fixed to the viewport, flex-centred with padding, scroll inside the card. */
+.scd .modal-wrap.sc-modal-wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.scd .modal.sc-modal{max-height:calc(100vh - 32px);min-height:0}
+@supports (height:100dvh){.scd .modal.sc-modal{max-height:calc(100dvh - 32px)}}
+.scd.sc-modal-layer{position:relative;z-index:60;background:transparent;height:0}

@@ -303,3 +303,14 @@ html.dark .scd .c2 .c2-pbtn,[data-theme=dark] .scd .c2 .c2-pbtn{background:linea
   .scd .c2 .fx .ff p{order:3;margin:0;text-align:center}
   .scd .c2 .fx .ff .fa{order:1;justify-content:center;width:100%}.scd .c2 .fx .ff .fc{order:2;justify-content:center;width:100%}
 }
+/* Modal viewport fix: modals render in a <body> portal (ModalPortal), centred by flex + padding, never translate. */
+.scd .c2 .fx{inset:0;overflow:hidden}
+.scd .c2 .fx .bx{max-height:calc(100vh - 48px);min-height:0}
+@supports (height:100dvh){.scd .c2 .fx .bx{max-height:calc(100dvh - 48px)}}
+.scd .c2 .fx .hdl,.scd .c2 .fx .fh,.scd .c2 .fx .ff{flex:none}
+.scd .c2 .fx .fb{flex:1 1 auto;min-height:0;overflow:auto}
+@media (max-width:640px){
+  .scd .c2 .fx .bx{max-height:92vh}
+  @supports (height:100dvh){.scd .c2 .fx .bx{max-height:92dvh}}
+}
+@media (max-height:520px){.scd .c2 .fx{padding:12px}.scd .c2 .fx .bx{max-height:calc(100vh - 24px)}.scd .c2 .fx .fh{padding:12px 20px 10px}}

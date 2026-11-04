@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Check, ChevronDown, Play, X as XIcon } from "lucide-react";
+import ModalPortal from "./ModalPortal.jsx";
 import { buildFixPlan, fmtDuration, indicesForChoice, planResult, togglePick } from "./fixPlan.js";
 
 const FOCUSABLE = 'button:not([disabled]),[href],input:not([disabled]),[tabindex]:not([tabindex="-1"]),summary';
@@ -99,7 +100,7 @@ export default function FixSheet({ rows, items, onApply, onCancel, onAddMedia, r
   };
 
   const total = plan.counts.total;
-  return <div className="fx" onClick={(ev) => { if (ev.target === ev.currentTarget) onCancel(); }} onKeyDown={onKey}>
+  return <ModalPortal inner="c2"><div className="fx" onClick={(ev) => { if (ev.target === ev.currentTarget) onCancel(); }} onKeyDown={onKey}>
     <div className="bx" ref={box} role="dialog" aria-modal="true" aria-labelledby="fx-title" style={drag ? { transform: `translateY(${drag}px)`, transition: "none" } : undefined}>
       <div className="hdl" aria-hidden="true" onPointerDown={down} onPointerMove={moveDrag} onPointerUp={up} onPointerCancel={up}><span /></div>
       <div className="fh" onPointerDown={down} onPointerMove={moveDrag} onPointerUp={up} onPointerCancel={up}>
@@ -116,5 +117,5 @@ export default function FixSheet({ rows, items, onApply, onCancel, onAddMedia, r
         <button type="button" className="btn btn-grad fa" disabled={!total} onClick={() => onApply(planResult(plan))}>Apply to {total} account{total === 1 ? "" : "s"}</button>
       </div>
     </div>
-  </div>;
+  </div></ModalPortal>;
 }

@@ -364,3 +364,15 @@ html.dark .scd .c2 .c2-pbtn,[data-theme=dark] .scd .c2 .c2-pbtn{background:linea
 .scd .cpv .cpv-dots{gap:0}.scd .cpv .cpv-dots i{display:block}.scd .cpv .cpv-dots button.on i{background:#fff}
 .scd .cpv .cpv-dots.vf{bottom:56px;z-index:3}
 .scd .igp .ig-dots{gap:0}.scd .igp .ig-dots i{display:block}.scd .igp .ig-dots button.on i{background:var(--text)}
+/* X timeline preview (display only): 16px corners, 4px gap, shared tile height */
+.scd .cpv{--x-tile-h:200px}
+.scd .cpv .thm.xm{--threads-tile-h:var(--x-tile-h);--th-ol:rgba(0,0,0,.08)}
+.dark .scd .cpv .thm.xm,[data-theme=dark] .scd .cpv .thm.xm{--th-ol:rgba(255,255,255,.12)}
+.scd .cpv .thm.xm .thm-one,.scd .cpv .thm.xm .thm-t{border-radius:16px}
+.scd .cpv .thm.xm .thm-row{gap:4px}
+/* LinkedIn feed preview (display only): 2px gap, square-ish corners, 4:5 cap crops the bottom */
+.scd .cpv .lig{position:relative;width:100%;overflow:hidden;border-radius:2px;background:#0001}
+.scd .cpv .lig-in{display:grid;gap:2px;width:100%}
+.scd .cpv .lig-c{position:relative;overflow:hidden;min-width:0;min-height:0}
+.scd .cpv .lig-c>img,.scd .cpv .lig-c>video{width:100%;height:100%;object-fit:cover;display:block}
+.scd .cpv .lig .play{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}

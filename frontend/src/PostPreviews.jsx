@@ -6,7 +6,7 @@ import useBodyScrollLock from "./useBodyScrollLock.js";
 import { focusNoScroll } from "./scrollLock.js";
 import { mediaKeyOf } from "./mediaRules.js";
 import { IG_CHIPS, igChipLabel, igDragOffset, igFrameRatio, igNeedsCrop, igObjectPosition } from "./igFrame.js";
-import { threadsLayout, fbGridLayout } from "./previewLayout.js";
+import { threadsLayout, fbGridLayout, xLayout, liLayout } from "./previewLayout.js";
 import { arrowsFor, keyDir, nearestIndex, stepIndex } from "./carouselNav.js";
 import brandMark from "./assets/brand/socialcastly-mark-256.png";
 
@@ -338,13 +338,42 @@ function ThreadsMedia({ urls, media }) {
     {vids[0] && urls[0] && <span className="play"><Play size={18} fill="currentColor" /></span>}</div></div>;
   return <ThreadsRow urls={urls} vids={vids} tiles={l.tiles} />;
 }
-function ThreadsRow({ urls, vids, tiles }) {
+const isGif = (item) => typeof item === "string" ? /\.gif(\?|$)/i.test(item) : item?.type === "image/gif";
+// X timeline (display only): one image/GIF/video uncropped within 3:4..2:1; 2-4 images as a swipe row.
+function XMedia({ urls, media }) {
+  const vids = media.map(isVideo);
+  const nats = useNaturals(urls, vids);
+  const vi = media.findIndex((m) => isVideo(m) || isGif(m));
+  const one = vi >= 0 ? vi : 0;
+  const l = xLayout(vi >= 0 ? [nats[one]] : nats.slice(0, urls.length), { single: vi >= 0 });
+  if (l.kind === "none") return null;
+  if (l.kind === "single") return <div className="thm xm"><div className="thm-one" style={{ aspectRatio: l.ratio }}><Tile url={urls[one]} video={vids[one]} />
+    {vids[one] && urls[one] && <span className="play"><Play size={18} fill="currentColor" /></span>}</div></div>;
+  return <ThreadsRow urls={urls} vids={vids} tiles={l.tiles} cls="xm" />;
+}
+// LinkedIn feed (display only): single at own ratio (4:5..3:1), 2 side by side, 3+ hero + row/stack, 4:5 cap, +N.
+function LiGrid({ urls, media }) {
+  const vids = media.map(isVideo);
+  const nats = useNaturals(urls, vids);
+  const g = liLayout(nats.slice(0, urls.length), { video: urls.length === 1 && vids[0] });
+  if (g.kind === "none") return null;
+  return <div className="lig" style={{ aspectRatio: g.frame }} data-kind={g.kind}>
+    <div className="lig-in" style={{ aspectRatio: g.ratio, gridTemplateColumns: g.cols, gridTemplateRows: g.rows }}>
+      {g.cells.map((cell, j) => <div key={cell.i} className="lig-c" style={{ gridArea: cell.area }}>
+        <Tile url={urls[cell.i]} video={vids[cell.i]} />
+        {vids[cell.i] && urls[cell.i] && <span className="play"><Play size={16} fill="currentColor" /></span>}
+        {g.more > 0 && j === g.cells.length - 1 && <span className="fbg-more">+{g.more}</span>}
+      </div>)}
+    </div>
+  </div>;
+}
+function ThreadsRow({ urls, vids, tiles, cls = "" }) {
   const row = useRef(null); const [idx, setIdx] = useState(0); const n = tiles.length;
   const lefts = () => Array.from(row.current?.children || []).map((el) => el.offsetLeft);
   const sync = () => { const r = row.current; if (r) setIdx(nearestIndex(r.scrollLeft, lefts(), r.scrollWidth - r.clientWidth)); };
   useEffect(() => { sync(); }, [n]);
   const go = (i) => { const r = row.current; const x = lefts()[i]; if (r && x != null) r.scrollTo({ left: x, behavior: "smooth" }); setIdx(i); };
-  return <div className="thm"><div className="thc cnv" {...navProps(idx, n, go)}>
+  return <div className={`thm ${cls}`}><div className="thc cnv" {...navProps(idx, n, go)}>
     <div className="thm-row" ref={row} onScroll={sync}>{tiles.map((t, i) => <div key={i} className="thm-t" style={{ width: `calc(var(--threads-tile-h) * ${t.w})` }}>
       <Tile url={urls[i]} video={vids[i]} />{vids[i] && urls[i] && <span className="play"><Play size={16} fill="currentColor" /></span>}</div>)}</div>
     <NavArrows idx={idx} n={n} go={go} />
@@ -376,13 +405,13 @@ function FacebookPreview({ account, caption, capCls, media, format }) {
 function LinkedInPreview({ account, caption, capCls, media }) {
   const c = useCarousel(media);
   const nat = useNatural(c.cur, c.vid);
-  const box = nat ? FIT.li(nat) : (c.vid ? 16 / 9 : 1);
+  const box = nat ? (c.vid ? Math.min(2.4, Math.max(1 / 2.4, nat)) : Math.min(3, Math.max(4 / 5, nat))) : (c.vid ? 16 / 9 : 1);
   const [t, more] = clip(caption, 120);
-  return <Cpv net="LinkedIn" label={c.cur ? sizeLabel(box).join(" · ") : "Text post"}>
+  return <Cpv net="LinkedIn" label={!c.cur ? "Text post" : c.n > 1 ? `${c.n} items · grid` : sizeLabel(box).join(" · ")}>
     <div className="pp2">
       <div className="h"><Av account={account} size={32} /><div className="grow"><b>{name(account)}</b><div className="sub">Now · <Globe size={11} /></div></div><MoreHorizontal size={18} /></div>
       <div className={`${capCls} cpv-capt`}><Txt text={t} />{more && <>… <span className="mo">more</span></>}</div>
-      {c.cur && <CMd c={c} ratio={box} radius={0} />}
+      {c.cur && <LiGrid urls={c.urls} media={media} />}
       <div className="ac li"><span><ThumbsUp size={15} />Like</span><span><MessageSquare size={15} />Comment</span><span><Repeat size={15} />Repost</span><span><Send size={15} />Send</span></div>
     </div>
   </Cpv>;
@@ -393,14 +422,14 @@ function InsetPreview({ net, account, caption, capCls, media, fit, uname, sub, a
   const nat = useNatural(c.cur, c.vid);
   const box = nat ? FIT[fit](nat) : (c.vid ? 16 / 9 : 1);
   const [t, more] = clip(caption, 140);
-  const lbl = !c.cur ? "Text post" : net === "Threads" ? (c.n > 1 ? `${c.n} items · swipe row` : "Feed fit") : sizeLabel(box).join(" · ");
+  const lbl = !c.cur ? "Text post" : net === "Threads" || net === "X" ? (c.n > 1 ? `${c.n} items · swipe row` : "Feed fit") : sizeLabel(box).join(" · ");
   return <Cpv net={net} label={lbl}>
     <div className="pp2 cpv-row">
       <Av account={account} size={32} />
       <div className="grow" style={{ minWidth: 0 }}>
         <div className="cpv-nm"><b>{uname}</b> <span className="sub">{sub}</span><span className="grow" /><MoreHorizontal size={16} /></div>
         <div className={`${capCls} cpv-capt`} style={{ padding: "2px 0 0" }}><Txt text={t} />{more && <>… <span className="mo">more</span></>}</div>
-        {c.cur && (net === "Threads" ? <ThreadsMedia urls={c.urls} media={media} /> : <div className={`cpv-media ${inset || ""}`}><CMd c={c} ratio={box} radius={12} inset /></div>)}
+        {c.cur && (net === "Threads" ? <ThreadsMedia urls={c.urls} media={media} /> : net === "X" ? <XMedia urls={c.urls} media={media} /> : <div className={`cpv-media ${inset || ""}`}><CMd c={c} ratio={box} radius={12} inset /></div>)}
         <div className="ac cpv-ac">{actions}</div>
       </div>
     </div>

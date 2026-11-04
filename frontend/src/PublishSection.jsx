@@ -4,6 +4,7 @@ import { createPortal } from "react-dom";
 import RenderErrorBoundary from "./RenderErrorBoundary.jsx";
 import { PostRowMenu, DeletePostModal, deleteCopy, failedBannerText, friendlyError } from "./sc/PostActions.jsx";
 import { AccountAvatar } from "./ManageAccounts.jsx";
+import { groupQueuePosts } from "./queueOrder.js";
 import {
   Archive, ArrowLeft, ArrowRight, Bookmark, CalendarDays, Check, Clock3, Copy, FileText, Filter, Heart, Image, LayoutGrid, List, RotateCcw,
   Instagram, Linkedin, LoaderCircle, MessageCircle, MessageSquareText, MoreHorizontal, Pencil, Play, Plus, Send, Share2,
@@ -723,8 +724,9 @@ function QueueView({ request, accounts = [], posts = [], onCreatePost, onSelectP
   const tabStatus = { scheduled: ["scheduled"], queued: ["queued", "publishing"], published: ["published"], failed: ["failed"] };
   const chanPosts = safePostsQ.filter((p) => chanFilter === "all" || accById.get(p.connected_account_id)?.platform === chanFilter);
   const countFor = (t) => chanPosts.filter((p) => tabStatus[t].includes(p.status)).length;
-  const tabPosts = chanPosts.filter((p) => tabStatus[qTab].includes(p.status)).sort((x, y) => (qTab === "published" ? -1 : 1) * (new Date(postPlacementAt(x) || 0) - new Date(postPlacementAt(y) || 0)));
-  const groups = tabPosts.reduce((acc, p) => { const d = new Date(postPlacementAt(p) || p.created_at); const k = dateKey(d); (acc[k] ||= { d, items: [] }).items.push(p); return acc; }, {});
+  const tabPosts = chanPosts.filter((p) => tabStatus[qTab].includes(p.status));
+  // Published/Failed: newest day + newest post first; Scheduled/Queued: soonest first.
+  const groupEntries = groupQueuePosts(tabPosts, qTab);
   const todayK = dateKey(new Date()); const tom = new Date(); tom.setDate(tom.getDate() + 1); const tomK = dateKey(tom);
   const dayTitle = (k, d) => `${k === todayK ? "Today · " : k === tomK ? "Tomorrow · " : ""}${d.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" })}`;
   const openSlotsByDay = upcoming.reduce((acc, it) => { if (!it.filled) { const k = dateKey(it.scheduled_at); acc[k] = (acc[k] || 0) + 1; } return acc; }, {});
@@ -738,7 +740,7 @@ function QueueView({ request, accounts = [], posts = [], onCreatePost, onSelectP
     </PageHead>
     <Tabs value={qTab} onChange={setQTab} options={[["scheduled", "Scheduled", countFor("scheduled")], ["queued", "Queued", countFor("queued")], ["published", "Published", countFor("published")], ["failed", "Failed", countFor("failed")]]} />
     {error && !showSettings && <div role="alert" className="alert error sm">{error}</div>}
-    {!showSettings && (Object.keys(groups).length === 0 ? <div className="card"><Empty art="🗓️" title={`No ${qTab} posts`} text={qTab === "scheduled" ? "Schedule a post or add one to the queue and it will appear here." : "Nothing here yet."} action="Create post" onAction={() => onCreatePost?.()} /></div> : Object.entries(groups).map(([k, { d, items }]) => <div key={k} className="card">
+    {!showSettings && (groupEntries.length === 0 ? <div className="card"><Empty art="🗓️" title={`No ${qTab} posts`} text={qTab === "scheduled" ? "Schedule a post or add one to the queue and it will appear here." : "Nothing here yet."} action="Create post" onAction={() => onCreatePost?.()} /></div> : groupEntries.map(([k, { d, items }]) => <div key={k} className="card">
       <div className="card-head"><h3>{dayTitle(k, d)}</h3><span className="xs subtle">{items.length} post{items.length === 1 ? "" : "s"}{qTab === "scheduled" && openSlotsByDay[k] ? ` · ${openSlotsByDay[k]} open slot${openSlotsByDay[k] === 1 ? "" : "s"}` : ""}</span></div>
       {items.map((p) => { const acc = accById.get(p.connected_account_id); const when = postPlacementAt(p); const t = when ? fmtTime(when) : ""; return <div key={p.id} className="post">
         <div className="time">{t.replace(/\s?(AM|PM)/i, "")}<span>{(t.match(/AM|PM/i) || [""])[0]}</span></div>

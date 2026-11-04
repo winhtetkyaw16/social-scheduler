@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Ch, meta, chColor, Avatar, AccountAvatar, StatusBadge, Empty, PageHead, Seg, Tabs, fmtTime, fmtDay, postTitle, PLATFORM_META } from "./ui.jsx";
-import { PostRowMenu, DeletePostModal } from "./PostActions.jsx";
+import { PostRowMenu, DeletePostModal, failedBannerText } from "./PostActions.jsx";
 import markPng from "../assets/brand/socialcastly-mark-256.png";
 import lockupLight from "../assets/brand/socialcastly-lockup-light.png";
 import lockupDark from "../assets/brand/socialcastly-lockup-dark.png";
@@ -28,7 +28,7 @@ function PostRow({ post, account, onOpen, onRetry, onDelete }) {
     <div className="time">{t}<span>{ap}</span></div>
     <AccountAvatar account={account} size={36} />
     <div className="body"><div className="row" style={{ gap: 8, marginBottom: 4 }}><b className="sm">{account?.account_name || account?.platform || "Account"}</b><StatusBadge status={post.status} post={post} /></div><div className="txt">{post.content || "Untitled post"}</div>
-      {post.status === "failed" && post.last_error_message && <div className="xs" style={{ color: "var(--error)", marginTop: 6 }}>⚠ {post.last_error_code ? `${post.last_error_code}: ` : ""}{post.last_error_message}</div>}</div>
+      {post.status === "failed" && <div className="xs" style={{ color: "var(--error)", marginTop: 6 }}>⚠ {failedBannerText(post, account)}</div>}</div>
     {post.media_urls?.[0] && <img className="thumb" src={post.media_urls[0]} alt="" style={{ objectFit: "cover" }} onError={(e) => { e.currentTarget.style.display = "none"; }} />}
     <div className="row" style={{ gap: 6, flex: "none" }}>
       {post.status === "failed" && onRetry && <button type="button" className="btn btn-sm btn-secondary" onClick={() => onRetry(post.id)}>{I.retry}Retry</button>}
@@ -82,7 +82,7 @@ export function Dashboard({ user, accounts, posts, approvals = [], goToTab, open
   const nextDay = upcoming[0] ? new Date(upcoming[0].scheduled_at) : now;
   return <>
     <PageHead title={`${greet}${first ? `, ${first}` : ""} 👋`} sub={`Here's what's going out across your channels ${range === "today" ? "today" : range === "week" ? "this week" : "this month"}.`}><Seg value={range} onChange={setRange} options={[["today", "Today"], ["week", "This week"], ["month", "Month"]]} /></PageHead>
-    {failed.length > 0 && <div className="alert error">{I.alert}<div className="grow sm"><b>{failed.length} post{failed.length === 1 ? "" : "s"} failed to publish{failedPlats.length ? ` on ${failedPlats.join(", ")}` : ""}.</b> <span className="muted">{failed[0].last_error_message || "Retry now or review the error."}</span></div><button type="button" className="btn btn-sm btn-secondary" onClick={() => goToTab("queue", { tab: "failed" })}>Review</button></div>}
+    {failed.length > 0 && <div className="alert error">{I.alert}<div className="grow sm"><b>{failed.length} post{failed.length === 1 ? "" : "s"} failed to publish{failedPlats.length ? ` on ${failedPlats.join(", ")}` : ""}.</b> <span className="muted">{failedBannerText(failed[0], acc.get(failed[0].connected_account_id))}</span></div><button type="button" className="btn btn-sm btn-secondary" onClick={() => goToTab("queue", { tab: "failed" })}>Review</button></div>}
     <div className="grid g4">
       <div className="card stat"><div className="sm muted">Scheduled {range === "today" ? "today" : range === "week" ? "this week" : "this month"}</div><div className="v">{scheduledR}</div><div className="d">{range === "week" ? `${scheduledLast} last week` : "\u00a0"}</div></div>
       <div className="card stat"><div className="sm muted">Published (30d)</div><div className="v">{pub30.length}</div><div className="d">{pubConfirmed} confirmed by provider</div></div>

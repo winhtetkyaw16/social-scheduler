@@ -195,3 +195,39 @@ html.dark .scd .sc-del-modal .btn-danger,[data-theme=dark] .scd .sc-del-modal .b
   .scd .modal.sc-del-modal{width:100%}
   .scd .sc-del-foot .btn{flex:1;justify-content:center}
 }
+
+/* ---- Failed-post edit (shared PostEditModal) — matches queue-failed-edit mockups ---- */
+.scd .fe{padding:0;max-width:520px;width:100%;display:flex;flex-direction:column;max-height:calc(100vh - 32px);overflow:hidden}
+.scd .fe .fe-mh{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:16px 20px;border-bottom:1px solid var(--border)}
+.scd .fe .fe-sub{color:var(--text-3);font-weight:500}
+.scd .fe .fe-mb{padding:18px 20px;display:flex;flex-direction:column;gap:14px;overflow:auto}
+.scd .fe .fe-ebn{display:flex;gap:10px;padding:10px 12px;border-radius:var(--r-md,10px);background:color-mix(in srgb,var(--error) 6%,var(--surface));border:1px solid color-mix(in srgb,var(--error) 22%,transparent)}
+.scd .fe .fe-ico .ico{width:16px;height:16px;color:var(--error);flex:none;margin-top:2px}
+.scd .fe .fe-title{font-size:13px;color:var(--error);display:block}
+.scd .fe .fe-banner{color:var(--text);margin-top:2px}
+.scd .fe .fe-tog{margin-top:6px;background:none;border:0;padding:0;cursor:pointer;font-size:12px;color:var(--text-3);font-weight:500;display:inline-flex;align-items:center;gap:2px}
+.scd .fe .fe-tog .ico{width:13px;height:13px;color:var(--text-3)}
+.scd .fe .fe-dt{margin:10px 0 2px;padding-top:10px;border-top:1px solid color-mix(in srgb,var(--error) 15%,transparent);display:grid;grid-template-columns:104px 1fr;gap:6px 12px;font-size:13px;line-height:1.5}
+.scd .fe .fe-dt dt{color:var(--text-3);font-weight:500}
+.scd .fe .fe-dt dd{margin:0;color:var(--text-2)}
+.scd .fe .fe-acts{margin-top:6px;display:flex;gap:10px;flex-wrap:wrap}
+.scd .fe .fe-lk{background:none;border:0;padding:0;cursor:pointer;color:var(--text);font-weight:600;font-size:13px;text-decoration:underline;text-decoration-color:var(--border-strong);text-underline-offset:2px;white-space:nowrap}
+.scd .fe .fe-hint{display:flex;gap:4px;align-items:center;margin-top:0}
+.scd .fe .fe-hint .ico{width:13px;height:13px}
+.scd .fe .fe-foot{display:flex;align-items:center;gap:8px;padding:14px 20px;border-top:1px solid var(--border)}
+.scd .fe .fe-foot .grow{flex:1}
+.scd .fe .fe-del{color:var(--error);background:none;border:0;padding-left:8px;padding-right:8px;box-shadow:none}
+.scd .fe .fe-del:hover{background:color-mix(in srgb,var(--error) 8%,transparent)}
+.scd .fe .btn-ghost{background:none;border:0;box-shadow:none;color:var(--text-2)}
+.scd .fe .btn-grad{background:linear-gradient(135deg,#4F46E5,#7C3AED);color:#fff;border:0}
+html.dark .scd .fe .btn-grad,[data-theme=dark] .scd .fe .btn-grad,.dark .scd .fe .btn-grad{background:linear-gradient(135deg,#818CF8,#A78BFA);color:#0B1120}
+.scd .fe .btn-grad:disabled{opacity:.55}
+.scd .fe .fe-foot-m{flex-direction:column;align-items:stretch;gap:10px;padding:16px 18px 24px}
+.scd .fe .fe-foot-m .btn{justify-content:center;height:44px;width:100%}
+.scd .modal-wrap.fe-wrap-m{padding:0;place-items:stretch}
+.scd .fe-wrap-m .fe{max-width:none;max-height:none;height:100%;border-radius:0}
+
+/* Composer blocking requirements shown above the publish bar */
+.c2-blockers { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 10px; }
+.c2-blockers .c2-hint { margin: 0; align-items: flex-start; }
+

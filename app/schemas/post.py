@@ -47,6 +47,8 @@ class PostRead(BaseModel):
     last_error_message: str | None
     post_metadata: dict[str, Any]
     latest_execution_outcome: str | None = None
+    # Plain-language copy for failed posts; raw errors above are for developers.
+    friendly_error: dict[str, Any] | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -57,6 +59,19 @@ class PostRead(BaseModel):
         if value is not None and not isinstance(value, dict) and not hasattr(value, "latest_execution_outcome"):
             try:
                 setattr(value, "latest_execution_outcome", None)
+            except Exception:
+                pass
+        if value is not None and not isinstance(value, dict):
+            try:
+                from app.services.error_messages import friendly_error
+
+                account = getattr(value, "connected_account", None)
+                setattr(value, "friendly_error", friendly_error(
+                    getattr(value, "last_error_code", None),
+                    getattr(value, "last_error_message", None),
+                    getattr(account, "platform", None),
+                    getattr(value, "media_urls", None),
+                ))
             except Exception:
                 pass
         return handler(value)

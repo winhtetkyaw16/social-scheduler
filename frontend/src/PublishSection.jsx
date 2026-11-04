@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Ch, meta, chColor, Seg, Tabs, PageHead, Avatar, Empty, StatusBadge, fmtTime, fmtTime24, fmtDay, postTitle, AccountAvatar as ScAccountAvatar } from "./sc/ui.jsx";
 import { createPortal } from "react-dom";
 import RenderErrorBoundary from "./RenderErrorBoundary.jsx";
-import { PostRowMenu, DeletePostModal, deleteCopy } from "./sc/PostActions.jsx";
+import { PostRowMenu, DeletePostModal, deleteCopy, failedBannerText, friendlyError } from "./sc/PostActions.jsx";
 import { AccountAvatar } from "./ManageAccounts.jsx";
 import {
   Archive, ArrowLeft, ArrowRight, Bookmark, CalendarDays, Check, Clock3, Copy, FileText, Filter, Heart, Image, LayoutGrid, List, RotateCcw,
@@ -135,7 +135,7 @@ function PostsListView({ posts, accounts = [], request, onSelectPost, onEditPost
     <div className="row between wrap"><PublishFilterBar accounts={safeAccounts} status={status} setStatus={setStatus} platform={platform} setPlatform={setPlatform} accountId={accountId} setAccountId={setAccountId} counts={{ total: filtered.length, failed: failedCount }} />{headerExtra}</div>
     {error && <div role="alert" className="alert error sm">{error}</div>}
     <div className="card">
-      <div className="card-head"><h3>All posts</h3><span className="xs subtle">Failed publishes show the provider error. Retry queues them again.</span></div>
+      <div className="card-head"><h3>All posts</h3><span className="xs subtle">Failed posts show what went wrong. Retry sends them again.</span></div>
       {filtered.length === 0 ? <Empty title="No matching posts" text="Try another status, channel, or account filter." /> : filtered.map((post) => {
         const account = safeAccounts.find((item) => item.id === post.connected_account_id);
         const when = postPlacementAt(post);
@@ -146,7 +146,7 @@ function PostsListView({ posts, accounts = [], request, onSelectPost, onEditPost
           <div className="body">
             <div className="row" style={{ gap: 8, marginBottom: 4 }}><b className="sm">{account?.account_name || account?.platform || "Account"}</b><StatusBadge status={post.status} post={post} /></div>
             <div className="txt">{post.content || "Untitled post"}</div>
-            {failed && (post.last_error_message || post.last_error_code) && <div className="xs" style={{ color: "var(--error)", marginTop: 6 }} title={post.last_error_message || post.last_error_code}>⚠ {post.last_error_code ? `${post.last_error_code}: ` : ""}{post.last_error_message || "Publish failed"}</div>}
+            {failed && <div className="xs" style={{ color: "var(--error)", marginTop: 6 }}>⚠ {failedBannerText(post, account)}</div>}
           </div>
           {post.media_urls?.[0] && <img className="thumb" src={post.media_urls[0]} alt="" style={{ objectFit: "cover" }} onError={hideBrokenImg} />}
           <div className="row" style={{ gap: 6 }}>
@@ -743,7 +743,7 @@ function QueueView({ request, accounts = [], posts = [], onCreatePost, onSelectP
       {items.map((p) => { const acc = accById.get(p.connected_account_id); const when = postPlacementAt(p); const t = when ? fmtTime(when) : ""; return <div key={p.id} className="post">
         <div className="time">{t.replace(/\s?(AM|PM)/i, "")}<span>{(t.match(/AM|PM/i) || [""])[0]}</span></div>
         <ScAccountAvatar account={acc} size={36} />
-        <div className="body"><div className="row" style={{ gap: 8, marginBottom: 4 }}><b className="sm">{acc?.account_name || acc?.platform || "Account"}</b><StatusBadge status={p.status} post={p} /></div><div className="txt">{p.content || "Untitled post"}</div>{p.status === "failed" && (p.last_error_message || p.last_error_code) && <div className="xs" style={{ color: "var(--error)", marginTop: 6 }}>⚠ {p.last_error_code ? `${p.last_error_code}: ` : ""}{p.last_error_message}</div>}</div>
+        <div className="body"><div className="row" style={{ gap: 8, marginBottom: 4 }}><b className="sm">{acc?.account_name || acc?.platform || "Account"}</b><StatusBadge status={p.status} post={p} /></div><div className="txt">{p.content || "Untitled post"}</div>{p.status === "failed" && <div className="xs" style={{ color: "var(--error)", marginTop: 6 }}>⚠ {failedBannerText(p, acc)}</div>}</div>
         {p.media_urls?.[0] && <img className="thumb" src={p.media_urls[0]} alt="" style={{ objectFit: "cover" }} onError={hideBrokenImg} />}
         <div className="row" style={{ gap: 6 }}>{p.status === "failed" ? <button type="button" className="btn btn-sm btn-secondary" disabled={!!retrying} onClick={() => void retry(p.id)}>{retrying === p.id ? <LoaderCircle size={13} className="animate-spin" /> : <RotateCcw size={13} />}Retry</button> : null}
         <PostRowMenu post={p} onEdit={(x) => (onEditPost || onSelectPost)?.(x)} onDelete={onDeletePost} /></div>
@@ -859,7 +859,7 @@ export default function PublishSection({ request, posts = [], accounts = [], aut
   // Row "⋯" menu: Edit opens the edit modal when the post is editable (PATCH accepts draft/scheduled), otherwise the details popover.
   function editPost(post) {
     if (!post) return;
-    if (["draft", "scheduled"].includes(post.status)) { closePopover(); setEditingPost(post); } else openPost(post);
+    if (["draft", "scheduled"].includes(post.status) || (post.status === "failed" && !post.provider_post_id)) { closePopover(); setEditingPost(post); } else openPost(post);
   }
   const [deletingPost, setDeletingPost] = useState(null);
   async function afterDelete(post, info) {
@@ -887,7 +887,7 @@ export default function PublishSection({ request, posts = [], accounts = [], aut
     {active === "approvals" && <ApprovalsView request={request} onRefresh={onRefresh} accounts={safeAccounts} />}
     {selectedPost && <RenderErrorBoundary scope="Post popover" compact><PostPopover post={selectedPost} anchor={popoverAnchor} accounts={safeAccounts} request={request} onRefresh={onRefresh} onClose={closePopover} onEdit={(p) => { closePopover(); setEditingPost(p); }} onDuplicate={duplicatePost} /></RenderErrorBoundary>}
     {deletingPost && <DeletePostModal post={deletingPost} account={safeAccounts.find((a) => a.id === deletingPost.connected_account_id)} request={request} onClose={() => setDeletingPost(null)} onDeleted={afterDelete} />}
-    {editingPost && <RenderErrorBoundary scope="Edit post" compact><PostEditModal post={editingPost} accounts={safeAccounts} request={request} onRefresh={onRefresh} onClose={() => setEditingPost(null)} /></RenderErrorBoundary>}
+    {editingPost && <RenderErrorBoundary scope="Edit post" compact><PostEditModal post={editingPost} accounts={safeAccounts} request={request} onRefresh={onRefresh} onClose={() => setEditingPost(null)} onNavigate={onNavigate} onDeleted={afterDelete} /></RenderErrorBoundary>}
   </>;
 }
 
@@ -987,7 +987,7 @@ function PostPopover({ post, anchor, accounts, request, onRefresh, onClose, onEd
     const permalink = published ? postPermalink(current) : "";
   const canArchive = ["published", "failed", "cancelled"].includes(current.status);
   const canDelete = current.status !== "publishing";
-  const canEdit = ["draft", "scheduled"].includes(current.status); // PATCH only accepts draft/scheduled
+  const canEdit = ["draft", "scheduled"].includes(current.status) || (current.status === "failed" && !current.provider_post_id); // PATCH accepts draft/scheduled/failed
   const timeText = current.status === "draft" ? "No time set" : popTime(published ? (current.published_at || current.scheduled_at) : current.scheduled_at);
 
   // Highlight the clicked post and return focus to it on close.
@@ -1079,7 +1079,7 @@ function PostPopover({ post, anchor, accounts, request, onRefresh, onClose, onEd
     </div>
     {current.status === "failed" && <div className="pp-err" role="status">
       <svg className="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path d="M12 8v4M12 16h.01" /></svg>
-      <span className="grow pp-err-msg" title={current.last_error_message || ""}>{current.last_error_message || `${network} rejected this post.`}</span>
+      <span className="grow pp-err-msg">{failedBannerText(current, account)}</span>
       <button type="button" className="pp-link" style={{ background: "none", border: 0, padding: 0 }} disabled={!!busy} onClick={() => void retry()}>{busy === "retry" ? <LoaderCircle size={14} className="animate-spin" /> : <svg className="ico" viewBox="0 0 24 24"><path d="M1 4v6h6M23 20v-6h-6" /><path d="M20.5 9A9 9 0 0 0 5.6 5.6L1 10m22 4l-4.6 4.4A9 9 0 0 1 3.5 15" /></svg>}Retry</button>
       {canDelete && <button type="button" className="pp-link" style={{ background: "none", border: 0, padding: 0 }} disabled={!!busy} onClick={() => { setMenuOpen(false); setConfirmDelete(true); }}><Trash2 size={14} />Delete</button>}
     </div>}
@@ -1125,60 +1125,140 @@ function PostPopover({ post, anchor, accounts, request, onRefresh, onClose, onEd
   </div>, document.body);
 }
 
-/** Existing edit flow (caption, schedule, hashtags, tags, privacy, Save, Post now). */
-function PostEditModal({ post, accounts, request, onRefresh, onClose }) {
+/** The one edit modal for scheduled AND failed posts (caption, schedule, hashtags, tags, privacy).
+ *  Failed posts add: a plain-language error banner, the next free queue slot, and Delete / Retry now / Save & reschedule. */
+function PostEditModal({ post, accounts, request, onRefresh, onClose, onNavigate, onDeleted }) {
   const safePost = post && typeof post === "object" ? post : {};
   const account = (accounts || []).find((a) => a.id === safePost.connected_account_id);
   const platform = String(account?.platform || "facebook").toLowerCase();
   const network = NETWORK_LABELS[platform] || platform;
+  const isFailed = safePost.status === "failed";
+  const fe = isFailed ? friendlyError(safePost, account) : null;
+  const mobile = useIsMobile();
   const md = safePost.post_metadata && typeof safePost.post_metadata === "object" && !Array.isArray(safePost.post_metadata) ? safePost.post_metadata : {};
   const [content, setContent] = useState(typeof safePost.content === "string" ? safePost.content : "");
-  const [scheduledAt, setScheduledAt] = useState(toLocalInputValue(safePost.scheduled_at));
+  const [scheduledAt, setScheduledAt] = useState(isFailed ? "" : toLocalInputValue(safePost.scheduled_at));
+  const [slotHint, setSlotHint] = useState(false);
   const [tag, setTag] = useState(Array.isArray(md.tags) && typeof md.tags[0] === "string" ? md.tags[0] : "");
   const [hashtags, setHashtags] = useState(Array.isArray(md.hashtags) ? md.hashtags.filter((x) => typeof x === "string").join(" ") : "");
   const [privacy, setPrivacy] = useState(typeof md.privacy === "string" ? md.privacy : "Public");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [showDetails, setShowDetails] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const characterLimit = Math.min(({ x: 280, instagram: 2200, linkedin: 3000, pinterest: 500, youtube: 5000 })[platform] || 63206, 10000);
   const canPostNow = ["draft", "scheduled"].includes(safePost.status);
+  // The old time of a failed post is in the past: prefill the next free queue slot.
   useEffect(() => {
-    const onKey = (e) => { if (e.key === "Escape" && !busy) onClose(); };
+    if (!isFailed || !safePost.connected_account_id) return undefined;
+    let alive = true;
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+    request(`/publish/queue/next?connected_account_id=${encodeURIComponent(safePost.connected_account_id)}&timezone=${encodeURIComponent(tz)}`)
+      .then((row) => { if (alive && row?.scheduled_at) { setScheduledAt(toLocalInputValue(row.scheduled_at)); setSlotHint(true); } })
+      .catch(() => { if (alive) { const d = new Date(Date.now() + 60 * 60 * 1000); d.setMinutes(0, 0, 0); setScheduledAt(toLocalInputValue(d.toISOString())); } });
+    return () => { alive = false; };
+  }, [isFailed, safePost.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape" && !busy && !deleting) onClose(); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [busy, onClose]);
+  }, [busy, deleting, onClose]);
+  const friendlyFail = (e) => (isFailed ? "We couldn't save your changes. Please try again." : e?.message || "Please try again.");
   async function save() {
-    setBusy(true); setError("");
+    setBusy("save"); setError("");
     try {
       const post_metadata = { ...md, tags: tag ? [tag] : [], hashtags: hashtags.split(/\s+/).map((x) => x.trim()).filter(Boolean), privacy };
       await request(`/posts/${safePost.id}`, { method: "PATCH", body: JSON.stringify({ content, scheduled_at: new Date(scheduledAt).toISOString(), post_metadata }) });
       await onRefresh?.(); onClose();
-    } catch (e) { setError(e.message); setBusy(false); }
+    } catch (e) { setError(friendlyFail(e)); setBusy(false); }
   }
   async function publishNow() {
-    setBusy(true); setError("");
+    setBusy("now"); setError("");
     try { await request(`/posts/${safePost.id}/publish-now`, { method: "POST" }); await onRefresh?.(); onClose(); }
     catch (e) { setError(e.message); setBusy(false); }
   }
-  return createPortal(<div className="scd"><div className="modal-wrap" style={{ position: "fixed", zIndex: 80 }} onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}>
-    <div className="modal" role="dialog" aria-modal="true" aria-labelledby="edit-post-title" style={{ padding: 20, maxWidth: 520, width: "100%" }}>
-      <div className="row between" style={{ marginBottom: 14 }}><div className="row" style={{ gap: 8, minWidth: 0 }}><Ch platform={platform} size="md" /><h3 id="edit-post-title" style={{ margin: 0 }}>Edit post · {network}{account?.account_name ? ` · ${account.account_name}` : ""}</h3></div><button type="button" className="pp-x" aria-label="Close" onClick={onClose}>×</button></div>
+  async function retryNow() {
+    setBusy("retry"); setError("");
+    try {
+      // Keep caption edits, then send it again.
+      if (content !== safePost.content) await request(`/posts/${safePost.id}`, { method: "PATCH", body: JSON.stringify({ content }) });
+      await request(`/posts/${safePost.id}/retry`, { method: "POST" });
+      await onRefresh?.(); onClose();
+    } catch (e) {
+      setError(fe?.category === "connection_expired" ? `Reconnect your ${network} account, then try again.` : "We couldn't try again just now. Please wait a moment and retry.");
+      setBusy(false);
+    }
+  }
+  function runAction(a) {
+    if (a.id === "reconnect") { onClose(); onNavigate?.(a.target || "accounts"); }
+    else if (a.id === "crop") { onClose(); onNavigate?.("media"); }
+    else if (a.id === "edit") document.getElementById("edit-post-caption")?.focus();
+    else if (a.id === "retry") void retryNow();
+    else if (a.id === "reschedule") void save();
+  }
+  const fmtWhen = (v) => { try { const d = new Date(v); return `${d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })} · ${d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`; } catch { return ""; } };
+  const failedAt = safePost.updated_at || safePost.scheduled_at;
+  const attempts = Math.max(1, Number(safePost.attempt_count) || 1);
+  const ico = (d) => <svg className="ico" viewBox="0 0 24 24" aria-hidden="true">{d}</svg>;
+  const alertIco = ico(<><circle cx="12" cy="12" r="9" /><path d="M12 8v4M12 16h.01" /></>);
+  const chev = ico(showDetails ? <path d="m6 15 6-6 6 6" /> : <path d="m6 9 6 6 6-6" />);
+  const extraActions = (fe?.actions || []).filter((a) => ["reconnect", "crop", "edit"].includes(a.id));
+  const saveDisabled = !!busy || !scheduledAt || content.length > characterLimit;
+  const spin = (k) => (busy === k ? <LoaderCircle size={14} className="animate-spin" /> : null);
+  const footer = isFailed
+    ? <div className={`fe-foot${mobile ? " fe-foot-m" : ""}`}>
+      {mobile ? <>
+        <button type="button" className="btn btn-grad" disabled={saveDisabled} onClick={() => void save()}>{spin("save") || <Check size={14} />}Save &amp; reschedule</button>
+        <button type="button" className="btn btn-secondary" disabled={!!busy} onClick={() => void retryNow()}>{spin("retry") || <RotateCcw size={14} />}Retry now</button>
+        <button type="button" className="btn fe-del" disabled={!!busy} onClick={() => setDeleting(true)}><Trash2 size={14} />Delete post</button>
+      </> : <>
+        <button type="button" className="btn fe-del" disabled={!!busy} onClick={() => setDeleting(true)}><Trash2 size={14} />Delete</button>
+        <span className="grow" />
+        <button type="button" className="btn btn-ghost" disabled={!!busy} onClick={onClose}>Cancel</button>
+        <button type="button" className="btn btn-secondary" disabled={!!busy} onClick={() => void retryNow()}>{spin("retry") || <RotateCcw size={14} />}Retry now</button>
+        <button type="button" className="btn btn-grad" disabled={saveDisabled} onClick={() => void save()}>{spin("save") || <Check size={14} />}Save &amp; reschedule</button>
+      </>}
+    </div>
+    : <div className="row" style={{ gap: 8, justifyContent: "flex-end", marginTop: 18 }}>
+      <button type="button" className="btn btn-secondary" disabled={!!busy} onClick={onClose}>Cancel</button>
+      {canPostNow && <button type="button" className="btn btn-secondary" disabled={!!busy} onClick={() => void publishNow()}><Send size={14} />Post now</button>}
+      <button type="button" className="btn btn-primary" disabled={saveDisabled} onClick={() => void save()}>{busy ? <LoaderCircle size={14} className="animate-spin" /> : <Check size={14} />}Save changes</button>
+    </div>;
+  return createPortal(<div className="scd"><div className={`modal-wrap${isFailed ? " fe-wrap" : ""}${isFailed && mobile ? " fe-wrap-m" : ""}`} style={{ position: "fixed", zIndex: 80 }} onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}>
+    <div className={`modal${isFailed ? " fe" : ""}`} role="dialog" aria-modal="true" aria-labelledby="edit-post-title" style={isFailed ? undefined : { padding: 20, maxWidth: 520, width: "100%" }}>
+      <div className={isFailed ? "fe-mh" : "row between"} style={isFailed ? undefined : { marginBottom: 14 }}><div className="row" style={{ gap: 8, minWidth: 0 }}><Ch platform={platform} size="md" /><h3 id="edit-post-title" style={{ margin: 0 }}>Edit post <span className="fe-sub">· {network}{account?.account_name ? ` · ${account.account_name}` : ""}</span></h3></div><button type="button" className="pp-x" aria-label="Close" onClick={onClose}>×</button></div>
+      <div className={isFailed ? "fe-mb" : ""}>
+      {isFailed && fe && <div className="fe-ebn" role="status">
+        <span className="fe-ico">{alertIco}</span>
+        <div className="grow" style={{ minWidth: 0 }}>
+          <b className="fe-title">Failed to publish{failedAt ? ` · ${fmtWhen(failedAt)}` : ""}</b>
+          <div className="sm fe-banner">{fe.banner}</div>
+          <button type="button" className="fe-tog" aria-expanded={showDetails} onClick={() => setShowDetails((v) => !v)}>{showDetails ? "Hide details" : "Show details"}{chev}</button>
+          {showDetails && <dl className="fe-dt">
+            <dt>What happened</dt><dd>{fe.what_happened}</dd>
+            <dt>What to do</dt><dd>{fe.what_to_do}{extraActions.map((a) => <span key={a.id}> <button type="button" className="fe-lk" onClick={() => runAction(a)}>{a.label}</button></span>)}</dd>
+            <dt>When</dt><dd>Tried {fmtWhen(failedAt)} · {attempts} attempt{attempts === 1 ? "" : "s"}</dd>
+          </dl>}
+          {!showDetails && extraActions.length > 0 && <div className="fe-acts">{extraActions.map((a) => <button key={a.id} type="button" className="fe-lk" onClick={() => runAction(a)}>{a.label}</button>)}</div>}
+        </div>
+      </div>}
       {error && <div role="alert" className="alert error sm" style={{ marginBottom: 12 }}>{error}</div>}
-      <div className="col" style={{ gap: 12 }}>
-        <label className="col" style={{ gap: 6 }}><span className="sm" style={{ fontWeight: 600 }}>Scheduled time</span><input className="input" type="datetime-local" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} /></label>
-        <label className="col" style={{ gap: 6 }}><span className="row between sm" style={{ fontWeight: 600 }}>Caption<span className="xs subtle" style={{ color: content.length > characterLimit ? "var(--error)" : undefined }}>{content.length.toLocaleString()} / {characterLimit.toLocaleString()}</span></span><textarea className="input" rows={5} value={content} onChange={(e) => setContent(e.target.value)} style={{ resize: "vertical", minHeight: 110, height: "auto", padding: "10px 12px" }} /></label>
+      <div className="col" style={{ gap: isFailed ? 14 : 12 }}>
+        <label className="col" style={{ gap: 6 }}><span className="sm" style={{ fontWeight: 600 }}>Scheduled time</span><input className="input" type="datetime-local" value={scheduledAt} onChange={(e) => { setScheduledAt(e.target.value); setSlotHint(false); }} />
+          {isFailed && slotHint && <span className="xs subtle fe-hint">{ico(<><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>)}Original time has passed · next available slot</span>}</label>
+        <label className="col" style={{ gap: 6 }}><span className="row between sm" style={{ fontWeight: 600 }}>Caption<span className="xs subtle" style={{ color: content.length > characterLimit ? "var(--error)" : undefined }}>{content.length.toLocaleString()} / {characterLimit.toLocaleString()}</span></span><textarea id="edit-post-caption" className="input" rows={5} value={content} onChange={(e) => setContent(e.target.value)} style={{ resize: "vertical", minHeight: 110, height: "auto", padding: "10px 12px" }} /></label>
         <label className="col" style={{ gap: 6 }}><span className="sm" style={{ fontWeight: 600 }}>Hashtags</span><input className="input" value={hashtags} placeholder="#brand #campaign" onChange={(e) => setHashtags(e.target.value)} /></label>
         <div className="row" style={{ gap: 12 }}>
           <label className="col grow" style={{ gap: 6 }}><span className="sm" style={{ fontWeight: 600 }}>Tag</span><select className="input" value={tag} onChange={(e) => setTag(e.target.value)}><option value="">No tag</option>{[...new Set([...(Array.isArray(md.tags) ? md.tags : []), "Campaign", "Evergreen", "Product launch", "Behind the scenes"])].filter(Boolean).map((v) => <option key={v} value={v}>{v}</option>)}</select></label>
           <label className="col grow" style={{ gap: 6 }}><span className="sm" style={{ fontWeight: 600 }}>Privacy</span><select className="input" value={privacy} onChange={(e) => setPrivacy(e.target.value)}><option>Public</option><option>Followers</option><option>Only me</option></select></label>
         </div>
       </div>
-      <div className="row" style={{ gap: 8, justifyContent: "flex-end", marginTop: 18 }}>
-        <button type="button" className="btn btn-secondary" disabled={busy} onClick={onClose}>Cancel</button>
-        {canPostNow && <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => void publishNow()}><Send size={14} />Post now</button>}
-        <button type="button" className="btn btn-primary" disabled={busy || !scheduledAt || content.length > characterLimit} onClick={() => void save()}>{busy ? <LoaderCircle size={14} className="animate-spin" /> : <Check size={14} />}Save changes</button>
       </div>
+      {footer}
     </div>
-  </div></div>, document.body);
+  </div>
+  {deleting && <DeletePostModal post={safePost} account={account} request={request} onClose={() => setDeleting(false)} onDeleted={async (p, info) => { onClose(); if (onDeleted) await onDeleted(p, info); else await onRefresh?.(); }} />}
+  </div>, document.body);
 }
 
 const DAY_W = 340;
@@ -1325,7 +1405,7 @@ function DayPopover({ date, posts, anchor, accounts, request, onRefresh, onClose
           <Ch platform={account?.platform || post.preview_platform} />
           <div className="dp-main">
             <div className="dp-l1"><b title={account?.account_name || ""}>{account?.account_name || account?.platform || "Account"}</b><span className="dp-cap">{post.content || postTitle(post)}</span></div>
-            {post.status === "failed" && <div className="dp-err" title={post.last_error_message || ""}>{post.last_error_message || "Publishing failed"}</div>}
+            {post.status === "failed" && <div className="dp-err">{failedBannerText(post, account)}</div>}
           </div>
           <span className="dp-dot" style={{ background: DOT[key] }} title={key} aria-hidden="true" />
         </div>;

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useObjectUrl } from "./objectUrl.js";
 import { Check, ChevronDown, Play, X as XIcon } from "lucide-react";
 import ModalPortal from "./ModalPortal.jsx";
 import { focusNoScroll } from "./scrollLock.js";
@@ -7,11 +8,6 @@ import { buildFixPlan, fmtDuration, indicesForChoice, planResult, togglePick } f
 const FOCUSABLE = 'button:not([disabled]),[href],input:not([disabled]),[tabindex]:not([tabindex="-1"]),summary';
 const isVideoItem = (item) => typeof item === "string" ? /\.(mp4|mov|webm|m4v)(\?|$)/i.test(item) : String(item?.type || "").startsWith("video/");
 
-function useObjectUrl(file) {
-  const [url, setUrl] = useState("");
-  useEffect(() => { if (!file || typeof file === "string") { setUrl(typeof file === "string" ? file : ""); return undefined; } const next = URL.createObjectURL(file); setUrl(next); return () => URL.revokeObjectURL(next); }, [file]);
-  return url;
-}
 
 /** Real preview: image, or a video frame with a play icon and duration. */
 function Prev({ item, info, on, tick, onClick, label, radio = false }) {

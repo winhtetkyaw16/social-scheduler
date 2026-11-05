@@ -18,8 +18,19 @@ class PublishingError(Exception):
 PublishResult = ProviderPublishResult
 
 
+def _accepts_settings(fn) -> bool:
+    """True when the adapter's publish() takes the per-network composer settings."""
+    import inspect
+
+    try:
+        return "settings" in inspect.signature(fn).parameters
+    except (TypeError, ValueError):
+        return False
+
+
 def publish(
-    platform: str, access_token: str, account_id: str, content: str, media_urls: list[str], *, ig_crop: dict | None = None
+    platform: str, access_token: str, account_id: str, content: str, media_urls: list[str], *, ig_crop: dict | None = None,
+    settings: dict | None = None,
 ) -> PublishResult:
     """Publish through the registered platform adapter with normalized errors.
 
@@ -30,7 +41,10 @@ def publish(
 
     media_urls = prepare_media(platform, media_urls, ig_crop=ig_crop if platform == "instagram" else None)
     try:
-        return get_platform(platform).publish(access_token, account_id, content, media_urls)
+        adapter = get_platform(platform)
+        if settings and _accepts_settings(adapter.publish):
+            return adapter.publish(access_token, account_id, content, media_urls, settings=dict(settings))
+        return adapter.publish(access_token, account_id, content, media_urls)
     except ProviderHTTPError as exc:
         retryable = exc.status_code == 429 or exc.status_code >= 500
         raise PublishingError(

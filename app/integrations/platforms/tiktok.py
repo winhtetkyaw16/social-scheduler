@@ -21,7 +21,9 @@ class TikTokPlatform(SocialPlatform):
     platform = "tiktok"
     supports_remote_delete = False
 
-    def publish(self, access_token: str, account_id: str, content: str, media_urls: list[str]) -> ProviderPublishResult:
+    def publish(
+        self, access_token: str, account_id: str, content: str, media_urls: list[str], settings: dict | None = None
+    ) -> ProviderPublishResult:
         if not account_id or not str(account_id).strip():
             raise ProviderConfigurationError("TikTok publishing needs the creator open_id from OAuth connect.")
         if not media_urls:
@@ -30,7 +32,7 @@ class TikTokPlatform(SocialPlatform):
             )
         kinds = [guess_media_kind(m) for m in media_urls]
         if all(k == "image" for k in kinds):
-            return _publish_photos(access_token, content, media_urls)
+            return _publish_photos(access_token, content, media_urls, settings)
         if "image" in kinds:
             raise ProviderConfigurationError("TikTok posts one video or up to 35 photos, not a mix. Pick photos or the video.")
         if len(media_urls) != 1:
@@ -62,14 +64,14 @@ class TikTokPlatform(SocialPlatform):
             source_info = {"source": "PULL_FROM_URL", "video_url": pull_url}
             upload_bytes = None
 
-        privacy = _privacy_level(access_token)
+        privacy = _privacy_level(access_token, settings)
         direct_body = {
             "post_info": {
                 "title": title or " ",
                 "privacy_level": privacy,
-                "disable_duet": False,
-                "disable_comment": False,
-                "disable_stitch": False,
+                "disable_duet": not _allowed(settings, "allow_duet"),
+                "disable_comment": not _allowed(settings, "allow_comments"),
+                "disable_stitch": not _allowed(settings, "allow_stitch"),
                 "video_cover_timestamp_ms": 1000,
             },
             "source_info": source_info,
@@ -94,7 +96,7 @@ class TikTokPlatform(SocialPlatform):
         )
 
 
-def _publish_photos(access_token: str, content: str, media_urls: list[str]) -> ProviderPublishResult:
+def _publish_photos(access_token: str, content: str, media_urls: list[str], settings: dict | None = None) -> ProviderPublishResult:
     """Photo post (1-35 images). TikTok only supports PULL_FROM_URL for photos, so every image must be on a
     public https URL whose domain/prefix is verified in the TikTok developer portal (URL properties)."""
     if len(media_urls) > MAX_PHOTOS:
@@ -110,13 +112,13 @@ def _publish_photos(access_token: str, content: str, media_urls: list[str]) -> P
         urls.append(public)
     text = (content or "").strip()
     first_line = text.splitlines()[0] if text else ""
-    privacy = _privacy_level(access_token)
+    privacy = _privacy_level(access_token, settings)
     source_info = {"source": "PULL_FROM_URL", "photo_cover_index": 0, "photo_images": urls}
     post_info = {
         "title": first_line[:90],
         "description": text[:4000],
         "privacy_level": privacy,
-        "disable_comment": False,
+        "disable_comment": not _allowed(settings, "allow_comments"),
         "auto_add_music": True,
     }
     body = {"post_info": post_info, "source_info": source_info, "post_mode": "DIRECT_POST", "media_type": "PHOTO"}
@@ -131,7 +133,16 @@ def _publish_photos(access_token: str, content: str, media_urls: list[str]) -> P
     return _finish_tiktok_publish(access_token, inbox, None, mode="inbox")
 
 
-def _privacy_level(access_token: str) -> str:
+# Composer "Visibility" -> Content Posting API privacy_level (must be one of creator_info's options).
+TIKTOK_PRIVACY = {"Public": "PUBLIC_TO_EVERYONE", "Friends": "MUTUAL_FOLLOW_FRIENDS", "Only me": "SELF_ONLY"}
+
+
+def _allowed(settings: dict | None, key: str) -> bool:
+    value = (settings or {}).get(key, True)
+    return value is not False and str(value).lower() not in {"false", "0", "off"}
+
+
+def _privacy_level(access_token: str, settings: dict | None = None) -> str:
     try:
         response = httpx.post(
             _CREATOR_INFO,
@@ -150,6 +161,9 @@ def _privacy_level(access_token: str) -> str:
     options = data.get("privacy_level_options") or []
     if not isinstance(options, list) or not options:
         return "SELF_ONLY"
+    wanted = TIKTOK_PRIVACY.get(str((settings or {}).get("audience") or ""))
+    if wanted and wanted in options:
+        return wanted
     preferred = ("PUBLIC_TO_EVERYONE", "MUTUAL_FOLLOW_FRIENDS", "FOLLOWER_OF_CREATOR", "SELF_ONLY")
     for level in preferred:
         if level in options:

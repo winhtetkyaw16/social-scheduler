@@ -11,13 +11,43 @@ from app.integrations.base import ProviderHTTPError, ProviderPublishResult, Soci
 from app.integrations.media_urls import guess_media_kind, local_upload_path, public_media_url
 
 
+
+# Composer "Platform settings" -> YouTube Data API v3 videos.insert (snippet.categoryId, status.*).
+YOUTUBE_CATEGORY_IDS = {
+    "Film & Animation": "1", "Autos & Vehicles": "2", "Music": "10", "Pets & Animals": "15", "Sports": "17",
+    "Travel & Events": "19", "Gaming": "20", "People & Blogs": "22", "Comedy": "23", "Entertainment": "24",
+    "News & Politics": "25", "Howto & Style": "26", "Education": "27", "Science & Technology": "28",
+}
+_YOUTUBE_PRIVACY = {"public": "public", "unlisted": "unlisted", "private": "private"}
+
+
+def youtube_privacy(settings: dict | None) -> str:
+    raw = str((settings or {}).get("privacy_status") or "public").strip().lower()
+    return _YOUTUBE_PRIVACY.get(raw, "public")
+
+
+def youtube_category_id(settings: dict | None) -> str:
+    raw = str((settings or {}).get("category") or "").strip()
+    if raw.isdigit():
+        return raw
+    return YOUTUBE_CATEGORY_IDS.get(raw, "22")
+
+
+def youtube_made_for_kids(settings: dict | None) -> bool:
+    s = settings or {}
+    if "made_for_kids" in s:
+        return bool(s.get("made_for_kids"))
+    return s.get("audience_classification") == "Made for kids"
+
 class YouTubePlatform(SocialPlatform):
     """Upload one video to the authenticated channel via resumable upload."""
 
     platform = "youtube"
     supports_remote_delete = True
 
-    def publish(self, access_token: str, account_id: str, content: str, media_urls: list[str]) -> ProviderPublishResult:
+    def publish(
+        self, access_token: str, account_id: str, content: str, media_urls: list[str], settings: dict | None = None
+    ) -> ProviderPublishResult:
         if not account_id or not str(account_id).strip():
             raise ProviderConfigurationError("YouTube publishing needs a Channel id from OAuth connect.")
         if not media_urls:
@@ -35,11 +65,11 @@ class YouTubePlatform(SocialPlatform):
             "snippet": {
                 "title": title,
                 "description": description,
-                "categoryId": "22",
+                "categoryId": youtube_category_id(settings),
             },
             "status": {
-                "privacyStatus": "public",
-                "selfDeclaredMadeForKids": False,
+                "privacyStatus": youtube_privacy(settings),
+                "selfDeclaredMadeForKids": youtube_made_for_kids(settings),
             },
         }
 

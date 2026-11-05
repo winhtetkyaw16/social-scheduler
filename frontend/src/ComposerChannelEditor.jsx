@@ -3,6 +3,7 @@ import { ChannelTile } from "./sc/ui.jsx";
 import { createPortal } from "react-dom";
 import { ChevronDown, Expand, Facebook, Globe2, GripVertical, Hash, Instagram, Link2, Linkedin, MapPin, MessageCircle, Pencil, Settings2, Shrink, Smile, Sparkles, Video, X, Youtube } from "lucide-react";
 import EmojiPicker from "./EmojiPicker.jsx";
+import { openDraft, updateDraft, isDraftDirty, commitDraft, UNSUPPORTED_FIELDS } from "./settingsDraft.js";
 import { AccountAvatar } from "./ManageAccounts.jsx";
 import facebookPng from "./assets/logos/facebook.svg";
 import instagramPng from "./assets/logos/instagram.svg";
@@ -114,8 +115,17 @@ export function PlatformSettingsPopover({ account, settings = {}, onChange, open
   const [position, setPosition] = useState({ top: 12, left: 12, ready: false });
   const platform = account?.platform;
   const defaults = SETTINGS_DEFAULTS[platform] || {};
-  const value = (key) => settings[key] ?? (key === "made_for_kids" && typeof settings.audience_classification === "string" ? settings.audience_classification === "Made for kids" : undefined) ?? defaults[key] ?? "";
-  const update = (key, next) => onChange?.(account.id, key, next);
+  const savedValue = (key) => settings[key] ?? (key === "made_for_kids" && typeof settings.audience_classification === "string" ? settings.audience_classification === "Made for kids" : undefined) ?? defaults[key] ?? "";
+  // Edits stay in this local draft until Save. Cancel, X, Escape and clicking outside discard it.
+  const savedSnapshot = Object.fromEntries([...new Set([...Object.keys(defaults), ...Object.keys(settings || {})])].map((key) => [key, savedValue(key)]));
+  const [draft, setDraft] = useState(null);
+  useEffect(() => { setDraft(open ? openDraft(savedSnapshot) : null); }, [open, account?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const value = (key) => (draft && key in draft ? draft[key] : savedValue(key));
+  const update = (key, next) => setDraft((current) => updateDraft(current || openDraft(savedSnapshot), key, next));
+  const dirty = Boolean(draft) && isDraftDirty(savedSnapshot, draft);
+  const discard = () => { setDraft(null); if (open) onToggle?.(); };
+  const save = () => { if (draft) commitDraft(account.id, savedSnapshot, draft, {}, onChange); setDraft(null); if (open) onToggle?.(); };
+  const unsupported = UNSUPPORTED_FIELDS[platform] || [];
   const labelClass = "block text-[9px] font-bold text-slate-500 dark:text-slate-400";
   const inputClass = "mt-1 block w-full rounded-xl border border-slate-200/80 bg-white/90 px-3 py-2.5 text-[10px] font-medium text-slate-700 shadow-sm outline-none backdrop-blur-md transition placeholder:text-slate-400 focus:border-indigo-400 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-900/90 dark:text-slate-200";
   const selectClass = "block w-full appearance-none rounded-xl border border-slate-200/80 bg-white/90 py-2.5 pl-3 pr-9 text-[10px] font-medium text-slate-700 shadow-sm outline-none backdrop-blur-md transition focus:border-indigo-400 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-900/90 dark:text-slate-200";
@@ -137,13 +147,13 @@ export function PlatformSettingsPopover({ account, settings = {}, onChange, open
   let sections = [];
   if (platform === "tiktok") sections = [{ title: "Audience", Icon: Globe2, fields: [selectField("Visibility", "audience", ["Public", "Friends", "Only me"])] }, { title: "Interactions", Icon: MessageCircle, fields: [toggleField("Allow comments", "allow_comments"), toggleField("Allow Duet", "allow_duet"), toggleField("Allow Stitch", "allow_stitch")] }];
   else if (platform === "youtube") sections = [{ title: "Privacy & audience", Icon: Globe2, fields: [selectField("Privacy status", "privacy_status", ["Public", "Unlisted", "Private"]), toggleField("Made for kids", "made_for_kids")] }, { title: "Video details", Icon: Settings2, fields: [selectField("Category", "category", ["People & Blogs", "Education", "Entertainment", "Howto & Style", "News & Politics", "Science & Technology", "Travel & Events", "Comedy", "Gaming", "Music", "Sports"])] }];
-  else if (platform === "facebook") sections = [{ title: "Audience", Icon: Globe2, fields: [selectField("Privacy", "audience", ["Public", "Friends", "Only me"])] }, { title: "Post details", Icon: MapPin, fields: [textField("Location tag", "location", "Add a place"), textField("First comment", "first_comment", "Add an optional first comment")] }];
-  else if (platform === "instagram") sections = [{ title: "Interactions", Icon: MessageCircle, fields: [toggleField("Hide like and view counts", "hide_counts"), toggleField("Turn off commenting", "disable_comments")] }, { title: "Accessibility & location", Icon: MapPin, fields: [textField("Alt text", "alt_text", "Describe the image for accessibility"), textField("Location tag", "location", "Add a place")] }];
-  else if (platform === "linkedin") sections = [{ title: "Visibility", Icon: Globe2, fields: [selectField("Post visibility", "visibility", ["Anyone", "Connections only"]), selectField("Who can comment", "commenting", ["Anyone", "Connections only"])] }];
+  else if (platform === "facebook") sections = [{ title: "Post details", Icon: MessageCircle, fields: [textField("First comment", "first_comment", "Add an optional first comment")] }];
+  else if (platform === "instagram") sections = [{ title: "Interactions", Icon: MessageCircle, fields: [toggleField("Turn off commenting", "disable_comments")] }, { title: "Accessibility", Icon: MapPin, fields: [textField("Alt text (photos only)", "alt_text", "Describe the image for accessibility")] }];
+  else if (platform === "linkedin") sections = [{ title: "Visibility", Icon: Globe2, fields: [selectField("Post visibility", "visibility", ["Anyone", "Connections only"])] }];
   else if (platform === "x") sections = [{ title: "Replies", Icon: MessageCircle, fields: [selectField("Who can reply", "reply_permission", ["Everyone", "Accounts you follow", "Only accounts you mention"])] }];
   else if (platform === "pinterest") sections = [{ title: "Pin details", Icon: Link2, fields: [selectField("Board", "board", ["Brand inspiration", "Product ideas", "Social campaigns"]), textField("Destination link", "destination_url", "https://your-site.com/page"), textField("Alt text", "alt_text", "Describe the image")] }];
   if (MEDIA_LAYOUT_OPTIONS[platform]) {
-    sections = [...sections, { title: "Media display", Icon: Settings2, fields: [selectField("Multiple media layout", "media_layout", MEDIA_LAYOUT_OPTIONS[platform])] }];
+    sections = [...sections, { title: "Media display", Icon: Settings2, fields: [selectField("Multiple media layout (preview only)", "media_layout", MEDIA_LAYOUT_OPTIONS[platform])] }];
   }
 
   useLayoutEffect(() => {
@@ -169,18 +179,20 @@ export function PlatformSettingsPopover({ account, settings = {}, onChange, open
 
   useEffect(() => {
     if (!open) return undefined;
-    const closeOnOutside = (event) => { if (!triggerRef.current?.contains(event.target) && !panelRef.current?.contains(event.target)) onToggle?.(); };
-    const closeOnEscape = (event) => { if (event.key === "Escape") onToggle?.(); };
+    const closeOnOutside = (event) => { if (!triggerRef.current?.contains(event.target) && !panelRef.current?.contains(event.target)) discard(); };
+    const closeOnEscape = (event) => { if (event.key === "Escape") discard(); };
     document.addEventListener("pointerdown", closeOnOutside);
     document.addEventListener("keydown", closeOnEscape);
     return () => { document.removeEventListener("pointerdown", closeOnOutside); document.removeEventListener("keydown", closeOnEscape); };
-  }, [open, onToggle]);
+  }, [open, onToggle]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return <>
     <button ref={triggerRef} type="button" aria-haspopup="dialog" aria-expanded={open} onClick={onToggle} className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-[9px] font-bold shadow-sm backdrop-blur-md transition focus:outline-none focus:ring-4 focus:ring-indigo-500/10 ${open ? "border-indigo-300 bg-indigo-50/90 text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950/80 dark:text-indigo-200" : "border-slate-200/80 bg-white/90 text-slate-600 hover:border-indigo-300 hover:text-indigo-700 dark:border-slate-700 dark:bg-slate-900/90 dark:text-slate-300"}`}><Settings2 size={12} />Platform settings</button>
     {open && typeof document !== "undefined" && createPortal(<div ref={panelRef} role="dialog" aria-label={`${CHANNEL_UI[platform]?.label || "Channel"} settings`} className="fixed z-[100] max-h-[min(70vh,480px)] w-[min(320px,calc(100vw-24px))] overflow-y-auto rounded-2xl border border-white/70 bg-white/90 p-4 shadow-xl shadow-slate-900/15 backdrop-blur-md dark:border-slate-700/80 dark:bg-slate-900/95" style={{ top: position.top, left: position.left, visibility: position.ready ? "visible" : "hidden" }}>
-      <header className="sticky top-0 z-10 -mx-1 -mt-1 mb-3 flex items-center gap-2 rounded-xl bg-white/90 px-1 py-2 backdrop-blur-md dark:bg-slate-900/95"><span className="grid h-7 w-7 place-items-center rounded-lg bg-indigo-50 dark:bg-indigo-950"><BrandIcon platform={platform} /></span><div className="min-w-0 flex-1"><p className="text-[10px] font-extrabold text-slate-800 dark:text-white">{CHANNEL_UI[platform]?.label || "Channel"} settings</p><p className="truncate text-[9px] text-slate-400">{account?.account_name || "Connected account"}</p></div><button type="button" onClick={onToggle} aria-label="Close platform settings" className="grid h-7 w-7 place-items-center rounded-lg text-sm text-slate-400 transition hover:bg-slate-100 dark:hover:bg-slate-800">×</button></header>
+      <header className="sticky top-0 z-10 -mx-1 -mt-1 mb-3 flex items-center gap-2 rounded-xl bg-white/90 px-1 py-2 backdrop-blur-md dark:bg-slate-900/95"><span className="grid h-7 w-7 place-items-center rounded-lg bg-indigo-50 dark:bg-indigo-950"><BrandIcon platform={platform} /></span><div className="min-w-0 flex-1"><p className="text-[10px] font-extrabold text-slate-800 dark:text-white">{CHANNEL_UI[platform]?.label || "Channel"} settings</p><p className="truncate text-[9px] text-slate-400">{account?.account_name || "Connected account"}</p></div><button type="button" onClick={discard} aria-label="Close platform settings without saving" className="grid h-7 w-7 place-items-center rounded-lg text-sm text-slate-400 transition hover:bg-slate-100 dark:hover:bg-slate-800">×</button></header>
       <div className="space-y-3">{sections.map(({ title, Icon, fields: sectionFields }) => <section key={title} className="border-t border-slate-100 pt-2.5 first:border-0 first:pt-0 dark:border-slate-800"><h4 className="mb-1.5 flex items-center gap-1.5 text-[9px] font-extrabold uppercase tracking-wide text-slate-500 dark:text-slate-400"><Icon size={12} className="text-indigo-500" />{title}</h4><div className="space-y-1.5">{sectionFields}</div></section>)}</div>
+      {unsupported.length > 0 && <p className="mt-3 rounded-lg bg-slate-50 px-2.5 py-2 text-[9px] leading-4 text-slate-500 dark:bg-slate-800/70 dark:text-slate-400">Not available through {CHANNEL_UI[platform]?.label || "this network"}'s publishing API, so it's hidden here: {unsupported.join("; ")}. Set it in the app after posting.</p>}
+      <footer className="scd sticky bottom-0 -mx-1 -mb-1 mt-3 flex justify-end gap-2 bg-white/90 px-1 pb-1 pt-2 backdrop-blur-md dark:bg-slate-900/95"><button type="button" className="btn btn-secondary btn-sm" onClick={discard}>Cancel</button><button type="button" className="btn btn-primary btn-sm" onClick={save} disabled={!dirty}>Save</button></footer>
     </div>, document.body)}
   </>;
 }

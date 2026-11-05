@@ -100,6 +100,7 @@ const SETTINGS_DEFAULTS = {
   instagram: { hide_counts: false, disable_comments: false, alt_text: "", location: "", media_layout: "Carousel / Swipe" },
   linkedin: { visibility: "Anyone", commenting: "Anyone", media_layout: "Grid" },
   x: { reply_permission: "Everyone", media_layout: "Grid" },
+  threads: { reply_control: "Everyone" },
   pinterest: { board: "Brand inspiration", destination_url: "", alt_text: "" },
 };
 const MEDIA_LAYOUT_OPTIONS = {
@@ -151,6 +152,7 @@ export function PlatformSettingsPopover({ account, settings = {}, onChange, open
   else if (platform === "instagram") sections = [{ title: "Interactions", Icon: MessageCircle, fields: [toggleField("Turn off commenting", "disable_comments")] }, { title: "Accessibility", Icon: MapPin, fields: [textField("Alt text (photos only)", "alt_text", "Describe the image for accessibility")] }];
   else if (platform === "linkedin") sections = [{ title: "Visibility", Icon: Globe2, fields: [selectField("Post visibility", "visibility", ["Anyone", "Connections only"])] }];
   else if (platform === "x") sections = [{ title: "Replies", Icon: MessageCircle, fields: [selectField("Who can reply", "reply_permission", ["Everyone", "Accounts you follow", "Only accounts you mention"])] }];
+  else if (platform === "threads") sections = [{ title: "Replies", Icon: MessageCircle, fields: [selectField("Who can reply", "reply_control", ["Everyone", "Accounts you follow", "Only accounts you mention", "Followers only"])] }];
   else if (platform === "pinterest") sections = [{ title: "Pin details", Icon: Link2, fields: [selectField("Board", "board", ["Brand inspiration", "Product ideas", "Social campaigns"]), textField("Destination link", "destination_url", "https://your-site.com/page"), textField("Alt text", "alt_text", "Describe the image")] }];
   if (MEDIA_LAYOUT_OPTIONS[platform]) {
     sections = [...sections, { title: "Media display", Icon: Settings2, fields: [selectField("Multiple media layout (preview only)", "media_layout", MEDIA_LAYOUT_OPTIONS[platform])] }];

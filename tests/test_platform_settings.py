@@ -215,3 +215,62 @@ def test_publish_passes_settings_only_to_adapters_that_take_them(monkeypatch):
     publishing.publish("x", "t", "a", "hi", [], settings={"reply_permission": "Everyone"})
     publishing.publish("threads", "t", "a", "hi", [], settings={"k": 1})
     assert seen == {"new": {"reply_permission": "Everyone"}, "old": True}
+
+
+# --- OAuth scopes for first comment (Facebook) and Threads replies ---
+
+def test_oauth_requests_engagement_and_reply_scopes():
+    from app.services.oauth import _providers
+    providers = _providers()
+    assert "pages_manage_engagement" in providers["facebook"].scopes
+    assert "pages_read_user_content" not in providers["facebook"].scopes
+    assert "threads_manage_replies" in providers["threads"].scopes
+    assert {"threads_basic", "threads_content_publish"} <= set(providers["threads"].scopes)
+
+
+def test_facebook_first_comment_uses_page_token_and_comments_edge(monkeypatch):
+    calls = []
+    monkeypatch.setattr(fbmod, "provider_request", lambda m, url, **kw: calls.append((m, url, kw.get("access_token"))) or _Resp({"id": "PAGE_POST"}))
+    fbmod.FacebookPlatform().publish("PAGE-TOKEN", "PAGE", "hello", [], settings={"first_comment": "hi"})
+    method, url, token = calls[-1]
+    assert method == "POST" and url.endswith("/PAGE_POST/comments") and token == "PAGE-TOKEN"
+
+
+# --- Threads: Who can reply -> reply_control on the published container ---
+
+from app.integrations.platforms import threads as thmod  # noqa: E402
+
+
+def _threads(monkeypatch, media, settings):
+    calls = []
+    monkeypatch.setattr(thmod, "_wait_for_threads_container", lambda *a, **k: None)
+    monkeypatch.setattr(thmod, "public_media_url", lambda url, platform=None: url)
+    def fake(method, url, **kw):
+        calls.append((url, kw.get("json")))
+        return _Resp({"id": f"id{len(calls)}"})
+    monkeypatch.setattr(thmod, "provider_request", fake)
+    thmod.ThreadsPlatform().publish("t", "42", "hello", media, settings=settings)
+    return calls
+
+
+@pytest.mark.parametrize("label,value", [("Accounts you follow", "accounts_you_follow"), ("Only accounts you mention", "mentioned_only"), ("Followers only", "followers_only")])
+def test_threads_reply_control_on_text_post(monkeypatch, label, value):
+    calls = _threads(monkeypatch, [], {"reply_control": label})
+    assert calls[0][1]["reply_control"] == value
+    assert "reply_control" not in calls[-1][1]  # threads_publish body
+
+
+def test_threads_everyone_or_missing_omits_reply_control(monkeypatch):
+    for settings in (None, {"reply_control": "Everyone"}, {"reply_control": "bogus"}):
+        assert "reply_control" not in _threads(monkeypatch, [], settings)[0][1]
+
+
+def test_threads_reply_control_only_on_carousel_parent(monkeypatch):
+    calls = _threads(monkeypatch, ["https://x/a.jpg", "https://x/b.jpg"], {"reply_control": "Followers only"})
+    children, parent = calls[:2], calls[2]
+    assert all("reply_control" not in body for _, body in children)
+    assert parent[1]["media_type"] == "CAROUSEL" and parent[1]["reply_control"] == "followers_only"
+
+
+def test_threads_adapter_receives_settings_via_publish(monkeypatch):
+    assert publishing._accepts_settings(thmod.ThreadsPlatform().publish)

@@ -15,6 +15,19 @@ from app.integrations.media_urls import guess_media_kind, public_media_url
 MAX_CAROUSEL_ITEMS = 20
 _sleep = time.sleep
 
+# Popover label -> Threads reply_control (POST /{threads-user-id}/threads). "Everyone" omits it (API default).
+THREADS_REPLY_CONTROL = {
+    "Everyone": "everyone",
+    "Accounts you follow": "accounts_you_follow",
+    "Only accounts you mention": "mentioned_only",
+    "Followers only": "followers_only",
+}
+
+
+def threads_reply_control(settings: dict | None) -> str | None:
+    value = THREADS_REPLY_CONTROL.get(str((settings or {}).get("reply_control") or "Everyone"))
+    return None if value in (None, "everyone") else value
+
 
 class ThreadsPlatform(SocialPlatform):
     """Create a Threads media container, then publish it."""
@@ -22,7 +35,9 @@ class ThreadsPlatform(SocialPlatform):
     platform = "threads"
     supports_remote_delete = True
 
-    def publish(self, access_token: str, account_id: str, content: str, media_urls: list[str]) -> ProviderPublishResult:
+    def publish(
+        self, access_token: str, account_id: str, content: str, media_urls: list[str], settings: dict | None = None
+    ) -> ProviderPublishResult:
         if not account_id or not str(account_id).strip():
             raise ProviderConfigurationError("Threads publishing needs a Threads profile id from OAuth connect.")
         text = (content or "").strip()
@@ -66,6 +81,9 @@ class ThreadsPlatform(SocialPlatform):
         else:
             container_body = {"media_type": "TEXT", "text": text}
 
+        reply_control = threads_reply_control(settings)
+        if reply_control:
+            container_body["reply_control"] = reply_control  # set on the top-level container only
         container = provider_request("POST", f"{base}/threads", access_token=access_token, json=container_body).json()
         creation_id = container.get("id")
         if not creation_id:

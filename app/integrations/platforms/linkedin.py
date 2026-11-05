@@ -238,7 +238,9 @@ class LinkedInPlatform(SocialPlatform):
     platform = "linkedin"
     supports_remote_delete = True
 
-    def publish(self, access_token: str, account_id: str, content: str, media_urls: list[str]) -> ProviderPublishResult:
+    def publish(
+        self, access_token: str, account_id: str, content: str, media_urls: list[str], settings: dict | None = None
+    ) -> ProviderPublishResult:
         author = account_id if str(account_id).startswith("urn:li:") else f"urn:li:person:{account_id}"
         media = [str(u) for u in (media_urls or [])]
         problem = linkedin_media_problem(media)
@@ -258,7 +260,7 @@ class LinkedInPlatform(SocialPlatform):
         body = {
             "author": author,
             "commentary": content or "",
-            "visibility": "PUBLIC",
+            "visibility": linkedin_visibility(author, settings),
             "distribution": {"feedDistribution": "MAIN_FEED", "targetEntities": [], "thirdPartyDistributionChannels": []},
             "lifecycleState": "PUBLISHED",
             "isReshareDisabledByAuthor": False,
@@ -353,6 +355,14 @@ class LinkedInPlatform(SocialPlatform):
             access_token=access_token,
             headers={"Linkedin-Version": _version(), "X-Restli-Protocol-Version": "2.0.0"},
         )
+
+
+def linkedin_visibility(author: str, settings: dict | None) -> str:
+    """Posts API visibility: CONNECTIONS is only valid for member (person) authors; organizations stay PUBLIC."""
+    wanted = str((settings or {}).get("visibility") or "Anyone")
+    if wanted == "Connections only" and str(author).startswith("urn:li:person:"):
+        return "CONNECTIONS"
+    return "PUBLIC"
 
 
 def _video_title(content: str) -> str:

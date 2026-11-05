@@ -1,3 +1,4 @@
+import { useObjectUrls } from "./objectUrl.js";
 import { useEffect, useRef, useState } from "react";
 import { ChannelTile } from "./sc/ui.jsx";
 import {
@@ -33,13 +34,7 @@ const PLATFORM_MEDIA_LAYOUTS = {
 };
 
 function useMediaUrls(files) {
-  const [urls, setUrls] = useState([]);
-  useEffect(() => {
-    const next = files.map((file) => file ? URL.createObjectURL(file) : "");
-    setUrls(next);
-    return () => next.forEach((url) => URL.revokeObjectURL(url));
-  }, [files]);
-  return urls;
+  return useObjectUrls(files);
 }
 
 function PreviewChannelBrandImage({ channelId, size = 24 }) {

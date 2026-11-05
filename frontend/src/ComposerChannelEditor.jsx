@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useObjectUrl } from "./objectUrl.js";
 import { ChannelTile } from "./sc/ui.jsx";
 import { createPortal } from "react-dom";
 import { ChevronDown, Expand, Facebook, Globe2, GripVertical, Hash, Instagram, Link2, Linkedin, MapPin, MessageCircle, Pencil, Settings2, Shrink, Smile, Sparkles, Video, X, Youtube } from "lucide-react";
@@ -44,13 +45,7 @@ function LocalChannelBrandImage({ channelId, size = 24 }) {
 }
 
 function ChannelFileThumb({ file, onRemove, onEdit, onDragStart, onDragOver, onDrop }) {
-  const [url, setUrl] = useState("");
-  useEffect(() => {
-    if (!file || typeof URL.createObjectURL !== "function") return undefined;
-    const objectUrl = URL.createObjectURL(file);
-    setUrl(objectUrl);
-    return () => URL.revokeObjectURL(objectUrl);
-  }, [file]);
+  const url = useObjectUrl(file);
   const video = Boolean(file?.type?.startsWith("video/"));
   return <div draggable onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop} title="Drag to reorder" className="group relative aspect-square overflow-hidden rounded-xl border border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-800">
     {url && !video ? <img src={url} alt={file?.name || "Attached image"} className="h-full w-full object-cover" /> : url && video ? <video src={url} muted playsInline preload="metadata" className="h-full w-full object-cover" /> : <div className="grid h-full place-items-center text-indigo-500">{video ? <Video size={20} /> : <span className="text-[9px]">Preview</span>}</div>}

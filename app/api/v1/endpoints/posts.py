@@ -227,10 +227,11 @@ def enqueue_immediate_publish(post_id: str) -> None:
         logger.info("Skipping duplicate immediate enqueue for post %s", post_id)
         return
 
-    from app.tasks.publish_post import publish_post_task
+    from app.tasks.publish_post import publish_post_task, stored_format
 
+    post_format = stored_format(post_id)
     try:
-        publish_post_task.apply_async(args=[post_id])
+        publish_post_task.apply_async(args=[post_id], kwargs={"post_format": post_format})
     except Exception as exc:
         logger.warning(
             "Celery broker unavailable; using FastAPI background publishing for post %s (%s)",
@@ -238,7 +239,7 @@ def enqueue_immediate_publish(post_id: str) -> None:
             type(exc).__name__,
         )
         try:
-            publish_post_task.run(post_id)
+            publish_post_task.run(post_id, post_format=post_format)
         except Exception:
             logger.exception("FastAPI background publishing failed for post %s", post_id)
 

@@ -37,7 +37,7 @@ def _create(client, headers, account_id, when):
             "media_urls": [],
             "scheduled_at": when.isoformat(),
             "idempotency_key": uuid4().hex,
-            "post_metadata": {},
+            "post_metadata": {"format": "Post"},
         },
     )
     assert created.status_code == 200, created.text

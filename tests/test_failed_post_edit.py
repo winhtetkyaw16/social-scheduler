@@ -17,7 +17,7 @@ def test_failed_post_friendly_error_and_reschedule(client, auth_headers, monkeyp
     created = client.post("/api/v1/posts", headers=headers, json={
         "connected_account_id": account["id"], "content": "Hello",
         "media_urls": [], "scheduled_at": (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
-        "idempotency_key": uuid4().hex, "post_metadata": {},
+        "idempotency_key": uuid4().hex, "post_metadata": {"format": "Post"},
     }).json()
     with SessionLocal() as db:
         row = db.get(ScheduledPost, UUID(created["id"]))

@@ -41,7 +41,7 @@ def test_schedule_does_not_mark_published_and_dispatch_is_mocked(client, auth_he
             "media_urls": [],
             "scheduled_at": scheduled_at,
             "idempotency_key": uuid4().hex,
-            "post_metadata": {},
+            "post_metadata": {"format": "Post"},
         },
     )
     assert created.status_code == 200, created.text

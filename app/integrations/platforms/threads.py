@@ -10,6 +10,7 @@ import httpx
 from app.core.exceptions import ProviderConfigurationError
 from app.integrations.base import ProviderPublishResult, SocialPlatform, provider_delete, provider_request
 from app.integrations.media_urls import guess_media_kind, public_media_url
+from app.services.post_formats import POST
 
 
 MAX_CAROUSEL_ITEMS = 20
@@ -36,8 +37,14 @@ class ThreadsPlatform(SocialPlatform):
     supports_remote_delete = True
 
     def publish(
-        self, access_token: str, account_id: str, content: str, media_urls: list[str], settings: dict | None = None
+        self, access_token: str, account_id: str, content: str, media_urls: list[str],
+        settings: dict | None = None, format: str | None = None,
     ) -> ProviderPublishResult:
+        fmt = (format or "").strip()
+        if fmt not in {"", POST}:
+            raise ProviderConfigurationError(
+                f"{fmt} is not available for Threads. Choose Post. Nothing was published."
+            )
         if not account_id or not str(account_id).strip():
             raise ProviderConfigurationError("Threads publishing needs a Threads profile id from OAuth connect.")
         text = (content or "").strip()

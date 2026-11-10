@@ -6,6 +6,7 @@ from uuid import UUID
 from fastapi import HTTPException
 
 from app.services.error_messages import media_requirement_error
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -39,23 +40,15 @@ def _attach_execution_summaries(db: Session, posts: list[ScheduledPost]) -> list
     return posts
 
 
-_VIDEO_FORMATS = {"Short", "Reel / Video"}
-
-
 def publish_problem(platform: str | None, media_urls: list | None, content: str | None, post_format: str | None = None) -> str | None:
     """Blocking reason a post can't be scheduled/published (the composer disables posting for the same errors).
 
     Things the app fixes on its own at publish (Instagram upscale/auto-fit, JPG and other conversions) never block.
-    Drafts are never checked.
+    Drafts are never checked. A missing or unsupported format does not fail open into a feed post.
     """
-    from app.services.error_messages import is_video_url
+    from app.services.post_formats import publish_problem as format_problem
 
-    media = [str(m) for m in (media_urls or [])]
-    if post_format in _VIDEO_FORMATS and not any(is_video_url(m) for m in media):
-        return f"Please include a video for this {'Short' if post_format == 'Short' else 'video post'}."
-    if post_format == "Story" and not media:
-        return "Add a photo or video to create this Story."
-    return media_requirement_error(platform, media, content)
+    return format_problem(platform, media_urls, content, post_format)
 
 
 def _reject(account_name: str | None, problem: str | None) -> None:
@@ -422,11 +415,17 @@ def materialize_draft_posts(
             raise HTTPException(status_code=422, detail=f"Add a caption for {account.account_name} before scheduling.")
         if len(content) > 10000:
             raise HTTPException(status_code=422, detail=f"The caption for {account.account_name} is too long.")
-        formats = metadata.get("formatsByAccount") if isinstance(metadata.get("formatsByAccount"), dict) else {}
+        from app.services.post_formats import draft_account_format
+
         settings = metadata.get("platformSettingsByAccount") if isinstance(metadata.get("platformSettingsByAccount"), dict) else {}
         account_settings = settings.get(str(account.id)) or {}
+        account_format, format_error = draft_account_format(
+            metadata, account.id, item.post_format, account_count=len(accounts),
+        )
+        if format_error:
+            _reject(account.account_name, format_error)
         post_metadata = {
-            "format": formats.get(str(account.id)) or item.post_format,
+            "format": account_format,
             "settings": account_settings,
             "source": source,
             "publish_item_id": str(item.id),

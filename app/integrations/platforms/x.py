@@ -253,10 +253,22 @@ class XPlatform(SocialPlatform):
     supports_remote_delete = True
 
     def publish(
-        self, access_token: str, account_id: str, content: str, media_urls: list[str], settings: dict | None = None
+        self, access_token: str, account_id: str, content: str, media_urls: list[str],
+        settings: dict | None = None, format: str | None = None,
     ) -> ProviderPublishResult:
         """Upload media (if any), create a post and return its X status identifier."""
+        from app.services.post_formats import POST, REEL
+
+        fmt = (format or "").strip()
+        if fmt not in {"", POST, REEL}:
+            raise ProviderConfigurationError(
+                f"{fmt} is not available for X. Choose Post or Video. Nothing was published."
+            )
         media = [str(m) for m in (media_urls or [])]
+        if fmt == REEL and not any(_kind(url) == "video" for url in media):
+            raise ProviderConfigurationError(
+                "An X video post needs a video. It was not published as a text or photo post."
+            )
         problem = x_media_problem(media)
         if problem:
             raise ProviderConfigurationError(problem)

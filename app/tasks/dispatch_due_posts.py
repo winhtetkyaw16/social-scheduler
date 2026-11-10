@@ -67,11 +67,13 @@ def dispatch_due_posts(batch_size: int = 100) -> int:
             if post.status != "published":
                 post.status = "queued"
         db.commit()
+        from app.services.post_formats import row_format
+
         queued_count = 0
         for post in posts:
             post_id = str(post.id)
             try:
-                publish_post_task.apply_async(args=[post_id])
+                publish_post_task.apply_async(args=[post_id], kwargs={"post_format": row_format(post.post_metadata)})
                 queued_count += 1
             except Exception as exc:
                 # Make the due item eligible for the next dispatcher pass.

@@ -32,11 +32,16 @@ def _later(h=2):
     return (datetime.now(timezone.utc) + timedelta(hours=h)).isoformat()
 
 
+def _fmt(platform):
+    return "Reel / Video" if platform in {"youtube", "tiktok"} else "Post"
+
+
 def _draft(client, headers, accounts, picks=None, crops=None, shared=SHARED):
     r = client.post("/api/v1/publish/drafts", headers=headers, json={
-        "content": "Audit caption", "media_urls": shared, "post_format": "Post",
+        "content": "Audit caption", "media_urls": shared, "post_format": _fmt(accounts[0]["platform"]) if accounts else "Post",
         "metadata": {"caption": "Audit caption", "captionMode": "universal",
                      "selectedIds": [a["id"] for a in accounts], "sharedMediaUrls": shared,
+                     "formatsByAccount": {a["id"]: _fmt(a["platform"]) for a in accounts},
                      "mediaSelectionByAccount": picks or {}, "igCropByAccount": crops or {}},
     })
     assert r.status_code == 201, r.text
@@ -111,8 +116,10 @@ def test_b_mixed_instagram_carousel_keeps_videos_and_photos(client, auth_headers
     ("facebook", [V1, P1], "Post", "not a mix"),
     ("tiktok", [V1, V2], "Post", "one video"),
     ("tiktok", [V1, P1], "Post", "not both"),
-    ("youtube", [V1, V2], "Post", "one video"),
-    ("youtube", [P1], "Post", "needs a video"),
+    ("youtube", [V1, V2], "Reel / Video", "one video"),
+    ("youtube", [P1], "Reel / Video", "needs a video"),
+    ("youtube", [V1], "Post", "Community"),
+    ("tiktok", [P1], "Story", "Content Posting"),
     ("instagram", [], "Post", "at least one"),
     ("facebook", [P1], "Reel / Video", "include a video"),
     ("facebook", [], "Story", "Story"),

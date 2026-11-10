@@ -129,7 +129,7 @@ export function Analytics({ posts, accounts }) {
   function exportCsv() {
     const rows = [["id", "channel", "account", "status", "scheduled_at", "published_at", "provider_post_id", "content"], ...inRange.map((p) => { const a = acc.get(p.connected_account_id); return [p.id, a?.platform || "", a?.account_name || "", p.status, p.scheduled_at || "", p.published_at || "", p.provider_post_id || "", (p.content || "").replace(/\s+/g, " ")]; })];
     const csv = rows.map((r) => r.map((v) => `"${String(v).replaceAll('"', '""')}"`).join(",")).join("\n");
-    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" })); const el = document.createElement("a"); el.href = url; el.download = `socialcastly-posts-${range}d.csv`; el.click(); URL.revokeObjectURL(url);
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" })); const el = document.createElement("a"); el.href = url; el.download = `socialcastly-posts-${range}d.csv`; el.click(); setTimeout(() => URL.revokeObjectURL(url), 0);
   }
   return <>
     <PageHead title="Analytics" sub="Publishing activity across your connected channels."><Seg value={range} onChange={setRange} options={[[7, "7d"], [30, "30d"], [90, "90d"]]} /><button type="button" className="btn btn-secondary" onClick={exportCsv} disabled={!inRange.length}>{I.download}Export CSV</button></PageHead>

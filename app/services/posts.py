@@ -6,6 +6,7 @@ from uuid import UUID
 from fastapi import HTTPException
 
 from app.services.error_messages import media_requirement_error
+from app.services.post_formats import video_format_message
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -45,6 +46,7 @@ def publish_problem(platform: str | None, media_urls: list | None, content: str 
 
     Things the app fixes on its own at publish (Instagram upscale/auto-fit, JPG and other conversions) never block.
     Drafts are never checked. A missing or unsupported format does not fail open into a feed post.
+    ``video_format_message`` stays importable from this module; the checks themselves live in post_formats.
     """
     from app.services.post_formats import publish_problem as format_problem
 

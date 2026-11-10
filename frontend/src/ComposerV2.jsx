@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useObjectUrl } from "./objectUrl.js";
 import { Check, ChevronDown, Clock3, FileText, Hash, Image as ImageIcon, LayoutGrid, Link2, LoaderCircle, Plus, Scissors, Settings2, Smile, Sparkles, SpellCheck, WandSparkles, X as XIcon, AlertCircle } from "lucide-react";
 import { AccountAvatar, ChannelTile, accountDisplayName, resolveAvatarUrl } from "./sc/ui.jsx";
 import EmojiPicker from "./EmojiPicker.jsx";
@@ -13,11 +14,6 @@ import { blockingGroups, buildFixPlan, publishBlock } from "./fixPlan.js";
 const LABELS = { x: "X", facebook: "Facebook", instagram: "Instagram", linkedin: "LinkedIn", tiktok: "TikTok", youtube: "YouTube", pinterest: "Pinterest", threads: "Threads" };
 const isVideo = (item) => typeof item === "string" ? /\.(mp4|mov|webm|m4v)(\?|$)/i.test(item) : String(item?.type || "").startsWith("video/");
 
-function useObjectUrl(file) {
-  const [url, setUrl] = useState("");
-  useEffect(() => { if (!file || typeof file === "string") { setUrl(typeof file === "string" ? file : ""); return undefined; } const next = URL.createObjectURL(file); setUrl(next); return () => URL.revokeObjectURL(next); }, [file]);
-  return url;
-}
 function Thumb({ item, onRemove, onEdit }) {
   const url = useObjectUrl(item);
   const video = isVideo(item);

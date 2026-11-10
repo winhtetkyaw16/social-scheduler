@@ -38,6 +38,8 @@ def test_alembic_upgrade_head_on_empty_database(tmp_path):
     assert not missing, f"upgrade head did not create {sorted(missing)}"
     user_columns = {column["name"] for column in inspect(engine).get_columns("users")}
     assert {"email", "full_name", "workspace_name", "password_hash"} <= user_columns
-    post_columns = {column["name"] for column in inspect(engine).get_columns("scheduled_posts")}
+    post_columns = {
+        column["name"] for column in inspect(engine).get_columns("scheduled_posts")
+    }
     assert "provider_post_id" in post_columns
     assert "metadata" in post_columns

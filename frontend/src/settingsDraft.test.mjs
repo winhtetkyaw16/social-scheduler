@@ -1,6 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { openDraft, updateDraft, draftChanges, isDraftDirty, commitDraft, UNSUPPORTED_FIELDS } from "./settingsDraft.js";
+import {
+  openDraft,
+  updateDraft,
+  draftChanges,
+  isDraftDirty,
+  commitDraft,
+  UNSUPPORTED_FIELDS,
+} from "./settingsDraft.js";
 
 const defaults = { first_comment: "", media_layout: "Grid" };
 
@@ -34,10 +41,17 @@ test("draftChanges and isDraftDirty only report real edits", () => {
 test("commitDraft writes only changed keys through the setter (Save)", () => {
   const calls = [];
   const saved = { first_comment: "hi" };
-  const draft = updateDraft(updateDraft(openDraft(saved, defaults), "first_comment", "new"), "media_layout", "Stacked");
+  const draft = updateDraft(
+    updateDraft(openDraft(saved, defaults), "first_comment", "new"),
+    "media_layout",
+    "Stacked",
+  );
   const n = commitDraft("acc1", saved, draft, defaults, (...args) => calls.push(args));
   assert.equal(n, 2);
-  assert.deepEqual(calls, [["acc1", "first_comment", "new"], ["acc1", "media_layout", "Stacked"]]);
+  assert.deepEqual(calls, [
+    ["acc1", "first_comment", "new"],
+    ["acc1", "media_layout", "Stacked"],
+  ]);
 });
 
 test("discard (Cancel / X / outside) leaves saved values untouched and a reopen restores them", () => {
@@ -49,6 +63,7 @@ test("discard (Cancel / X / outside) leaves saved values untouched and a reopen 
 });
 
 test("unsupported field notes exist for the networks with hidden fields", () => {
-  for (const platform of ["facebook", "instagram", "linkedin"]) assert.ok(UNSUPPORTED_FIELDS[platform].length > 0);
+  for (const platform of ["facebook", "instagram", "linkedin"])
+    assert.ok(UNSUPPORTED_FIELDS[platform].length > 0);
   assert.equal(UNSUPPORTED_FIELDS.x, undefined);
 });

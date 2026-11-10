@@ -19,8 +19,26 @@ import g_youtube from "./assets/logos/youtube-glyph.svg";
 import g_pinterest from "./assets/logos/pinterest-glyph.svg";
 import g_threads from "./assets/logos/threads-glyph.svg";
 
-const I = { light_calendar, dark_calendar, light_composer, dark_composer, light_approvals, dark_approvals, light_analytics, dark_analytics };
-const G = { facebook: g_facebook, instagram: g_instagram, x: g_x, linkedin: g_linkedin, tiktok: g_tiktok, youtube: g_youtube, pinterest: g_pinterest, threads: g_threads };
+const I = {
+  light_calendar,
+  dark_calendar,
+  light_composer,
+  dark_composer,
+  light_approvals,
+  dark_approvals,
+  light_analytics,
+  dark_analytics,
+};
+const G = {
+  facebook: g_facebook,
+  instagram: g_instagram,
+  x: g_x,
+  linkedin: g_linkedin,
+  tiktok: g_tiktok,
+  youtube: g_youtube,
+  pinterest: g_pinterest,
+  threads: g_threads,
+};
 
 // Markup generated from design/screens/homepage.html (b9.py). Static, trusted content.
 const HTML = `<div class="hp">
@@ -46,9 +64,25 @@ const HTML = `<div class="hp">
 export default function Landing({ dark, onAuth }) {
   const onClick = (event) => {
     const go = event.target.closest("[data-go]");
-    if (go) { event.preventDefault(); onAuth(go.getAttribute("data-go")); return; }
+    if (go) {
+      event.preventDefault();
+      onAuth(go.getAttribute("data-go"));
+      return;
+    }
     const hash = event.target.closest('a[href^="#"]');
-    if (hash) { const el = document.querySelector(hash.getAttribute("href")); if (el) { event.preventDefault(); el.scrollIntoView({ behavior: "smooth" }); } }
+    if (hash) {
+      const el = document.querySelector(hash.getAttribute("href"));
+      if (el) {
+        event.preventDefault();
+        el.scrollIntoView({ behavior: "smooth" });
+      }
+    }
   };
-  return <div className={`scd sc-landing-root ${dark ? "dark" : ""}`} onClick={onClick} dangerouslySetInnerHTML={{ __html: HTML }} />;
+  return (
+    <div
+      className={`scd sc-landing-root ${dark ? "dark" : ""}`}
+      onClick={onClick}
+      dangerouslySetInnerHTML={{ __html: HTML }}
+    />
+  );
 }

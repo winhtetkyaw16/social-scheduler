@@ -2,7 +2,11 @@
 
 from celery import Celery
 
-from app.core.config import CELERY_BROKER_URL, CELERY_RESULT_BACKEND, SCHEDULER_POLL_SECONDS
+from app.core.config import (
+    CELERY_BROKER_URL,
+    CELERY_RESULT_BACKEND,
+    SCHEDULER_POLL_SECONDS,
+)
 
 celery_app = Celery(
     "social_scheduler",

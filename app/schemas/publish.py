@@ -96,4 +96,3 @@ class DraftActionResult(BaseModel):
     status: str
     scheduled_post_ids: list[UUID]
     scheduled_at: datetime | None = None
-

@@ -31,13 +31,18 @@ def _enable(monkeypatch):
     monkeypatch.setattr(config, "INSTAGRAM_GRAPH_API_VERSION", "v24.0")
 
 
-def test_instagram_authorize_url_uses_facebook_dialog_with_config_id(client, auth_headers, monkeypatch):
+def test_instagram_authorize_url_uses_facebook_dialog_with_config_id(
+    client, auth_headers, monkeypatch
+):
     _enable(monkeypatch)
     headers, _ = auth_headers
     r = client.get("/api/v1/accounts/instagram/connect", headers=headers)
     assert r.status_code == 200, r.text
     url = urlparse(r.json()["authorization_url"])
-    assert f"{url.scheme}://{url.netloc}{url.path}" == "https://www.facebook.com/v24.0/dialog/oauth"
+    assert (
+        f"{url.scheme}://{url.netloc}{url.path}"
+        == "https://www.facebook.com/v24.0/dialog/oauth"
+    )
     q = parse_qs(url.query)
     assert q["client_id"] == ["2155681295039911"]
     assert q["config_id"] == ["1446921667396494"]
@@ -53,23 +58,59 @@ def test_instagram_discovery_from_pages(monkeypatch):
 
     def fake_get(url, **kw):
         seen.append(url)
-        return _R({"data": [{"id": "p1", "name": "Page", "access_token": "page-tok",
-                             "instagram_business_account": {"id": "ig1", "username": "brand", "name": "Brand",
-                                                            "profile_picture_url": "https://cdn.x/a.jpg"}}]})
+        return _R(
+            {
+                "data": [
+                    {
+                        "id": "p1",
+                        "name": "Page",
+                        "access_token": "page-tok",
+                        "instagram_business_account": {
+                            "id": "ig1",
+                            "username": "brand",
+                            "name": "Brand",
+                            "profile_picture_url": "https://cdn.x/a.jpg",
+                        },
+                    }
+                ]
+            }
+        )
 
     monkeypatch.setattr(httpx, "get", fake_get)
     items = destinations._instagram_destinations("user-tok")
     assert seen[0] == "https://graph.facebook.com/v24.0/me/accounts"
-    assert items == [{"id": "ig1", "name": "Brand (@brand)", "account_type": "business", "platform": "instagram",
-                      "access_token": "page-tok", "username": "brand", "linked_facebook_page_id": "p1",
-                      "avatar_url": "https://cdn.x/a.jpg"}]
+    assert items == [
+        {
+            "id": "ig1",
+            "name": "Brand (@brand)",
+            "account_type": "business",
+            "platform": "instagram",
+            "access_token": "page-tok",
+            "username": "brand",
+            "linked_facebook_page_id": "p1",
+            "avatar_url": "https://cdn.x/a.jpg",
+        }
+    ]
 
 
 def test_instagram_discovery_business_fallback(monkeypatch):
     def fake_get(url, **kw):
         if url.endswith("/me/accounts"):
             return _R({"data": []})
-        return _R({"businesses": {"data": [{"id": "b1", "owned_instagram_accounts": {"data": [{"id": "ig2", "username": "biz"}]}}]}})
+        return _R(
+            {
+                "businesses": {
+                    "data": [
+                        {
+                            "id": "b1",
+                            "owned_instagram_accounts": {
+                                "data": [{"id": "ig2", "username": "biz"}]
+                            },
+                        }
+                    ]
+                }
+            }
+        )
 
     monkeypatch.setattr(httpx, "get", fake_get)
     items = destinations._instagram_destinations("sys-tok")
@@ -94,8 +135,11 @@ def test_instagram_callback_without_ig_account_returns_connect_error(monkeypatch
 
     monkeypatch.setattr(httpx, "post", fake_post)
     monkeypatch.setattr(httpx, "get", fake_get)
-    monkeypatch.setattr(oauth, "_authorized_get", lambda url, tok, **kw: {"id": "u1", "name": "Win"})
-    resp = oauth.finish_oauth(None, "instagram", code="c", state=state, provider_error=None)
+    monkeypatch.setattr(
+        oauth, "_authorized_get", lambda url, tok, **kw: {"id": "u1", "name": "Win"}
+    )
+    resp = oauth.finish_oauth(
+        None, "instagram", code="c", state=state, provider_error=None
+    )
     assert posted["url"] == "https://graph.facebook.com/v24.0/oauth/access_token"
     assert "connect_error=No+Instagram+business+account" in resp.headers["location"]
-

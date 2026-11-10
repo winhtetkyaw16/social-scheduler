@@ -24,6 +24,9 @@ for (const tab of ["scheduled", "queued"]) {
   });
 }
 test("published uses published_at for grouping", () => {
-  const g = groupQueuePosts([{ id: "x", scheduled_at: at(1, 9), published_at: at(3, 9) }], "published");
+  const g = groupQueuePosts(
+    [{ id: "x", scheduled_at: at(1, 9), published_at: at(3, 9) }],
+    "published",
+  );
   assert.equal(g[0][1].d.getDate(), 3);
 });

@@ -59,8 +59,12 @@ def install_branded_docs(app: FastAPI, docs_url: str = "/docs") -> None:
 
     Create the app with ``docs_url=None`` so FastAPI does not add its default /docs.
     """
-    oauth2_redirect_url = app.swagger_ui_oauth2_redirect_url or f"{docs_url}/oauth2-redirect"
-    app.mount(DOCS_ASSETS_URL, StaticFiles(directory=str(DOCS_ASSETS_DIR)), name="docs-assets")
+    oauth2_redirect_url = (
+        app.swagger_ui_oauth2_redirect_url or f"{docs_url}/oauth2-redirect"
+    )
+    app.mount(
+        DOCS_ASSETS_URL, StaticFiles(directory=str(DOCS_ASSETS_DIR)), name="docs-assets"
+    )
 
     @app.get(docs_url, include_in_schema=False)
     def swagger_ui_docs() -> HTMLResponse:

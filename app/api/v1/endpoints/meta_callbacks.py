@@ -20,7 +20,11 @@ from app.core import config
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-_SECRET_ENV = {"facebook": "FACEBOOK_CLIENT_SECRET", "instagram": "INSTAGRAM_CLIENT_SECRET", "threads": "THREADS_CLIENT_SECRET"}
+_SECRET_ENV = {
+    "facebook": "FACEBOOK_CLIENT_SECRET",
+    "instagram": "INSTAGRAM_CLIENT_SECRET",
+    "threads": "THREADS_CLIENT_SECRET",
+}
 
 _INFO = """<!doctype html><meta charset=utf-8><title>Data deletion - SocialCastly</title>
 <body style="font-family:system-ui;max-width:640px;margin:40px auto;line-height:1.5">
@@ -52,8 +56,12 @@ async def _handle(platform: str, kind: str, request: Request) -> dict:
         form = dict(await request.form())
     except Exception:
         pass
-    data = parse_signed_request(str(form.get("signed_request", "")), os.getenv(_SECRET_ENV[platform], ""))
-    logger.info("meta %s %s callback received (valid=%s)", platform, kind, data is not None)
+    data = parse_signed_request(
+        str(form.get("signed_request", "")), os.getenv(_SECRET_ENV[platform], "")
+    )
+    logger.info(
+        "meta %s %s callback received (valid=%s)", platform, kind, data is not None
+    )
     code = secrets.token_hex(8)
     if kind == "delete":
         status_url = f"{config.PUBLIC_BASE_URL.rstrip('/')}/api/v1/accounts/{platform}/data-deletion?code={code}"
@@ -62,6 +70,7 @@ async def _handle(platform: str, kind: str, request: Request) -> dict:
 
 
 for _platform in ("facebook", "instagram", "threads"):
+
     def _make(platform: str):
         async def uninstall(request: Request):
             return await _handle(platform, "uninstall", request)
@@ -70,13 +79,37 @@ for _platform in ("facebook", "instagram", "threads"):
             return await _handle(platform, "delete", request)
 
         async def info(code: str | None = None):
-            extra = f"<p>Deletion request <b>{code[:32]}</b> received.</p>" if code else ""
+            extra = (
+                f"<p>Deletion request <b>{code[:32]}</b> received.</p>" if code else ""
+            )
             return HTMLResponse(_INFO.format(extra=extra))
 
-        router.add_api_route(f"/{platform}/uninstall", uninstall, methods=["POST"], name=f"{platform}_uninstall")
-        router.add_api_route(f"/{platform}/deauthorize", uninstall, methods=["POST"], name=f"{platform}_deauthorize")
-        router.add_api_route(f"/{platform}/delete", delete, methods=["POST"], name=f"{platform}_delete")
-        router.add_api_route(f"/{platform}/data-deletion", delete, methods=["POST"], name=f"{platform}_data_deletion")
-        router.add_api_route(f"/{platform}/data-deletion", info, methods=["GET"], name=f"{platform}_data_deletion_info")
+        router.add_api_route(
+            f"/{platform}/uninstall",
+            uninstall,
+            methods=["POST"],
+            name=f"{platform}_uninstall",
+        )
+        router.add_api_route(
+            f"/{platform}/deauthorize",
+            uninstall,
+            methods=["POST"],
+            name=f"{platform}_deauthorize",
+        )
+        router.add_api_route(
+            f"/{platform}/delete", delete, methods=["POST"], name=f"{platform}_delete"
+        )
+        router.add_api_route(
+            f"/{platform}/data-deletion",
+            delete,
+            methods=["POST"],
+            name=f"{platform}_data_deletion",
+        )
+        router.add_api_route(
+            f"/{platform}/data-deletion",
+            info,
+            methods=["GET"],
+            name=f"{platform}_data_deletion_info",
+        )
 
     _make(_platform)

@@ -22,14 +22,18 @@ def _connect_x(client, headers, account_name="Brand", platform="x"):
     return response.json()
 
 
-def test_schedule_does_not_mark_published_and_dispatch_is_mocked(client, auth_headers, monkeypatch):
+def test_schedule_does_not_mark_published_and_dispatch_is_mocked(
+    client, auth_headers, monkeypatch
+):
     headers, _tokens = auth_headers
     queued = []
 
     def fake_apply_async(args=None, **kwargs):
         queued.append(list(args or []))
 
-    monkeypatch.setattr("app.tasks.publish_post.publish_post_task.apply_async", fake_apply_async)
+    monkeypatch.setattr(
+        "app.tasks.publish_post.publish_post_task.apply_async", fake_apply_async
+    )
     account = _connect_x(client, headers)
     scheduled_at = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
     created = client.post(
@@ -63,15 +67,19 @@ def test_schedule_does_not_mark_published_and_dispatch_is_mocked(client, auth_he
     # Create already enqueued the due post; beat reclaim is for stale queued only.
     assert str(post["id"]) in {call[0] for call in queued}
 
+    from uuid import UUID
+
+    from sqlalchemy import select
+
     from app.db.session import SessionLocal
     from app.models import ScheduledPost
-    from sqlalchemy import select
-    from uuid import UUID
     from app.tasks.dispatch_due_posts import dispatch_due_posts
 
     db = SessionLocal()
     try:
-        row = db.scalar(select(ScheduledPost).where(ScheduledPost.id == UUID(post["id"])))
+        row = db.scalar(
+            select(ScheduledPost).where(ScheduledPost.id == UUID(post["id"]))
+        )
         row.status = "scheduled"
         db.commit()
     finally:
@@ -85,7 +93,9 @@ def test_schedule_does_not_mark_published_and_dispatch_is_mocked(client, auth_he
 
     monkeypatch.setattr(
         "app.tasks.publish_post.publish",
-        lambda *args, **kwargs: ProviderPublishResult(post_id="provider-123", request_id="req-1", status_code=201),
+        lambda *args, **kwargs: ProviderPublishResult(
+            post_id="provider-123", request_id="req-1", status_code=201
+        ),
     )
     from app.tasks.publish_post import publish_post_task
 
@@ -104,9 +114,14 @@ def test_schedule_does_not_mark_published_and_dispatch_is_mocked(client, auth_he
 
 def test_approved_draft_creates_scheduled_posts(client, auth_headers, monkeypatch):
     headers, _tokens = auth_headers
-    monkeypatch.setattr("app.tasks.publish_post.publish_post_task.apply_async", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        "app.tasks.publish_post.publish_post_task.apply_async",
+        lambda *args, **kwargs: None,
+    )
     # X can't take media yet (rejected before publishing), so use Facebook for a photo draft.
-    account = _connect_x(client, headers, account_name="Approval brand", platform="facebook")
+    account = _connect_x(
+        client, headers, account_name="Approval brand", platform="facebook"
+    )
     scheduled_at = (datetime.now(timezone.utc) + timedelta(days=2)).isoformat()
     draft = client.post(
         "/api/v1/publish/drafts",
@@ -139,7 +154,9 @@ def test_approved_draft_creates_scheduled_posts(client, auth_headers, monkeypatc
 
     posts = client.get("/api/v1/posts", headers=headers)
     assert posts.status_code == 200
-    created = [item for item in posts.json() if item["connected_account_id"] == account["id"]]
+    created = [
+        item for item in posts.json() if item["connected_account_id"] == account["id"]
+    ]
     assert len(created) == 1
     assert created[0]["status"] == "scheduled"
     assert created[0]["content"] == "Approved caption"

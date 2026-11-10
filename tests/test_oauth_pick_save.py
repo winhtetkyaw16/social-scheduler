@@ -17,7 +17,9 @@ def test_upsert_oauth_account_accepts_naive_token_expires_at(auth_headers):
     try:
         user = db.scalars(select(User).order_by(User.created_at.desc())).first()
         assert user is not None
-        naive_expiry = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=60)
+        naive_expiry = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(
+            days=60
+        )
         assert naive_expiry.tzinfo is None
         account = upsert_oauth_account(
             db,

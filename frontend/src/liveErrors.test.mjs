@@ -1,7 +1,13 @@
 // Errors are derived live from current state: ticks, Fix for me, post type, selected accounts.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { autoFormat, channelErrors, effectiveFormat, publishBlock, videoFormatMessage } from "./fixPlan.js";
+import {
+  autoFormat,
+  channelErrors,
+  effectiveFormat,
+  publishBlock,
+  videoFormatMessage,
+} from "./fixPlan.js";
 
 const V = { kind: "video", width: 1080, height: 1920 };
 const H = { kind: "video", width: 1920, height: 1080 };
@@ -13,12 +19,29 @@ const li = { id: "li", platform: "linkedin", account_name: "Win Htet Kyaw" };
 function render({ accounts, picks, stored = {}, overrides = {} }) {
   const channelWarnings = accounts.flatMap((a) => {
     const infos = picks[a.id] || [];
-    const format = effectiveFormat({ platform: a.platform, stored: stored[a.id], overridden: !!overrides[a.id], infos });
-    return channelErrors({ platform: a.platform, label: a.platform, format, text: "hi", limit: 3000, hasVideo: infos.some((i) => i.kind === "video"), mediaCount: infos.length })
-      .map((message) => ({ account: a, message }));
+    const format = effectiveFormat({
+      platform: a.platform,
+      stored: stored[a.id],
+      overridden: !!overrides[a.id],
+      infos,
+    });
+    return channelErrors({
+      platform: a.platform,
+      label: a.platform,
+      format,
+      text: "hi",
+      limit: 3000,
+      hasVideo: infos.some((i) => i.kind === "video"),
+      mediaCount: infos.length,
+    }).map((message) => ({ account: a, message }));
   });
   const block = publishBlock({ channelWarnings, mediaReport: [] });
-  return { channelWarnings, block, buttonDisabled: block.blocked, hintShown: block.blocked ? block.hint : null };
+  return {
+    channelWarnings,
+    block,
+    buttonDisabled: block.blocked,
+    hintShown: block.blocked ? block.hint : null,
+  };
 }
 
 test("auto format follows current picks", () => {
@@ -47,25 +70,49 @@ test("tick a video back in: still fine, no stale error", () => {
 
 test("Fix for me swapping picks recomputes errors", () => {
   const overrides = { fb: true };
-  const broken = render({ accounts: [fb], picks: { fb: [P] }, stored: { fb: "Reel / Video" }, overrides });
+  const broken = render({
+    accounts: [fb],
+    picks: { fb: [P] },
+    stored: { fb: "Reel / Video" },
+    overrides,
+  });
   assert.equal(broken.block.blocked, true);
-  const fixed = render({ accounts: [fb], picks: { fb: [V] }, stored: { fb: "Reel / Video" }, overrides });
+  const fixed = render({
+    accounts: [fb],
+    picks: { fb: [V] },
+    stored: { fb: "Reel / Video" },
+    overrides,
+  });
   assert.equal(fixed.block.blocked, false);
   assert.equal(fixed.hintShown, null);
 });
 
 test("explicit video post type with no video: actionable message; switching to Post clears it", () => {
-  const r = render({ accounts: [fb], picks: { fb: [P] }, stored: { fb: "Reel / Video" }, overrides: { fb: true } });
+  const r = render({
+    accounts: [fb],
+    picks: { fb: [P] },
+    stored: { fb: "Reel / Video" },
+    overrides: { fb: true },
+  });
   assert.equal(r.channelWarnings[0].message, videoFormatMessage("Reel / Video"));
   assert.match(r.channelWarnings[0].message, /tick a video.*switch the post type to Post/);
   assert.equal(r.buttonDisabled, true);
   assert.equal(r.hintShown, r.block.hint);
-  const switched = render({ accounts: [fb], picks: { fb: [P] }, stored: { fb: "Post" }, overrides: { fb: true } });
+  const switched = render({
+    accounts: [fb],
+    picks: { fb: [P] },
+    stored: { fb: "Post" },
+    overrides: { fb: true },
+  });
   assert.equal(switched.block.blocked, false);
 });
 
 test("remove the failing account: block clears", () => {
-  const args = { picks: { fb: [P], li: [P] }, stored: { li: "Reel / Video" }, overrides: { li: true } };
+  const args = {
+    picks: { fb: [P], li: [P] },
+    stored: { li: "Reel / Video" },
+    overrides: { li: true },
+  };
   const both = render({ accounts: [fb, li], ...args });
   assert.equal(both.block.blocked, true);
   const without = render({ accounts: [fb], ...args });
@@ -75,7 +122,12 @@ test("remove the failing account: block clears", () => {
 
 test("button disabled iff hint shown", () => {
   for (const picks of [{ fb: [P] }, { fb: [V] }]) {
-    const r = render({ accounts: [fb], picks, stored: { fb: "Reel / Video" }, overrides: { fb: true } });
+    const r = render({
+      accounts: [fb],
+      picks,
+      stored: { fb: "Reel / Video" },
+      overrides: { fb: true },
+    });
     assert.equal(r.buttonDisabled, r.hintShown !== null);
   }
 });

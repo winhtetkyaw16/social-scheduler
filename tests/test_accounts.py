@@ -24,7 +24,9 @@ def test_create_account_encrypts_and_hides_tokens(client, auth_headers):
             "account_type": "user",
             "access_token": secret,
             "refresh_token": refresh,
-            "token_expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
+            "token_expires_at": (
+                datetime.now(timezone.utc) + timedelta(hours=1)
+            ).isoformat(),
             "scopes": ["tweet.write"],
         },
     )
@@ -45,7 +47,9 @@ def test_create_account_encrypts_and_hides_tokens(client, auth_headers):
 
     db = SessionLocal()
     try:
-        row = db.scalar(select(ConnectedAccount).where(ConnectedAccount.id == UUID(body["id"])))
+        row = db.scalar(
+            select(ConnectedAccount).where(ConnectedAccount.id == UUID(body["id"]))
+        )
         assert row is not None
         assert row.access_token_ciphertext != secret
         assert decrypt_token(row.access_token_ciphertext) == secret

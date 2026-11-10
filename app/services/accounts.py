@@ -10,7 +10,10 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.security import encrypt_token
-from app.integrations.platform_catalog import connectable_platform_names, default_account_type
+from app.integrations.platform_catalog import (
+    connectable_platform_names,
+    default_account_type,
+)
 from app.models import ConnectedAccount
 from app.models.connected_account import OAuthPickSession
 from app.schemas.account import AccountCreate
@@ -28,7 +31,6 @@ def _as_utc(value: datetime | None) -> datetime | None:
     return value.astimezone(timezone.utc)
 
 
-
 def list_accounts(db: Session, user_id: UUID) -> list[ConnectedAccount]:
     """Return the user's accounts, newest first."""
     return list(
@@ -40,15 +42,21 @@ def list_accounts(db: Session, user_id: UUID) -> list[ConnectedAccount]:
     )
 
 
-def create_account(db: Session, user_id: UUID, payload: AccountCreate) -> ConnectedAccount:
+def create_account(
+    db: Session, user_id: UUID, payload: AccountCreate
+) -> ConnectedAccount:
     """Encrypt provider credentials and persist an account owned by the user."""
     if payload.platform not in connectable_platform_names():
         allowed = ", ".join(sorted(connectable_platform_names()))
-        raise HTTPException(status_code=422, detail=f"Unsupported platform. Choose one of: {allowed}")
+        raise HTTPException(
+            status_code=422, detail=f"Unsupported platform. Choose one of: {allowed}"
+        )
     expires_at = payload.token_expires_at
     if expires_at is not None:
         if expires_at.tzinfo is None or expires_at.utcoffset() is None:
-            raise HTTPException(status_code=422, detail="token_expires_at must include a timezone")
+            raise HTTPException(
+                status_code=422, detail="token_expires_at must include a timezone"
+            )
         expires_at = expires_at.astimezone(timezone.utc)
 
     scopes = [scope.strip() for scope in payload.scopes]
@@ -60,7 +68,9 @@ def create_account(db: Session, user_id: UUID, payload: AccountCreate) -> Connec
         account_type=payload.account_type or default_account_type(payload.platform),
         parent_account_id=payload.parent_account_id,
         access_token_ciphertext=encrypt_token(payload.access_token),
-        refresh_token_ciphertext=encrypt_token(payload.refresh_token) if payload.refresh_token else None,
+        refresh_token_ciphertext=(
+            encrypt_token(payload.refresh_token) if payload.refresh_token else None
+        ),
         token_expires_at=expires_at,
         scopes=scopes,
         extra_metadata=payload.extra_metadata or {},
@@ -78,13 +88,19 @@ def create_account(db: Session, user_id: UUID, payload: AccountCreate) -> Connec
             )
         )
         if duplicate is not None:
-            raise HTTPException(status_code=409, detail="This social account is already connected") from exc
+            raise HTTPException(
+                status_code=409, detail="This social account is already connected"
+            ) from exc
         logger.exception("Database rejected connected account creation", exc_info=exc)
-        raise HTTPException(status_code=500, detail="Could not save the connected account") from exc
+        raise HTTPException(
+            status_code=500, detail="Could not save the connected account"
+        ) from exc
     except SQLAlchemyError as exc:
         db.rollback()
         logger.exception("Failed to save connected account", exc_info=exc)
-        raise HTTPException(status_code=500, detail="Could not save the connected account") from exc
+        raise HTTPException(
+            status_code=500, detail="Could not save the connected account"
+        ) from exc
     except Exception:
         db.rollback()
         raise
@@ -146,7 +162,11 @@ def upsert_oauth_account(
     existing.token_expires_at = expires_at
     existing.scopes = [scope.strip() for scope in scopes]
     existing.is_active = True
-    base_meta = extra_metadata if extra_metadata is not None else (existing.extra_metadata or {})
+    base_meta = (
+        extra_metadata
+        if extra_metadata is not None
+        else (existing.extra_metadata or {})
+    )
     # Record the (re)connect time so channel health ignores failures from before it.
     existing.extra_metadata = {**base_meta, "connected_at": connected_at}
     db.commit()
@@ -169,7 +189,9 @@ def create_pick_session(
         user_id=user_id,
         platform=platform,
         access_token_ciphertext=encrypt_token(access_token),
-        refresh_token_ciphertext=encrypt_token(refresh_token) if refresh_token else None,
+        refresh_token_ciphertext=(
+            encrypt_token(refresh_token) if refresh_token else None
+        ),
         token_expires_at=_as_utc(token_expires_at),
         scopes=[scope.strip() for scope in scopes],
         identity_json=identity_json or {},
@@ -183,17 +205,23 @@ def create_pick_session(
 
 def get_pick_session(db: Session, user_id: UUID, session_id: UUID) -> OAuthPickSession:
     session = db.scalar(
-        select(OAuthPickSession).where(OAuthPickSession.id == session_id, OAuthPickSession.user_id == user_id)
+        select(OAuthPickSession).where(
+            OAuthPickSession.id == session_id, OAuthPickSession.user_id == user_id
+        )
     )
     if session is None:
-        raise HTTPException(status_code=404, detail="Destination pick session not found or expired.")
+        raise HTTPException(
+            status_code=404, detail="Destination pick session not found or expired."
+        )
     expires = session.expires_at
     if expires.tzinfo is None:
         expires = expires.replace(tzinfo=timezone.utc)
     if expires < datetime.now(timezone.utc):
         db.delete(session)
         db.commit()
-        raise HTTPException(status_code=410, detail="Destination pick session expired. Connect again.")
+        raise HTTPException(
+            status_code=410, detail="Destination pick session expired. Connect again."
+        )
     return session
 
 
@@ -205,7 +233,9 @@ def delete_pick_session(db: Session, session: OAuthPickSession) -> None:
 def get_owned_account(db: Session, user_id: UUID, account_id: UUID) -> ConnectedAccount:
     """Fetch an account within the user's ownership boundary or return 404."""
     account = db.scalar(
-        select(ConnectedAccount).where(ConnectedAccount.id == account_id, ConnectedAccount.user_id == user_id)
+        select(ConnectedAccount).where(
+            ConnectedAccount.id == account_id, ConnectedAccount.user_id == user_id
+        )
     )
     if account is None:
         raise HTTPException(status_code=404, detail="Connected account not found")
@@ -245,4 +275,6 @@ def delete_account(db: Session, user_id: UUID, account_id: UUID) -> None:
     except SQLAlchemyError as exc:
         db.rollback()
         logger.exception("Failed to delete connected account", exc_info=exc)
-        raise HTTPException(status_code=500, detail="Could not delete the connected account") from exc
+        raise HTTPException(
+            status_code=500, detail="Could not delete the connected account"
+        ) from exc

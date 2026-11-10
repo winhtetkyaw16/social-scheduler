@@ -24,13 +24,12 @@ def _can_publish(platform: str, account_type: str) -> bool:
     return True
 
 
-
-
 def _utc(value: datetime | None) -> datetime | None:
     """DB (SQLite) returns naive UTC; tag it so clients don't parse it as local time."""
     if value is None:
         return None
     return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+
 
 class AccountCreate(BaseModel):
     """Validated provider credentials and metadata used to connect an account."""
@@ -69,7 +68,6 @@ class OAuthStart(BaseModel):
 
     platform: str
     authorization_url: str
-
 
 
 def extract_avatar_url(meta: dict | None) -> str | None:

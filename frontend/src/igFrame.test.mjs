@@ -1,23 +1,37 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { igClamp, igNearest, igFrameRatio, igChipLabel, igNeedsCrop, igCropRect, igObjectPosition, igDragOffset, igCropPayload } from "./igFrame.js";
+import {
+  igClamp,
+  igNearest,
+  igFrameRatio,
+  igChipLabel,
+  igNeedsCrop,
+  igCropRect,
+  igObjectPosition,
+  igDragOffset,
+  igCropPayload,
+} from "./igFrame.js";
 
 test("clamp and nearest standard frame", () => {
   assert.equal(igClamp(0.4), 0.8);
   assert.equal(igClamp(3), 1.91);
   assert.equal(igClamp(1.2), 1.2);
-  assert.equal(igNearest(0.46), 0.8);   // tall phone screenshot -> 4:5
+  assert.equal(igNearest(0.46), 0.8); // tall phone screenshot -> 4:5
   assert.equal(igNearest(1.05), 1);
   assert.equal(igNearest(16 / 9), 1.91);
-  assert.equal(igNearest(1.4), 1);      // closer to 1 than to 1.91
+  assert.equal(igNearest(1.4), 1); // closer to 1 than to 1.91
 });
 
 test("carousel frame comes from the first PHOTO (video first is skipped)", () => {
-  const items = [{ video: true, ratio: 16 / 9 }, { video: false, ratio: 0.46 }, { video: false, ratio: 1.6 }];
+  const items = [
+    { video: true, ratio: 16 / 9 },
+    { video: false, ratio: 0.46 },
+    { video: false, ratio: 1.6 },
+  ];
   assert.equal(igFrameRatio(items), 0.8);
-  assert.equal(igFrameRatio([{ video: false, ratio: 1.3 }]), 1.3);       // single photo: clamp only
+  assert.equal(igFrameRatio([{ video: false, ratio: 1.3 }]), 1.3); // single photo: clamp only
   assert.equal(igFrameRatio([{ video: false, ratio: 0.3 }]), 0.8);
-  assert.equal(igFrameRatio(items, 1.91), 1.91);                           // chip wins
+  assert.equal(igFrameRatio(items, 1.91), 1.91); // chip wins
   assert.equal(igFrameRatio([{ video: true, ratio: 9 / 16 }]), 0.8);
   assert.equal(igFrameRatio([]), 1);
   assert.equal(igChipLabel(0.8), "4:5");
@@ -46,6 +60,12 @@ test("dragging moves the photo inside the frame, clamped", () => {
 
 test("ig_crop payload is IG-only data: ratio when chosen + offsets by index", () => {
   assert.deepEqual(igCropPayload(null, ["a", "b"]), {});
-  assert.deepEqual(igCropPayload({ ratio: 1, offsets: { b: [0.2, 0.9] } }, ["a", "b"]), { ratio: 1, offsets: [[0.5, 0.5], [0.2, 0.9]] });
+  assert.deepEqual(igCropPayload({ ratio: 1, offsets: { b: [0.2, 0.9] } }, ["a", "b"]), {
+    ratio: 1,
+    offsets: [
+      [0.5, 0.5],
+      [0.2, 0.9],
+    ],
+  });
   assert.deepEqual(igCropPayload({ offsets: { a: [2, -1] } }, ["a"]), { offsets: [[1, 0]] });
 });

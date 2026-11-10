@@ -31,7 +31,11 @@ Documented limits
 
 from __future__ import annotations
 
-from app.services.error_messages import is_video_url, media_requirement_error, network_name
+from app.services.error_messages import (
+    is_video_url,
+    media_requirement_error,
+    network_name,
+)
 from app.services.media_probe import MediaFacts, inspect_media
 
 POST = "Post"
@@ -68,9 +72,7 @@ _REMOVED = {
 _NINE_SIXTEEN = 9 / 16
 _ASPECT_TOLERANCE = 0.03
 
-MISSING_FORMAT = (
-    "Choose a format before publishing. This post has no saved format, so it was not sent."
-)
+MISSING_FORMAT = "Choose a format before publishing. This post has no saved format, so it was not sent."
 
 
 def normalize_platform(platform: str | None) -> str:
@@ -114,12 +116,20 @@ def draft_account_format(
     account (first selected id) may still use the draft's own post_format,
     and a one-account draft may too. Anything else returns an error string.
     """
-    formats = metadata.get("formatsByAccount") if isinstance(metadata.get("formatsByAccount"), dict) else {}
+    formats = (
+        metadata.get("formatsByAccount")
+        if isinstance(metadata.get("formatsByAccount"), dict)
+        else {}
+    )
     key = str(account_id)
     own = formats.get(key)
     if isinstance(own, str) and own.strip():
         return own.strip(), None
-    selected = metadata.get("selectedIds") if isinstance(metadata.get("selectedIds"), list) else []
+    selected = (
+        metadata.get("selectedIds")
+        if isinstance(metadata.get("selectedIds"), list)
+        else []
+    )
     primary = str(selected[0]) if selected else ""
     fallback = post_format.strip() if isinstance(post_format, str) else ""
     if fallback and (account_count == 1 or (primary and primary == key)):
@@ -196,25 +206,52 @@ def short_problem(facts: MediaFacts | None) -> str | None:
 
 def _format_limits(platform: str, fmt: str, media: list[str]) -> str | None:
     if platform == "facebook" and fmt == REEL:
-        return _one_video(media, "A Facebook Reel needs exactly one video. It was not published as a Page post.") or _facebook_reel(media[0] if media else "")
+        return _one_video(
+            media,
+            "A Facebook Reel needs exactly one video. It was not published as a Page post.",
+        ) or _facebook_reel(media[0] if media else "")
     if platform == "facebook" and fmt == STORY:
-        return _one_item(media, "A Facebook Story needs one photo or one video. It was not published to the feed.") or _facebook_story(media[0])
+        return _one_item(
+            media,
+            "A Facebook Story needs one photo or one video. It was not published to the feed.",
+        ) or _facebook_story(media[0])
     if platform == "instagram" and fmt == STORY:
-        count = _one_item(media, "An Instagram Story needs one photo or one video. It was not published to the feed.")
+        count = _one_item(
+            media,
+            "An Instagram Story needs one photo or one video. It was not published to the feed.",
+        )
         return count or _instagram_story(media[0])
     if platform == "instagram" and fmt == REEL:
-        return _one_video(media, "An Instagram Reel needs exactly one video. It was not published as a carousel or feed post.") or _instagram_reel(media[0])
+        return _one_video(
+            media,
+            "An Instagram Reel needs exactly one video. It was not published as a carousel or feed post.",
+        ) or _instagram_reel(media[0])
     if platform == "youtube" and fmt == SHORT:
         return _youtube_short(media)
     if platform == "pinterest" and fmt == REEL:
         return _pinterest_video(media)
-    if platform == "pinterest" and fmt == POST and any(is_video_url(item) for item in media):
+    if (
+        platform == "pinterest"
+        and fmt == POST
+        and any(is_video_url(item) for item in media)
+    ):
         return "A Pinterest photo Pin can't include a video. Choose Video Pin and add a cover image. Nothing was pinned."
     if platform == "tiktok" and fmt == REEL:
-        return _one_video(media, "A TikTok video needs exactly one video. It was not posted as a photo post.")
-    if platform == "tiktok" and fmt == POST and any(is_video_url(item) for item in media):
+        return _one_video(
+            media,
+            "A TikTok video needs exactly one video. It was not posted as a photo post.",
+        )
+    if (
+        platform == "tiktok"
+        and fmt == POST
+        and any(is_video_url(item) for item in media)
+    ):
         return "A TikTok photo post needs photos, not a video. Switch the format to Video. Nothing was posted."
-    if platform in {"x", "linkedin"} and fmt == REEL and not any(is_video_url(item) for item in media):
+    if (
+        platform in {"x", "linkedin"}
+        and fmt == REEL
+        and not any(is_video_url(item) for item in media)
+    ):
         name = "X" if platform == "x" else "LinkedIn"
         return f"A {name} video post needs a video. It was not published as a text or photo post."
     return None
@@ -248,7 +285,11 @@ def _facebook_reel(url: str) -> str | None:
 def _facebook_story(url: str) -> str | None:
     if not is_video_url(url):
         facts = inspect_media(url)
-        if facts and facts.size_bytes is not None and facts.size_bytes > 10 * 1024 * 1024:
+        if (
+            facts
+            and facts.size_bytes is not None
+            and facts.size_bytes > 10 * 1024 * 1024
+        ):
             return "Facebook photo Stories must be 10 MB or smaller."
         return None
     facts = inspect_media(url)
@@ -266,7 +307,11 @@ def _facebook_story(url: str) -> str | None:
 def _instagram_story(url: str) -> str | None:
     facts = inspect_media(url)
     if not is_video_url(url):
-        if facts and facts.size_bytes is not None and facts.size_bytes > 8 * 1024 * 1024:
+        if (
+            facts
+            and facts.size_bytes is not None
+            and facts.size_bytes > 8 * 1024 * 1024
+        ):
             return "Instagram Story photos must be 8 MB or smaller."
         return None
     if facts is None:

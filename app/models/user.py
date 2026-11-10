@@ -16,13 +16,20 @@ from app.models.base import Base, Timestamped, UUIDPrimaryKey
 
 
 class User(UUIDPrimaryKey, Timestamped, Base):
-    """Application user who owns connected channels and scheduled posts.""" 
+    """Application user who owns connected channels and scheduled posts."""
 
     __tablename__ = "users"
-    email: Mapped[str] = mapped_column(String(320), unique=True, index=True, nullable=False)
-    full_name: Mapped[str] = mapped_column(String(160), default="", server_default="", nullable=False)
+    email: Mapped[str] = mapped_column(
+        String(320), unique=True, index=True, nullable=False
+    )
+    full_name: Mapped[str] = mapped_column(
+        String(160), default="", server_default="", nullable=False
+    )
     workspace_name: Mapped[str] = mapped_column(
-        String(160), default="My Workspace", server_default="My Workspace", nullable=False
+        String(160),
+        default="My Workspace",
+        server_default="My Workspace",
+        nullable=False,
     )
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
@@ -30,7 +37,9 @@ class User(UUIDPrimaryKey, Timestamped, Base):
     connected_accounts: Mapped[list["ConnectedAccount"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
-    scheduled_posts: Mapped[list["ScheduledPost"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    scheduled_posts: Mapped[list["ScheduledPost"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
     workspaces: Mapped[list["Workspace"]] = relationship(
         back_populates="owner", cascade="all, delete-orphan"
     )

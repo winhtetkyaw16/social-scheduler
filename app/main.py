@@ -37,7 +37,9 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     from app.tasks.inprocess_scheduler import scheduler_loop, scheduler_mode
 
     stop = asyncio.Event()
-    task = asyncio.create_task(scheduler_loop(stop)) if scheduler_mode() != "off" else None
+    task = (
+        asyncio.create_task(scheduler_loop(stop)) if scheduler_mode() != "off" else None
+    )
     try:
         yield
     finally:
@@ -92,14 +94,18 @@ def serve_frontend() -> FileResponse:
             detail="The frontend has not been built. Run `npm install` and `npm run build` from the project root, then restart the API.",
         )
     # index.html must never be cached so a rebuilt bundle is picked up without Ctrl+F5.
-    return FileResponse(FRONTEND_INDEX, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+    return FileResponse(
+        FRONTEND_INDEX, headers={"Cache-Control": "no-cache, no-store, must-revalidate"}
+    )
 
 
 app.include_router(v1_router, prefix="/api/v1")
 
 
 @app.exception_handler(SQLAlchemyError)
-async def handle_database_error(_request: Request, exc: SQLAlchemyError) -> JSONResponse:
+async def handle_database_error(
+    _request: Request, exc: SQLAlchemyError
+) -> JSONResponse:
     """Log database failures and return a consistent, non-sensitive API error."""
     logger.exception("Database operation failed", exc_info=exc)
     return JSONResponse(

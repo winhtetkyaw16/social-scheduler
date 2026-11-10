@@ -61,7 +61,9 @@ def auth_headers(client):
         },
     )
     assert registered.status_code == 201, registered.text
-    logged_in = client.post("/api/v1/auth/login", json={"email": email, "password": password})
+    logged_in = client.post(
+        "/api/v1/auth/login", json={"email": email, "password": password}
+    )
     assert logged_in.status_code == 200, logged_in.text
     body = logged_in.json()
     return {"Authorization": f"Bearer {body['access_token']}"}, body

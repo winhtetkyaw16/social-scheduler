@@ -8,9 +8,14 @@ from urllib.parse import urlparse, urlunparse
 
 from app.core.config import PUBLIC_BASE_URL
 from app.core.exceptions import ProviderConfigurationError
+from app.integrations.base import (
+    ProviderPublishResult,
+    SocialPlatform,
+    provider_delete,
+    provider_request,
+)
 from app.integrations.media_urls import guess_media_kind
 from app.services.post_formats import POST, REEL, STORY
-from app.integrations.base import ProviderPublishResult, SocialPlatform, provider_delete, provider_request
 
 logger = logging.getLogger(__name__)
 
@@ -81,8 +86,13 @@ class InstagramPlatform(SocialPlatform):
     supports_remote_delete = True
 
     def publish(
-        self, access_token: str, account_id: str, content: str, media_urls: list[str],
-        settings: dict | None = None, format: str | None = None,
+        self,
+        access_token: str,
+        account_id: str,
+        content: str,
+        media_urls: list[str],
+        settings: dict | None = None,
+        format: str | None = None,
     ) -> ProviderPublishResult:
         """Create the right media container(s), wait for processing, publish, and return Instagram's ID."""
         if not media_urls:
@@ -104,10 +114,14 @@ class InstagramPlatform(SocialPlatform):
             return {**body, "alt_text": alt_text} if alt_text else body
 
         def create(body: dict) -> str:
-            data = provider_request("POST", f"{base}/media", access_token=access_token, json=body).json()
+            data = provider_request(
+                "POST", f"{base}/media", access_token=access_token, json=body
+            ).json()
             container_id = data.get("id")
             if not container_id:
-                raise RuntimeError("Instagram did not return a media container identifier")
+                raise RuntimeError(
+                    "Instagram did not return a media container identifier"
+                )
             return str(container_id)
 
         fmt = (format or "").strip()
@@ -119,27 +133,33 @@ class InstagramPlatform(SocialPlatform):
                 )
             url = media_urls[0]
             if _is_video(url):
-                creation_id = create({
-                    "media_type": "STORIES",
-                    "video_url": instagram_image_url(url),
-                })
+                creation_id = create(
+                    {
+                        "media_type": "STORIES",
+                        "video_url": instagram_image_url(url),
+                    }
+                )
                 _wait_for_container(graph, access_token, creation_id, "Story")
             else:
-                creation_id = create({
-                    "media_type": "STORIES",
-                    "image_url": instagram_image_url(url),
-                })
+                creation_id = create(
+                    {
+                        "media_type": "STORIES",
+                        "image_url": instagram_image_url(url),
+                    }
+                )
         elif fmt == REEL:
             if len(media_urls) != 1 or not _is_video(media_urls[0]):
                 raise ProviderConfigurationError(
                     "An Instagram Reel needs exactly one video. It was not published as a carousel or feed post."
                 )
-            creation_id = create({
-                "media_type": "REELS",
-                "video_url": instagram_image_url(media_urls[0]),
-                "caption": content,
-                "share_to_feed": True,
-            })
+            creation_id = create(
+                {
+                    "media_type": "REELS",
+                    "video_url": instagram_image_url(media_urls[0]),
+                    "caption": content,
+                    "share_to_feed": True,
+                }
+            )
             _wait_for_container(graph, access_token, creation_id, "Reel")
         elif fmt not in {"", POST}:
             raise ProviderConfigurationError(
@@ -150,30 +170,53 @@ class InstagramPlatform(SocialPlatform):
             if _is_video(url):
                 # Instagram's content publishing API has no separate feed-video type.
                 # A Post with one video is a Reel that is also shared to the feed. A Story never takes this path.
-                creation_id = create({
-                    "media_type": "REELS",
-                    "video_url": instagram_image_url(url),
-                    "caption": content,
-                    "share_to_feed": True,
-                })
+                creation_id = create(
+                    {
+                        "media_type": "REELS",
+                        "video_url": instagram_image_url(url),
+                        "caption": content,
+                        "share_to_feed": True,
+                    }
+                )
                 _wait_for_container(graph, access_token, creation_id, "Reel")
             else:
-                creation_id = create(image_body({"image_url": instagram_image_url(url), "caption": content}))
+                creation_id = create(
+                    image_body(
+                        {"image_url": instagram_image_url(url), "caption": content}
+                    )
+                )
         else:
             public = [instagram_image_url(u) for u in media_urls]
             children: list[str] = []
             for url in public:
                 if _is_video(url):
-                    child = create({"media_type": "VIDEO", "video_url": url, "is_carousel_item": True})
+                    child = create(
+                        {
+                            "media_type": "VIDEO",
+                            "video_url": url,
+                            "is_carousel_item": True,
+                        }
+                    )
                     _wait_for_container(graph, access_token, child, "carousel video")
                 else:
-                    child = create(image_body({"image_url": url, "is_carousel_item": True}))
+                    child = create(
+                        image_body({"image_url": url, "is_carousel_item": True})
+                    )
                 children.append(child)
-            creation_id = create({"media_type": "CAROUSEL", "children": ",".join(children), "caption": content})
+            creation_id = create(
+                {
+                    "media_type": "CAROUSEL",
+                    "children": ",".join(children),
+                    "caption": content,
+                }
+            )
             _wait_for_container(graph, access_token, creation_id, "carousel")
 
         result = provider_request(
-            "POST", f"{base}/media_publish", access_token=access_token, json={"creation_id": creation_id}
+            "POST",
+            f"{base}/media_publish",
+            access_token=access_token,
+            json={"creation_id": creation_id},
         ).json()
         post_id = result.get("id")
         if not post_id:
@@ -182,27 +225,43 @@ class InstagramPlatform(SocialPlatform):
             # IG Media update: POST /{ig-media-id}?comment_enabled=false. Best effort, the post is live.
             try:
                 provider_request(
-                    "POST", f"{graph}/{post_id}", access_token=access_token, json={"comment_enabled": False}
+                    "POST",
+                    f"{graph}/{post_id}",
+                    access_token=access_token,
+                    json={"comment_enabled": False},
                 )
             except Exception as exc:  # noqa: BLE001
-                logger.warning("Instagram comment_enabled update failed for %s: %s", post_id, type(exc).__name__)
+                logger.warning(
+                    "Instagram comment_enabled update failed for %s: %s",
+                    post_id,
+                    type(exc).__name__,
+                )
         return ProviderPublishResult(post_id=str(post_id), status_code=200)
 
     def delete(self, access_token: str, provider_post_id: str) -> None:
         """Delete published Instagram media."""
         media_id = (provider_post_id or "").strip()
         if not media_id:
-            raise ProviderConfigurationError("Instagram delete needs a provider media id.")
+            raise ProviderConfigurationError(
+                "Instagram delete needs a provider media id."
+            )
         version = os.getenv("INSTAGRAM_GRAPH_API_VERSION", "v24.0")
-        provider_delete(f"https://graph.facebook.com/{version}/{media_id}", access_token=access_token)
+        provider_delete(
+            f"https://graph.facebook.com/{version}/{media_id}",
+            access_token=access_token,
+        )
 
 
-def _wait_for_container(graph: str, access_token: str, container_id: str, what: str) -> None:
+def _wait_for_container(
+    graph: str, access_token: str, container_id: str, what: str
+) -> None:
     """Poll GET /{container_id}?fields=status_code until FINISHED; raise a clear error otherwise."""
     deadline = _clock() + POLL_TIMEOUT_SECONDS
     while True:
         body = provider_request(
-            "GET", f"{graph}/{container_id}?fields=status_code,status", access_token=access_token
+            "GET",
+            f"{graph}/{container_id}?fields=status_code,status",
+            access_token=access_token,
         ).json()
         state = str(body.get("status_code") or "").upper()
         if state in {"FINISHED", "PUBLISHED"}:

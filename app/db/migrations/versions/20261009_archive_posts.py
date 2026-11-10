@@ -52,7 +52,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute("UPDATE scheduled_posts SET status = 'cancelled' WHERE status = 'archived'")
+    op.execute(
+        "UPDATE scheduled_posts SET status = 'cancelled' WHERE status = 'archived'"
+    )
     bind = op.get_bind()
     names = []
     for constraint in sa.inspect(bind).get_check_constraints("scheduled_posts"):

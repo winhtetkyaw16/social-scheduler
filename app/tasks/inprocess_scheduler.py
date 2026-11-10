@@ -46,7 +46,9 @@ def broker_reachable(timeout: float = 0.5) -> bool:
         parsed = urlparse(CELERY_BROKER_URL or "")
         if not parsed.hostname:
             return False
-        with socket.create_connection((parsed.hostname, parsed.port or 6379), timeout=timeout):
+        with socket.create_connection(
+            (parsed.hostname, parsed.port or 6379), timeout=timeout
+        ):
             return True
     except OSError:
         return False
@@ -61,12 +63,18 @@ def _due_post_ids(db, now: datetime, limit: int = 50) -> list[tuple[str, str | N
         .where(
             ScheduledPost.status.in_(["scheduled", "queued"]),
             ScheduledPost.scheduled_at <= now,
-            or_(ScheduledPost.provider_post_id.is_(None), ScheduledPost.provider_post_id == ""),
+            or_(
+                ScheduledPost.provider_post_id.is_(None),
+                ScheduledPost.provider_post_id == "",
+            ),
         )
         .order_by(ScheduledPost.scheduled_at)
         .limit(limit)
     )
-    return [(str(post.id), row_format(post.post_metadata)) for post in db.scalars(stmt).all()]
+    return [
+        (str(post.id), row_format(post.post_metadata))
+        for post in db.scalars(stmt).all()
+    ]
 
 
 def _fail_stale_publishing(db, now: datetime) -> None:
@@ -80,9 +88,7 @@ def _fail_stale_publishing(db, now: datetime) -> None:
     ).all():
         stuck.status = "failed"
         stuck.last_error_code = "publish_interrupted"
-        stuck.last_error_message = (
-            "Publishing was interrupted before the provider confirmed it. Check the account, then Retry."
-        )
+        stuck.last_error_message = "Publishing was interrupted before the provider confirmed it. Check the account, then Retry."
         logger.warning("Marked stale publishing post %s as failed", stuck.id)
     db.commit()
 
@@ -111,7 +117,11 @@ def run_due_posts_once(use_celery: bool | None = None) -> int:
         try:
             result = publish_post_task.run(post_id, post_format=post_format)
             handled += 1
-            logger.info("Background scheduler processed post %s -> %s", post_id, result.get("status"))
+            logger.info(
+                "Background scheduler processed post %s -> %s",
+                post_id,
+                result.get("status"),
+            )
         except Exception:
             logger.exception("Background scheduler failed for post %s", post_id)
     return handled
@@ -119,7 +129,11 @@ def run_due_posts_once(use_celery: bool | None = None) -> int:
 
 async def scheduler_loop(stop: asyncio.Event) -> None:
     interval = poll_seconds()
-    logger.warning("Background publish scheduler started (mode=%s, every %.0fs)", scheduler_mode(), interval)
+    logger.warning(
+        "Background publish scheduler started (mode=%s, every %.0fs)",
+        scheduler_mode(),
+        interval,
+    )
     while not stop.is_set():
         try:
             await asyncio.to_thread(run_due_posts_once)

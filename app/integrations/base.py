@@ -1,9 +1,8 @@
 """Shared contracts and HTTP transport for social platform adapters."""
 
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-
-import re
 
 import httpx
 
@@ -27,7 +26,9 @@ class SocialPlatform(ABC):
     supports_remote_delete: bool = False
 
     @abstractmethod
-    def publish(self, access_token: str, account_id: str, content: str, media_urls: list[str]) -> ProviderPublishResult:
+    def publish(
+        self, access_token: str, account_id: str, content: str, media_urls: list[str]
+    ) -> ProviderPublishResult:
         """Publish and return the provider-confirmed post identifier."""
 
     def delete(self, access_token: str, provider_post_id: str) -> None:
@@ -42,12 +43,19 @@ class SocialPlatform(ABC):
 
 
 def provider_request(
-    method: str, url: str, *, access_token: str, json: dict | None = None, headers: dict[str, str] | None = None
+    method: str,
+    url: str,
+    *,
+    access_token: str,
+    json: dict | None = None,
+    headers: dict[str, str] | None = None,
 ) -> httpx.Response:
     """Send an authenticated provider request with timeout and safe errors."""
     request_headers = {"Authorization": f"Bearer {access_token}", **(headers or {})}
     try:
-        response = httpx.request(method, url, json=json, headers=request_headers, timeout=30.0)
+        response = httpx.request(
+            method, url, json=json, headers=request_headers, timeout=30.0
+        )
     except httpx.TimeoutException as exc:
         raise RuntimeError("Provider request timed out") from exc
     except httpx.RequestError as exc:
@@ -68,7 +76,9 @@ def provider_delete(
     except httpx.TimeoutException as exc:
         raise RuntimeError("Provider delete timed out") from exc
     except httpx.RequestError as exc:
-        raise RuntimeError("Could not connect to the social platform to delete") from exc
+        raise RuntimeError(
+            "Could not connect to the social platform to delete"
+        ) from exc
     if response.status_code == 404:
         return
     if response.is_error:
@@ -106,7 +116,14 @@ def provider_error_summary(response: httpx.Response, limit: int = 400) -> str | 
     except Exception:
         body = None
     if isinstance(body, dict):
-        for key in ("title", "detail", "reason", "error", "error_description", "message"):
+        for key in (
+            "title",
+            "detail",
+            "reason",
+            "error",
+            "error_description",
+            "message",
+        ):
             value = body.get(key)
             if isinstance(value, dict):
                 value = value.get("message") or value.get("code")

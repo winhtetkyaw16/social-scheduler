@@ -66,7 +66,11 @@ def _should_accept_enqueue(post_id: str) -> bool:
     """Return False when this post_id was already handed to a worker very recently."""
     now = time.monotonic()
     with _enqueue_lock:
-        stale = [key for key, ts in _recent_enqueues.items() if now - ts > _ENQUEUE_DEDUP_SECONDS]
+        stale = [
+            key
+            for key, ts in _recent_enqueues.items()
+            if now - ts > _ENQUEUE_DEDUP_SECONDS
+        ]
         for key in stale:
             _recent_enqueues.pop(key, None)
         previous = _recent_enqueues.get(post_id)
@@ -130,7 +134,11 @@ def patch_post(
     return post
 
 
-@router.post("/{post_id}/publish-now", response_model=PostRead, status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "/{post_id}/publish-now",
+    response_model=PostRead,
+    status_code=status.HTTP_202_ACCEPTED,
+)
 def publish_post_now(
     post_id: UUID,
     background_tasks: BackgroundTasks,
@@ -160,7 +168,9 @@ def publish_post_now(
     return post
 
 
-@router.post("/{post_id}/retry", response_model=PostRead, status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "/{post_id}/retry", response_model=PostRead, status_code=status.HTTP_202_ACCEPTED
+)
 def retry_failed_post(
     post_id: UUID,
     background_tasks: BackgroundTasks,
@@ -231,7 +241,9 @@ def enqueue_immediate_publish(post_id: str) -> None:
 
     post_format = stored_format(post_id)
     try:
-        publish_post_task.apply_async(args=[post_id], kwargs={"post_format": post_format})
+        publish_post_task.apply_async(
+            args=[post_id], kwargs={"post_format": post_format}
+        )
     except Exception as exc:
         logger.warning(
             "Celery broker unavailable; using FastAPI background publishing for post %s (%s)",
@@ -241,7 +253,9 @@ def enqueue_immediate_publish(post_id: str) -> None:
         try:
             publish_post_task.run(post_id, post_format=post_format)
         except Exception:
-            logger.exception("FastAPI background publishing failed for post %s", post_id)
+            logger.exception(
+                "FastAPI background publishing failed for post %s", post_id
+            )
 
 
 def enqueue_immediate_posts(post_ids: list[str]) -> None:

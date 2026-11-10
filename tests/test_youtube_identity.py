@@ -21,9 +21,24 @@ def test_youtube_identity_uses_channel(monkeypatch):
 
     def fake_get(url, params=None, headers=None, timeout=None):
         calls["url"], calls["params"] = url, params
-        return _resp(200, {"items": [{"id": "UC123", "snippet": {
-            "title": "My Channel", "customUrl": "@mychannel",
-            "thumbnails": {"default": {"url": "https://img/d.jpg"}, "high": {"url": "https://img/h.jpg"}}}}]})
+        return _resp(
+            200,
+            {
+                "items": [
+                    {
+                        "id": "UC123",
+                        "snippet": {
+                            "title": "My Channel",
+                            "customUrl": "@mychannel",
+                            "thumbnails": {
+                                "default": {"url": "https://img/d.jpg"},
+                                "high": {"url": "https://img/h.jpg"},
+                            },
+                        },
+                    }
+                ]
+            },
+        )
 
     monkeypatch.setattr(oauth.httpx, "get", fake_get)
     identity = oauth._youtube_identity("tok")
@@ -43,10 +58,16 @@ def test_youtube_identity_no_channel(monkeypatch):
 
 
 def test_authorized_get_logs_provider_error(monkeypatch, caplog):
-    monkeypatch.setattr(oauth.httpx, "get", lambda *a, **k: _resp(401, text="unauthorized " + "x" * 1000))
+    monkeypatch.setattr(
+        oauth.httpx,
+        "get",
+        lambda *a, **k: _resp(401, text="unauthorized " + "x" * 1000),
+    )
     with caplog.at_level(logging.WARNING, logger=oauth.__name__):
         with pytest.raises(HTTPException) as exc:
-            oauth._authorized_get("https://www.googleapis.com/youtube/v3/channels", "secret-token")
+            oauth._authorized_get(
+                "https://www.googleapis.com/youtube/v3/channels", "secret-token"
+            )
     assert exc.value.status_code == 502
     text = caplog.text
     assert "401" in text and "unauthorized" in text

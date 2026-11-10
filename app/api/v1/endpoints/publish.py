@@ -8,7 +8,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.api.deps import get_current_user, get_db
-from app.models import ApprovalWorkflow, ConnectedAccount, MediaAsset, PostInternalComment, PublishItem, ScheduledPost, User
+from app.models import (
+    ApprovalWorkflow,
+    ConnectedAccount,
+    MediaAsset,
+    PostInternalComment,
+    PublishItem,
+    ScheduledPost,
+    User,
+)
 from app.schemas.publish import (
     ApprovalDecision,
     DraftActionResult,
@@ -21,7 +29,6 @@ from app.schemas.publish import (
     PublishItemRead,
     PublishItemUpdate,
 )
-from app.services import posts as posts_service
 from app.schemas.queue import (
     QueueAllocateRequest,
     QueueAllocateResponse,
@@ -30,6 +37,7 @@ from app.schemas.queue import (
     QueueSlotsReplace,
     QueueUpcomingItem,
 )
+from app.services import posts as posts_service
 from app.services import queue_slots as queue_slot_service
 
 router = APIRouter()
@@ -37,9 +45,9 @@ router = APIRouter()
 
 def _owned_item(db: Session, item_id: UUID, user_id: UUID) -> PublishItem:
     item = db.scalar(
-        select(PublishItem).options(selectinload(PublishItem.approval)).where(
-            PublishItem.id == item_id, PublishItem.owner_id == user_id
-        )
+        select(PublishItem)
+        .options(selectinload(PublishItem.approval))
+        .where(PublishItem.id == item_id, PublishItem.owner_id == user_id)
     )
     if item is None:
         raise HTTPException(status_code=404, detail="Publish item not found")
@@ -48,17 +56,34 @@ def _owned_item(db: Session, item_id: UUID, user_id: UUID) -> PublishItem:
 
 @router.get("/drafts", response_model=list[PublishItemRead])
 def list_drafts(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    return list(db.scalars(
-        select(PublishItem).where(PublishItem.owner_id == user.id, PublishItem.status.in_(["draft", "changes_requested"]))
-        .order_by(PublishItem.updated_at.desc())
-    ).all())
+    return list(
+        db.scalars(
+            select(PublishItem)
+            .where(
+                PublishItem.owner_id == user.id,
+                PublishItem.status.in_(["draft", "changes_requested"]),
+            )
+            .order_by(PublishItem.updated_at.desc())
+        ).all()
+    )
 
 
-@router.post("/drafts", response_model=PublishItemRead, status_code=status.HTTP_201_CREATED)
-def create_draft(payload: PublishItemCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+@router.post(
+    "/drafts", response_model=PublishItemRead, status_code=status.HTTP_201_CREATED
+)
+def create_draft(
+    payload: PublishItemCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     item = PublishItem(
-        owner_id=user.id, content=payload.content, status="draft", media_urls=payload.media_urls,
-        post_format=payload.post_format, scheduled_at=payload.scheduled_at, metadata_json=payload.metadata,
+        owner_id=user.id,
+        content=payload.content,
+        status="draft",
+        media_urls=payload.media_urls,
+        post_format=payload.post_format,
+        scheduled_at=payload.scheduled_at,
+        metadata_json=payload.metadata,
     )
     db.add(item)
     db.commit()
@@ -67,10 +92,17 @@ def create_draft(payload: PublishItemCreate, db: Session = Depends(get_db), user
 
 
 @router.patch("/drafts/{item_id}", response_model=PublishItemRead)
-def update_draft(item_id: UUID, payload: PublishItemUpdate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def update_draft(
+    item_id: UUID,
+    payload: PublishItemUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     item = _owned_item(db, item_id, user.id)
     if item.status not in {"draft", "changes_requested"}:
-        raise HTTPException(status_code=409, detail="Only editable drafts can be changed")
+        raise HTTPException(
+            status_code=409, detail="Only editable drafts can be changed"
+        )
     for key, value in payload.model_dump(exclude_unset=True).items():
         if key == "metadata":
             item.metadata_json = value or {}
@@ -84,13 +116,16 @@ def update_draft(item_id: UUID, payload: PublishItemUpdate, db: Session = Depend
 
 
 @router.delete("/drafts/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_draft(item_id: UUID, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def delete_draft(
+    item_id: UUID, db: Session = Depends(get_db), user: User = Depends(get_current_user)
+):
     item = _owned_item(db, item_id, user.id)
     if item.status not in {"draft", "changes_requested", "rejected"}:
-        raise HTTPException(status_code=409, detail="This item cannot be deleted in its current state")
+        raise HTTPException(
+            status_code=409, detail="This item cannot be deleted in its current state"
+        )
     db.delete(item)
     db.commit()
-
 
 
 @router.post("/drafts/{item_id}/schedule", response_model=DraftActionResult)
@@ -121,7 +156,9 @@ def queue_draft(
     """Place a durable draft into the next free queue slot per selected account."""
     item = _owned_item(db, item_id, user.id)
     body = payload or DraftQueueRequest()
-    posts = posts_service.queue_draft(db, user.id, item, timezone_fallback=body.timezone or "UTC")
+    posts = posts_service.queue_draft(
+        db, user.id, item, timezone_fallback=body.timezone or "UTC"
+    )
     return DraftActionResult(
         draft_id=item.id,
         status=item.status,
@@ -131,12 +168,18 @@ def queue_draft(
 
 
 @router.post("/drafts/{item_id}/submit", response_model=PublishItemRead)
-def submit_for_approval(item_id: UUID, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def submit_for_approval(
+    item_id: UUID, db: Session = Depends(get_db), user: User = Depends(get_current_user)
+):
     item = _owned_item(db, item_id, user.id)
     if item.status not in {"draft", "changes_requested"}:
-        raise HTTPException(status_code=409, detail="Only drafts can be submitted for approval")
+        raise HTTPException(
+            status_code=409, detail="Only drafts can be submitted for approval"
+        )
     if not item.content.strip():
-        raise HTTPException(status_code=422, detail="Add post content before submitting it for approval")
+        raise HTTPException(
+            status_code=422, detail="Add post content before submitting it for approval"
+        )
     item.status = "pending_approval"
     if item.approval is None:
         item.approval = ApprovalWorkflow(requested_by_id=user.id, state="pending")
@@ -150,12 +193,20 @@ def submit_for_approval(item_id: UUID, db: Session = Depends(get_db), user: User
 
 
 @router.get("/approvals", response_model=list[PublishItemRead])
-def list_approvals(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    return list(db.scalars(
-        select(PublishItem).options(selectinload(PublishItem.approval))
-        .where(PublishItem.owner_id == user.id, PublishItem.status == "pending_approval")
-        .order_by(PublishItem.updated_at.asc())
-    ).all())
+def list_approvals(
+    db: Session = Depends(get_db), user: User = Depends(get_current_user)
+):
+    return list(
+        db.scalars(
+            select(PublishItem)
+            .options(selectinload(PublishItem.approval))
+            .where(
+                PublishItem.owner_id == user.id,
+                PublishItem.status == "pending_approval",
+            )
+            .order_by(PublishItem.updated_at.asc())
+        ).all()
+    )
 
 
 @router.post("/approvals/{item_id}/decision", response_model=PublishItemRead)
@@ -168,7 +219,9 @@ def decide_approval(
 ):
     item = _owned_item(db, item_id, user.id)
     if item.status != "pending_approval" or item.approval is None:
-        raise HTTPException(status_code=409, detail="This item is not awaiting approval")
+        raise HTTPException(
+            status_code=409, detail="This item is not awaiting approval"
+        )
     due_ids: list[str] = []
     if payload.decision == "approved":
         from app.services.posts import schedule_posts_for_approved_item
@@ -179,7 +232,11 @@ def decide_approval(
             scheduled_at = post.scheduled_at
             if scheduled_at.tzinfo is None:
                 scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
-            if post.status == "scheduled" and post.provider_post_id is None and scheduled_at <= now:
+            if (
+                post.status == "scheduled"
+                and post.provider_post_id is None
+                and scheduled_at <= now
+            ):
                 due_ids.append(str(post.id))
     item.approval.state = payload.decision
     item.approval.reviewer_id = user.id
@@ -198,35 +255,60 @@ def decide_approval(
 
 @router.get("/library", response_model=list[MediaAssetRead])
 def list_library(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    return list(db.scalars(
-        select(MediaAsset).where(MediaAsset.owner_id == user.id).order_by(MediaAsset.created_at.desc())
-    ).all())
+    return list(
+        db.scalars(
+            select(MediaAsset)
+            .where(MediaAsset.owner_id == user.id)
+            .order_by(MediaAsset.created_at.desc())
+        ).all()
+    )
 
 
 @router.get("/posts/{post_id}/comments", response_model=list[InternalCommentRead])
-def list_post_comments(post_id: UUID, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    post = db.scalar(select(ScheduledPost).where(ScheduledPost.id == post_id, ScheduledPost.user_id == user.id))
+def list_post_comments(
+    post_id: UUID, db: Session = Depends(get_db), user: User = Depends(get_current_user)
+):
+    post = db.scalar(
+        select(ScheduledPost).where(
+            ScheduledPost.id == post_id, ScheduledPost.user_id == user.id
+        )
+    )
     if post is None:
         raise HTTPException(status_code=404, detail="Post not found")
     comments = db.scalars(
-        select(PostInternalComment).where(PostInternalComment.post_id == post_id)
+        select(PostInternalComment)
+        .where(PostInternalComment.post_id == post_id)
         .order_by(PostInternalComment.created_at.asc())
     ).all()
     return [
-        {"id": item.id, "post_id": item.post_id, "user_id": item.user_id,
-         "author_name": item.author.full_name or item.author.email, "body": item.body, "created_at": item.created_at}
+        {
+            "id": item.id,
+            "post_id": item.post_id,
+            "user_id": item.user_id,
+            "author_name": item.author.full_name or item.author.email,
+            "body": item.body,
+            "created_at": item.created_at,
+        }
         for item in comments
     ]
 
 
-@router.post("/posts/{post_id}/comments", response_model=InternalCommentRead, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/posts/{post_id}/comments",
+    response_model=InternalCommentRead,
+    status_code=status.HTTP_201_CREATED,
+)
 def add_post_comment(
     post_id: UUID,
     payload: InternalCommentCreate,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    post = db.scalar(select(ScheduledPost).where(ScheduledPost.id == post_id, ScheduledPost.user_id == user.id))
+    post = db.scalar(
+        select(ScheduledPost).where(
+            ScheduledPost.id == post_id, ScheduledPost.user_id == user.id
+        )
+    )
     if post is None:
         raise HTTPException(status_code=404, detail="Post not found")
     body = payload.body.strip()
@@ -237,8 +319,12 @@ def add_post_comment(
     db.commit()
     db.refresh(comment)
     return {
-        "id": comment.id, "post_id": comment.post_id, "user_id": comment.user_id,
-        "author_name": user.full_name or user.email, "body": comment.body, "created_at": comment.created_at,
+        "id": comment.id,
+        "post_id": comment.post_id,
+        "user_id": comment.user_id,
+        "author_name": user.full_name or user.email,
+        "body": comment.body,
+        "created_at": comment.created_at,
     }
 
 
@@ -249,7 +335,9 @@ def get_queue_slots(
     user: User = Depends(get_current_user),
 ):
     """List saved weekly posting slots (Buffer-style) for this workspace."""
-    return queue_slot_service.list_slots(db, user.id, platform.strip().lower() if platform else None)
+    return queue_slot_service.list_slots(
+        db, user.id, platform.strip().lower() if platform else None
+    )
 
 
 @router.put("/queue-slots", response_model=list[QueueSlotRead])
@@ -270,7 +358,9 @@ def get_queue_upcoming(
     user: User = Depends(get_current_user),
 ):
     """Upcoming slot timeline with filled/empty assignments for active accounts."""
-    return queue_slot_service.upcoming_queue(db, user.id, days=days, timezone_fallback=timezone or "UTC")
+    return queue_slot_service.upcoming_queue(
+        db, user.id, days=days, timezone_fallback=timezone or "UTC"
+    )
 
 
 @router.get("/queue/next", response_model=QueueNextRead)
@@ -289,7 +379,9 @@ def get_queue_next(
         )
     )
     if account is None:
-        raise HTTPException(status_code=404, detail="Active connected account not found")
+        raise HTTPException(
+            status_code=404, detail="Active connected account not found"
+        )
     return queue_slot_service.next_slot_for_account(
         db, user.id, account, timezone_fallback=timezone or "UTC"
     )

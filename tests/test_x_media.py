@@ -9,8 +9,17 @@ import pytest
 from app.core.exceptions import ProviderConfigurationError
 from app.integrations.base import ProviderHTTPError
 from app.integrations.platforms import x as xmod
-from app.integrations.platforms.x import CHUNK_BYTES, XPlatform, mp4_video_size, x_media_problem
-from app.services.error_messages import classify_error, friendly_error, media_requirement_error
+from app.integrations.platforms.x import (
+    CHUNK_BYTES,
+    XPlatform,
+    mp4_video_size,
+    x_media_problem,
+)
+from app.services.error_messages import (
+    classify_error,
+    friendly_error,
+    media_requirement_error,
+)
 from app.services.oauth import _providers
 
 
@@ -27,7 +36,11 @@ class _Resp:
 
 
 def _png(w=100, h=80, pad=0):
-    return b"\x89PNG\r\n\x1a\n" + struct.pack(">I4sII", 13, b"IHDR", w, h) + b"\x00" * (5 + pad)
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + struct.pack(">I4sII", 13, b"IHDR", w, h)
+        + b"\x00" * (5 + pad)
+    )
 
 
 def _gif(w=320, h=240, pad=0):
@@ -35,7 +48,12 @@ def _gif(w=320, h=240, pad=0):
 
 
 def _mp4(seconds=10.0, size=100_000, w=1280, h=720):
-    mvhd = bytes([0, 0, 0, 0]) + b"\x00" * 8 + struct.pack(">II", 1000, int(seconds * 1000)) + b"\x00" * 80
+    mvhd = (
+        bytes([0, 0, 0, 0])
+        + b"\x00" * 8
+        + struct.pack(">II", 1000, int(seconds * 1000))
+        + b"\x00" * 80
+    )
     mvhd_box = struct.pack(">I4s", 8 + len(mvhd), b"mvhd") + mvhd
     tkhd = b"\x00" * 76 + struct.pack(">II", w << 16, h << 16)
     tkhd_box = struct.pack(">I4s", 8 + len(tkhd), b"tkhd") + tkhd
@@ -43,7 +61,11 @@ def _mp4(seconds=10.0, size=100_000, w=1280, h=720):
     moov = struct.pack(">I4s", 8 + len(mvhd_box) + len(trak), b"moov") + mvhd_box + trak
     ftyp = struct.pack(">I4s", 16, b"ftyp") + b"isom\x00\x00\x00\x00"
     body = ftyp + moov
-    return body + struct.pack(">I4s", 8 + max(0, size - len(body) - 8), b"mdat") + b"\x00" * max(0, size - len(body) - 8)
+    return (
+        body
+        + struct.pack(">I4s", 8 + max(0, size - len(body) - 8), b"mdat")
+        + b"\x00" * max(0, size - len(body) - 8)
+    )
 
 
 @pytest.fixture
@@ -58,11 +80,20 @@ def env(monkeypatch, tmp_path):
         paths[name] = p
         return f"/static/uploads/{name}"
 
-    monkeypatch.setattr(xmod, "local_upload_path", lambda url: paths.get(str(url).rsplit("/", 1)[-1]))
+    monkeypatch.setattr(
+        xmod, "local_upload_path", lambda url: paths.get(str(url).rsplit("/", 1)[-1])
+    )
     return {"slept": slept, "add": add}
 
 
-def _fake(calls, *, statuses=("succeeded",), tweet_status=201, upload_status=200, upload_body=None):
+def _fake(
+    calls,
+    *,
+    statuses=("succeeded",),
+    tweet_status=201,
+    upload_status=200,
+    upload_body=None,
+):
     statuses = list(statuses)
     state = {"n": 0}
 
@@ -70,25 +101,60 @@ def _fake(calls, *, statuses=("succeeded",), tweet_status=201, upload_status=200
         calls.append((method, url, kw))
         if url == "https://api.x.com/2/tweets":
             if tweet_status >= 400:
-                return _Resp({"title": "Payment Required", "detail": "Your enrolled account does not have any credits.",
-                              "type": "https://api.x.com/2/problems/credits-depleted"}, tweet_status)
-            return _Resp({"data": {"id": "1999", "text": kw["json"]["text"]}}, 201, {"x-transaction-id": "tx-1"})
+                return _Resp(
+                    {
+                        "title": "Payment Required",
+                        "detail": "Your enrolled account does not have any credits.",
+                        "type": "https://api.x.com/2/problems/credits-depleted",
+                    },
+                    tweet_status,
+                )
+            return _Resp(
+                {"data": {"id": "1999", "text": kw["json"]["text"]}},
+                201,
+                {"x-transaction-id": "tx-1"},
+            )
         if upload_status >= 400:
-            return _Resp(upload_body or {"title": "Forbidden", "detail": "Forbidden", "type": "about:blank"}, upload_status)
+            return _Resp(
+                upload_body
+                or {"title": "Forbidden", "detail": "Forbidden", "type": "about:blank"},
+                upload_status,
+            )
         if url == "https://api.x.com/2/media/upload" and method == "POST":
             state["n"] += 1
-            return _Resp({"data": {"id": f"IMG{state['n']}", "media_key": f"3_IMG{state['n']}"}})
+            return _Resp(
+                {"data": {"id": f"IMG{state['n']}", "media_key": f"3_IMG{state['n']}"}}
+            )
         if url.endswith("/media/upload/initialize"):
-            return _Resp({"data": {"id": "VID1", "media_key": "7_VID1", "expires_after_secs": 86400}})
+            return _Resp(
+                {
+                    "data": {
+                        "id": "VID1",
+                        "media_key": "7_VID1",
+                        "expires_after_secs": 86400,
+                    }
+                }
+            )
         if url.endswith("/append"):
             return _Resp({}, 204)
         if url.endswith("/finalize"):
-            return _Resp({"data": {"id": "VID1", "processing_info": {"state": "pending", "check_after_secs": 2}}})
+            return _Resp(
+                {
+                    "data": {
+                        "id": "VID1",
+                        "processing_info": {"state": "pending", "check_after_secs": 2},
+                    }
+                }
+            )
         if method == "GET" and url == "https://api.x.com/2/media/upload":
             st = statuses.pop(0) if len(statuses) > 1 else statuses[0]
             info = {"state": st, "check_after_secs": 3}
             if st == "failed":
-                info["error"] = {"code": 1, "name": "InvalidMedia", "message": "Unsupported video codec"}
+                info["error"] = {
+                    "code": 1,
+                    "name": "InvalidMedia",
+                    "message": "Unsupported video codec",
+                }
             return _Resp({"data": {"id": "VID1", "processing_info": info}})
         raise AssertionError(f"unexpected {method} {url}")
 
@@ -127,7 +193,12 @@ def test_four_images(monkeypatch, env):
     monkeypatch.setattr(httpx, "request", _fake(calls))
     urls = [env["add"](f"{i}.jpg", b"\xff\xd8" + b"\x00" * 50) for i in range(4)]
     XPlatform().publish("tok", "u1", "four", urls)
-    assert calls[-1][2]["json"]["media"]["media_ids"] == ["IMG1", "IMG2", "IMG3", "IMG4"]
+    assert calls[-1][2]["json"]["media"]["media_ids"] == [
+        "IMG1",
+        "IMG2",
+        "IMG3",
+        "IMG4",
+    ]
     assert len([c for c in calls if c[1].endswith("/media/upload")]) == 4
 
 
@@ -143,16 +214,26 @@ def test_five_images_rejected_before_any_call(monkeypatch, env):
 
 def test_video_chunked_flow_with_status_polling(monkeypatch, env):
     calls = []
-    monkeypatch.setattr(httpx, "request", _fake(calls, statuses=["in_progress", "in_progress", "succeeded"]))
+    monkeypatch.setattr(
+        httpx,
+        "request",
+        _fake(calls, statuses=["in_progress", "in_progress", "succeeded"]),
+    )
     size = CHUNK_BYTES * 2 + 1234
     url = env["add"]("clip.mp4", _mp4(30, size))
     result = XPlatform().publish("tok", "u1", "vid", [url])
     assert result.post_id == "1999"
     init = calls[0]
     assert init[1] == "https://api.x.com/2/media/upload/initialize"
-    assert init[2]["json"] == {"media_type": "video/mp4", "total_bytes": size, "media_category": "tweet_video"}
+    assert init[2]["json"] == {
+        "media_type": "video/mp4",
+        "total_bytes": size,
+        "media_category": "tweet_video",
+    }
     appends = [c for c in calls if c[1].endswith("/append")]
-    assert [c[1] for c in appends] == ["https://api.x.com/2/media/upload/VID1/append"] * 3
+    assert [c[1] for c in appends] == [
+        "https://api.x.com/2/media/upload/VID1/append"
+    ] * 3
     assert [c[2]["data"]["segment_index"] for c in appends] == ["0", "1", "2"]
     assert all(len(c[2]["files"]["media"][1]) <= 5 * 1024 * 1024 for c in appends)
     assert sum(len(c[2]["files"]["media"][1]) for c in appends) == size
@@ -167,9 +248,13 @@ def test_video_chunked_flow_with_status_polling(monkeypatch, env):
 def test_video_processing_failed(monkeypatch, env):
     monkeypatch.setattr(httpx, "request", _fake([], statuses=["failed"]))
     url = env["add"]("bad.mp4", _mp4(10, 50_000))
-    with pytest.raises(RuntimeError, match="processing failed: Unsupported video codec") as exc:
+    with pytest.raises(
+        RuntimeError, match="processing failed: Unsupported video codec"
+    ) as exc:
         XPlatform().publish("tok", "u1", "x", [url])
-    assert classify_error("provider_error", str(exc.value), "x") == "x_processing_failed"
+    assert (
+        classify_error("provider_error", str(exc.value), "x") == "x_processing_failed"
+    )
 
 
 def test_video_status_timeout(monkeypatch, env):
@@ -190,29 +275,51 @@ def test_gif_uses_chunked_tweet_gif(monkeypatch, env):
     assert calls[0][2]["json"]["media_category"] == "tweet_gif"
 
 
-@pytest.mark.parametrize("media,needle", [
-    (["https://a.test/1.mp4", "https://a.test/2.jpg"], "not a mix of photos and videos"),
-    (["https://a.test/1.mp4", "https://a.test/2.mp4"], "only one video"),
-    (["https://a.test/1.gif", "https://a.test/2.jpg"], "only media on an X post"),
-    (["https://a.test/1.mov"], "MP4 only"),
-    (["https://a.test/1.bmp"], "JPG, PNG, GIF or WEBP"),
-])
+@pytest.mark.parametrize(
+    "media,needle",
+    [
+        (
+            ["https://a.test/1.mp4", "https://a.test/2.jpg"],
+            "not a mix of photos and videos",
+        ),
+        (["https://a.test/1.mp4", "https://a.test/2.mp4"], "only one video"),
+        (["https://a.test/1.gif", "https://a.test/2.jpg"], "only media on an X post"),
+        (["https://a.test/1.mov"], "MP4 only"),
+        (["https://a.test/1.bmp"], "JPG, PNG, GIF or WEBP"),
+    ],
+)
 def test_validation_rejects(media, needle):
     assert needle in media_requirement_error("x", media, "hi")
 
 
 def test_mix_rejected_by_api_with_422(monkeypatch):
     from app.services import posts as posts_service
-    msg = media_requirement_error("x", ["https://a.test/1.mp4", "https://a.test/2.jpg"], "hi")
+
+    msg = media_requirement_error(
+        "x", ["https://a.test/1.mp4", "https://a.test/2.jpg"], "hi"
+    )
     assert msg.startswith("X posts can have up to 4 photos, or 1 video, not a mix")
-    assert friendly_error("provider_configuration_error", msg, "x")["category"] == "x_media_rules"
+    assert (
+        friendly_error("provider_configuration_error", msg, "x")["category"]
+        == "x_media_rules"
+    )
     assert posts_service.media_requirement_error is media_requirement_error
 
 
-@pytest.mark.parametrize("media", [
-    ["https://a.test/1.jpg"], ["https://a.test/1.png", "https://a.test/2.webp", "https://a.test/3.jpg", "https://a.test/4.jpeg"],
-    ["https://a.test/v.mp4"], ["https://a.test/a.gif"],
-])
+@pytest.mark.parametrize(
+    "media",
+    [
+        ["https://a.test/1.jpg"],
+        [
+            "https://a.test/1.png",
+            "https://a.test/2.webp",
+            "https://a.test/3.jpg",
+            "https://a.test/4.jpeg",
+        ],
+        ["https://a.test/v.mp4"],
+        ["https://a.test/a.gif"],
+    ],
+)
 def test_validation_accepts(media):
     assert media_requirement_error("x", media, "hi") is None
 
@@ -220,7 +327,9 @@ def test_validation_accepts(media):
 def test_local_file_limits(env):
     add = env["add"]
     assert "up to 5 MB" in x_media_problem([add("big.png", _png(pad=5 * 1024 * 1024))])
-    assert "up to 15 MB" in x_media_problem([add("big.gif", _gif(pad=15 * 1024 * 1024))])
+    assert "up to 15 MB" in x_media_problem(
+        [add("big.gif", _gif(pad=15 * 1024 * 1024))]
+    )
     assert "1280x1080" in x_media_problem([add("wide.gif", _gif(2000, 500))])
     assert "0.5 seconds to 20 minutes" in x_media_problem([add("long.mp4", _mp4(1300))])
     assert "0.5 seconds to 20 minutes" in x_media_problem([add("blip.mp4", _mp4(0.2))])
@@ -236,17 +345,29 @@ def test_402_credits_maps_to_clear_message(monkeypatch, env):
         XPlatform().publish("tok", "u1", "hello", [])
     r = friendly_error("provider_http_error", str(exc.value), "x")
     assert r["category"] == "x_credits_depleted"
-    assert r["banner"] == "X API has no credits: add credits in the X developer console to post."
+    assert (
+        r["banner"]
+        == "X API has no credits: add credits in the X developer console to post."
+    )
     # Same mapping for the CreditsDepleted wording without a status code.
-    assert classify_error("provider_error", "CreditsDepleted", "x") == "x_credits_depleted"
+    assert (
+        classify_error("provider_error", "CreditsDepleted", "x") == "x_credits_depleted"
+    )
 
 
 def test_402_on_upload_also_maps_to_credits(monkeypatch, env):
-    monkeypatch.setattr(httpx, "request", _fake([], upload_status=402, upload_body={"title": "CreditsDepleted"}))
+    monkeypatch.setattr(
+        httpx,
+        "request",
+        _fake([], upload_status=402, upload_body={"title": "CreditsDepleted"}),
+    )
     url = env["add"]("a.png", _png())
     with pytest.raises(ProviderHTTPError) as exc:
         XPlatform().publish("tok", "u1", "pic", [url])
-    assert classify_error("provider_http_error", str(exc.value), "x") == "x_credits_depleted"
+    assert (
+        classify_error("provider_http_error", str(exc.value), "x")
+        == "x_credits_depleted"
+    )
 
 
 def test_missing_media_scope_403_maps_to_reconnect(monkeypatch, env):
@@ -261,6 +382,10 @@ def test_missing_media_scope_403_maps_to_reconnect(monkeypatch, env):
 
 
 def test_other_errors_pass_through(monkeypatch, env):
-    r = friendly_error("provider_http_error", "Provider returned HTTP 400: Invalid Request | Something odd", "x")
+    r = friendly_error(
+        "provider_http_error",
+        "Provider returned HTTP 400: Invalid Request | Something odd",
+        "x",
+    )
     assert r["category"] == "unknown"
     assert "Something odd" in r["banner"]

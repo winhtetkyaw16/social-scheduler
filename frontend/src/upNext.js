@@ -30,7 +30,20 @@ export function upNextDateParts(value, now = new Date()) {
   const t = ms(value);
   if (t === null) return { date: "No time set", time: "" };
   const d = new Date(t);
-  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const months = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+  ];
   const h = d.getHours();
   const time = `${h % 12 || 12}:${String(d.getMinutes()).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`;
   const year = d.getFullYear() !== now.getFullYear() ? `, ${d.getFullYear()}` : "";

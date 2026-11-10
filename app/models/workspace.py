@@ -22,6 +22,9 @@ class Workspace(UUIDPrimaryKey, Timestamped, Base):
 
     name: Mapped[str] = mapped_column(String(160), nullable=False)
     owner_id: Mapped[UUID] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+        Uuid(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     owner: Mapped["User"] = relationship(back_populates="workspaces")

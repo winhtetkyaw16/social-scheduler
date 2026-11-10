@@ -1,7 +1,7 @@
 """Add saved publish drafts, media library, and approval workflows."""
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 revision = "20261021_publish_modules"
 down_revision = "20261010_workspaces"
@@ -14,10 +14,14 @@ def upgrade() -> None:
         "publish_items",
         sa.Column("owner_id", sa.Uuid(), nullable=False),
         sa.Column("content", sa.Text(), nullable=False, server_default=""),
-        sa.Column("status", sa.String(length=32), nullable=False, server_default="draft"),
+        sa.Column(
+            "status", sa.String(length=32), nullable=False, server_default="draft"
+        ),
         sa.Column("scheduled_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("media_urls", sa.JSON(), nullable=False),
-        sa.Column("post_format", sa.String(length=32), nullable=False, server_default="Post"),
+        sa.Column(
+            "post_format", sa.String(length=32), nullable=False, server_default="Post"
+        ),
         sa.Column("metadata", sa.JSON(), nullable=False),
         sa.Column("id", sa.Uuid(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
@@ -41,7 +45,9 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(["owner_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("owner_id", "storage_key", name="uq_media_owner_storage_key"),
+        sa.UniqueConstraint(
+            "owner_id", "storage_key", name="uq_media_owner_storage_key"
+        ),
     )
     op.create_index("ix_media_assets_owner_id", "media_assets", ["owner_id"])
     op.create_table(
@@ -49,7 +55,9 @@ def upgrade() -> None:
         sa.Column("item_id", sa.Uuid(), nullable=False),
         sa.Column("requested_by_id", sa.Uuid(), nullable=False),
         sa.Column("reviewer_id", sa.Uuid(), nullable=True),
-        sa.Column("state", sa.String(length=32), nullable=False, server_default="pending"),
+        sa.Column(
+            "state", sa.String(length=32), nullable=False, server_default="pending"
+        ),
         sa.Column("comment", sa.Text(), nullable=True),
         sa.Column("decided_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("id", sa.Uuid(), nullable=False),

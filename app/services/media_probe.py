@@ -56,7 +56,9 @@ def inspect_path(path: Path) -> MediaFacts:
     duration = mp4_duration_seconds(data)
     dims = mp4_video_dimensions(data) or image_size(data)
     width, height = dims if dims else (None, None)
-    return MediaFacts(duration=duration, width=width, height=height, fps=None, size_bytes=size)
+    return MediaFacts(
+        duration=duration, width=width, height=height, fps=None, size_bytes=size
+    )
 
 
 def measure_bytes(data: bytes) -> MediaFacts:
@@ -64,7 +66,9 @@ def measure_bytes(data: bytes) -> MediaFacts:
     duration = mp4_duration_seconds(data)
     dims = mp4_video_dimensions(data) or image_size(data)
     width, height = dims if dims else (None, None)
-    facts = MediaFacts(duration=duration, width=width, height=height, fps=None, size_bytes=len(data))
+    facts = MediaFacts(
+        duration=duration, width=width, height=height, fps=None, size_bytes=len(data)
+    )
     if facts.duration is not None and facts.width and facts.height:
         return facts
     # Short clips only. A huge buffer is not written to disk just to probe it.
@@ -104,7 +108,7 @@ def _tkhd_size(payload: bytes) -> tuple[int, int] | None:
     offset = 88 if version == 1 else 76
     if len(payload) < offset + 8:
         return None
-    raw_w, raw_h = struct.unpack(">II", payload[offset:offset + 8])
+    raw_w, raw_h = struct.unpack(">II", payload[offset : offset + 8])
     width, height = raw_w >> 16, raw_h >> 16
     if width <= 0 or height <= 0:
         return None
@@ -127,10 +131,10 @@ def _tkhd_payloads(data: bytes):
 def _boxes(buf: bytes, start: int, end: int):
     i = start
     while i + 8 <= end:
-        size, kind = struct.unpack(">I4s", buf[i:i + 8])
+        size, kind = struct.unpack(">I4s", buf[i : i + 8])
         header = 8
         if size == 1 and i + 16 <= end:
-            size = struct.unpack(">Q", buf[i + 8:i + 16])[0]
+            size = struct.unpack(">Q", buf[i + 8 : i + 16])[0]
             header = 16
         elif size == 0:
             size = end - i
@@ -159,8 +163,14 @@ def _ffprobe(path: Path) -> dict | None:
     try:
         proc = subprocess.run(
             [
-                "ffprobe", "-v", "error", "-print_format", "json",
-                "-show_streams", "-show_format", str(path),
+                "ffprobe",
+                "-v",
+                "error",
+                "-print_format",
+                "json",
+                "-show_streams",
+                "-show_format",
+                str(path),
             ],
             capture_output=True,
             timeout=20,
@@ -177,8 +187,15 @@ def _ffprobe_bytes(data: bytes) -> dict | None:
     try:
         proc = subprocess.run(
             [
-                "ffprobe", "-v", "error", "-print_format", "json",
-                "-show_streams", "-show_format", "-i", "pipe:0",
+                "ffprobe",
+                "-v",
+                "error",
+                "-print_format",
+                "json",
+                "-show_streams",
+                "-show_format",
+                "-i",
+                "pipe:0",
             ],
             input=data,
             capture_output=True,
@@ -204,7 +221,14 @@ def _parse_ffprobe(proc: subprocess.CompletedProcess) -> dict | None:
 
 def _facts_from_ffprobe(body: dict, size: int) -> MediaFacts:
     streams = body.get("streams") if isinstance(body.get("streams"), list) else []
-    video = next((item for item in streams if isinstance(item, dict) and item.get("codec_type") == "video"), None)
+    video = next(
+        (
+            item
+            for item in streams
+            if isinstance(item, dict) and item.get("codec_type") == "video"
+        ),
+        None,
+    )
     width = height = None
     fps = None
     duration = None
@@ -216,7 +240,9 @@ def _facts_from_ffprobe(body: dict, size: int) -> MediaFacts:
     fmt = body.get("format") if isinstance(body.get("format"), dict) else {}
     if duration is None:
         duration = _positive_float(fmt.get("duration"))
-    return MediaFacts(duration=duration, width=width, height=height, fps=fps, size_bytes=size)
+    return MediaFacts(
+        duration=duration, width=width, height=height, fps=fps, size_bytes=size
+    )
 
 
 def _positive_int(value) -> int | None:

@@ -88,7 +88,9 @@ async def upload_media(
         ) from exc
     except Exception as exc:
         temporary.unlink(missing_ok=True)
-        logger.exception("Unexpected error while receiving media for user %s", current_user.id)
+        logger.exception(
+            "Unexpected error while receiving media for user %s", current_user.id
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="The media upload could not be processed.",

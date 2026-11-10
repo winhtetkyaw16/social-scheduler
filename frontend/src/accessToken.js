@@ -6,7 +6,9 @@ export function accessTokenExpiresAtMs(token) {
     const json = atob(part.replace(/-/g, "+").replace(/_/g, "/"));
     const exp = JSON.parse(json)?.exp;
     return typeof exp === "number" ? exp * 1000 : 0;
-  } catch { return 0; }
+  } catch {
+    return 0;
+  }
 }
 
 /** True when the access token is missing, undecodable, or within `skewMs` of expiry. */

@@ -25,7 +25,16 @@ _PROVIDERS: dict[str, type[SocialPlatform]] = {
 
 # Canonical ids used across the product (excludes aliases).
 _CANONICAL = frozenset(
-    {"instagram", "linkedin", "x", "facebook", "youtube", "tiktok", "pinterest", "threads"}
+    {
+        "instagram",
+        "linkedin",
+        "x",
+        "facebook",
+        "youtube",
+        "tiktok",
+        "pinterest",
+        "threads",
+    }
 )
 
 
@@ -40,4 +49,6 @@ def get_platform(name: str) -> SocialPlatform:
     try:
         return _PROVIDERS[key]()
     except KeyError as exc:
-        raise ProviderConfigurationError(f"Unsupported social platform: {name}") from exc
+        raise ProviderConfigurationError(
+            f"Unsupported social platform: {name}"
+        ) from exc

@@ -17,7 +17,8 @@ export function createScrollLock(env) {
     const x = win.scrollX || win.pageXOffset || 0;
     const bar = Math.max(0, (win.innerWidth || 0) - (html.clientWidth || 0));
     saved = {
-      y, x,
+      y,
+      x,
       body: { overflow: body.style.overflow, paddingRight: body.style.paddingRight },
       html: { overflow: html.style.overflow, scrollBehavior: html.style.scrollBehavior },
     };
@@ -55,7 +56,11 @@ export function sharedScrollLock() {
 // Focus without ever scrolling the page.
 export function focusNoScroll(el) {
   if (!el || typeof el.focus !== "function") return;
-  try { el.focus({ preventScroll: true }); } catch { el.focus(); }
+  try {
+    el.focus({ preventScroll: true });
+  } catch {
+    el.focus();
+  }
 }
 
 // Facebook OAuth appends "#_=_"; drop it so it can never cause a hash jump.

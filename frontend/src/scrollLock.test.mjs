@@ -6,7 +6,16 @@ const fakeEnv = () => {
   const calls = [];
   const body = { style: { overflow: "", position: "", top: "", paddingRight: "" } };
   const html = { style: { overflow: "", scrollBehavior: "smooth" }, clientWidth: 985 };
-  const win = { scrollY: 420, scrollX: 0, innerWidth: 1000, getComputedStyle: () => ({ paddingRight: "0px" }), scrollTo: (x, y) => { calls.push([x, y]); win.scrollY = y; } };
+  const win = {
+    scrollY: 420,
+    scrollX: 0,
+    innerWidth: 1000,
+    getComputedStyle: () => ({ paddingRight: "0px" }),
+    scrollTo: (x, y) => {
+      calls.push([x, y]);
+      win.scrollY = y;
+    },
+  };
   return { doc: { body, documentElement: html }, win, calls };
 };
 
@@ -28,7 +37,8 @@ test("locks with overflow hidden only: never position:fixed, never moves the pag
 test("nested locks release on last; no scrollTo when page stayed put; smooth restored", () => {
   const e = fakeEnv();
   const l = createScrollLock(() => e);
-  l.lock(); l.lock();
+  l.lock();
+  l.lock();
   assert.equal(l.count(), 2);
   l.unlock();
   assert.equal(e.doc.body.style.overflow, "hidden");
@@ -48,7 +58,11 @@ test("if something moved the page while open, unlock restores the saved position
   l.lock();
   e.win.scrollY = 0;
   let behaviorAtRestore = null;
-  e.win.scrollTo = (x, y) => { behaviorAtRestore = e.doc.documentElement.style.scrollBehavior; e.calls.push([x, y]); e.win.scrollY = y; };
+  e.win.scrollTo = (x, y) => {
+    behaviorAtRestore = e.doc.documentElement.style.scrollBehavior;
+    e.calls.push([x, y]);
+    e.win.scrollY = y;
+  };
   l.unlock();
   assert.deepEqual(e.calls, [[0, 420]]);
   assert.equal(behaviorAtRestore, "auto");

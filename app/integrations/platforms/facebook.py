@@ -19,7 +19,6 @@ from app.integrations.base import (
 from app.integrations.media_urls import guess_media_kind, public_media_url
 from app.services.post_formats import POST, REEL, STORY
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -30,10 +29,17 @@ class FacebookPlatform(SocialPlatform):
     supports_remote_delete = True
 
     def publish(
-        self, access_token: str, account_id: str, content: str, media_urls: list[str],
-        settings: dict | None = None, format: str | None = None,
+        self,
+        access_token: str,
+        account_id: str,
+        content: str,
+        media_urls: list[str],
+        settings: dict | None = None,
+        format: str | None = None,
     ) -> ProviderPublishResult:
-        result = self._publish(access_token, account_id, content, media_urls, format=format)
+        result = self._publish(
+            access_token, account_id, content, media_urls, format=format
+        )
         first_comment = str((settings or {}).get("first_comment") or "").strip()
         if first_comment:
             # Graph API: POST /{object-id}/comments. Best effort: the post is already live, so a failed
@@ -41,15 +47,26 @@ class FacebookPlatform(SocialPlatform):
             version = os.getenv("FACEBOOK_GRAPH_API_VERSION", "v21.0")
             try:
                 provider_request(
-                    "POST", f"https://graph.facebook.com/{version}/{result.post_id}/comments",
-                    access_token=access_token, json={"message": first_comment[:8000]},
+                    "POST",
+                    f"https://graph.facebook.com/{version}/{result.post_id}/comments",
+                    access_token=access_token,
+                    json={"message": first_comment[:8000]},
                 )
             except Exception as exc:  # noqa: BLE001
-                logger.warning("Facebook first comment failed for %s: %s", result.post_id, type(exc).__name__)
+                logger.warning(
+                    "Facebook first comment failed for %s: %s",
+                    result.post_id,
+                    type(exc).__name__,
+                )
         return result
 
     def _publish(
-        self, access_token: str, account_id: str, content: str, media_urls: list[str], format: str | None = None,
+        self,
+        access_token: str,
+        account_id: str,
+        content: str,
+        media_urls: list[str],
+        format: str | None = None,
     ) -> ProviderPublishResult:
         if not account_id or not str(account_id).strip():
             raise ProviderConfigurationError(
@@ -68,7 +85,9 @@ class FacebookPlatform(SocialPlatform):
                 f"{fmt} is not available for Facebook. Choose Post, Reel / video, or Story. Nothing was published."
             )
         if not (content or "").strip() and not media_urls:
-            raise ProviderConfigurationError("Facebook posts need text and/or an image.")
+            raise ProviderConfigurationError(
+                "Facebook posts need text and/or an image."
+            )
         text = (content or "").strip()
         kinds = [guess_media_kind(u) for u in media_urls]
 
@@ -82,45 +101,70 @@ class FacebookPlatform(SocialPlatform):
             payload: dict = {"file_url": video_url, "published": True}
             if text:
                 payload["description"] = content
-            response = provider_request("POST", f"{base}/videos", access_token=access_token, json=payload)
+            response = provider_request(
+                "POST", f"{base}/videos", access_token=access_token, json=payload
+            )
             body = response.json()
             post_id = body.get("post_id") or body.get("id")
             if not post_id:
-                raise RuntimeError("Facebook accepted the video without returning a video identifier")
-            return ProviderPublishResult(post_id=str(post_id), status_code=response.status_code)
+                raise RuntimeError(
+                    "Facebook accepted the video without returning a video identifier"
+                )
+            return ProviderPublishResult(
+                post_id=str(post_id), status_code=response.status_code
+            )
 
         if len(media_urls) == 1:
             image_url = public_media_url(media_urls[0], platform="Facebook")
             payload = {"url": image_url, "published": True}
             if text:
                 payload["caption"] = content
-            response = provider_request("POST", f"{base}/photos", access_token=access_token, json=payload)
+            response = provider_request(
+                "POST", f"{base}/photos", access_token=access_token, json=payload
+            )
             body = response.json()
             post_id = body.get("post_id") or body.get("id")
             if not post_id:
-                raise RuntimeError("Facebook accepted the photo without returning a post identifier")
-            return ProviderPublishResult(post_id=str(post_id), status_code=response.status_code)
+                raise RuntimeError(
+                    "Facebook accepted the photo without returning a post identifier"
+                )
+            return ProviderPublishResult(
+                post_id=str(post_id), status_code=response.status_code
+            )
 
         if media_urls:
             # Multi-photo: upload each photo unpublished, then one feed post with attached_media.
             photo_ids: list[str] = []
             for url in media_urls:
                 body = provider_request(
-                    "POST", f"{base}/photos", access_token=access_token,
-                    json={"url": public_media_url(url, platform="Facebook"), "published": False},
+                    "POST",
+                    f"{base}/photos",
+                    access_token=access_token,
+                    json={
+                        "url": public_media_url(url, platform="Facebook"),
+                        "published": False,
+                    },
                 ).json()
                 if not body.get("id"):
-                    raise RuntimeError("Facebook accepted a photo without returning a photo identifier")
+                    raise RuntimeError(
+                        "Facebook accepted a photo without returning a photo identifier"
+                    )
                 photo_ids.append(str(body["id"]))
             payload = {"attached_media": [{"media_fbid": pid} for pid in photo_ids]}
             if text:
                 payload["message"] = content
-            response = provider_request("POST", f"{base}/feed", access_token=access_token, json=payload)
+            response = provider_request(
+                "POST", f"{base}/feed", access_token=access_token, json=payload
+            )
             body = response.json()
             post_id = body.get("id")
             if not post_id:
-                raise RuntimeError("Facebook accepted the request without returning a post identifier")
-            return ProviderPublishResult(post_id=str(post_id), status_code=response.status_code)
+                raise RuntimeError(
+                    "Facebook accepted the request without returning a post identifier"
+                )
+            return ProviderPublishResult(
+                post_id=str(post_id), status_code=response.status_code
+            )
 
         response = provider_request(
             "POST", f"{base}/feed", access_token=access_token, json={"message": content}
@@ -128,20 +172,29 @@ class FacebookPlatform(SocialPlatform):
         body = response.json()
         post_id = body.get("id")
         if not post_id:
-            raise RuntimeError("Facebook accepted the request without returning a post identifier")
-        return ProviderPublishResult(post_id=str(post_id), status_code=response.status_code)
-
+            raise RuntimeError(
+                "Facebook accepted the request without returning a post identifier"
+            )
+        return ProviderPublishResult(
+            post_id=str(post_id), status_code=response.status_code
+        )
 
     def delete(self, access_token: str, provider_post_id: str) -> None:
         """Delete a Page/Group post via Graph API."""
         post_id = (provider_post_id or "").strip()
         if not post_id:
-            raise ProviderConfigurationError("Facebook delete needs a provider post id.")
+            raise ProviderConfigurationError(
+                "Facebook delete needs a provider post id."
+            )
         version = os.getenv("FACEBOOK_GRAPH_API_VERSION", "v21.0")
-        provider_delete(f"https://graph.facebook.com/{version}/{post_id}", access_token=access_token)
+        provider_delete(
+            f"https://graph.facebook.com/{version}/{post_id}", access_token=access_token
+        )
 
 
-def _publish_reel(access_token: str, base: str, content: str, media_urls: list[str]) -> ProviderPublishResult:
+def _publish_reel(
+    access_token: str, base: str, content: str, media_urls: list[str]
+) -> ProviderPublishResult:
     """Page Reels: upload_phase=start, hosted file upload, upload_phase=finish.
 
     https://developers.facebook.com/docs/video-api/guides/reels-publishing/
@@ -153,25 +206,36 @@ def _publish_reel(access_token: str, base: str, content: str, media_urls: list[s
     video_url = public_media_url(media_urls[0], platform="Facebook")
     edge = f"{base}/video_reels"
     started = provider_request(
-        "POST", edge, access_token=access_token, json={"upload_phase": "start"},
+        "POST",
+        edge,
+        access_token=access_token,
+        json={"upload_phase": "start"},
     ).json()
     video_id = started.get("video_id")
     upload_url = started.get("upload_url")
     if not video_id or not upload_url:
         raise RuntimeError("Facebook did not return a Reel upload session")
     _rupload(str(upload_url), access_token, video_url)
-    finish = {"upload_phase": "finish", "video_id": str(video_id), "video_state": "PUBLISHED"}
+    finish = {
+        "upload_phase": "finish",
+        "video_id": str(video_id),
+        "video_state": "PUBLISHED",
+    }
     if (content or "").strip():
         finish["description"] = content
     response = provider_request("POST", edge, access_token=access_token, json=finish)
     body = response.json()
     if body.get("success") is False:
-        raise ProviderConfigurationError("Facebook did not publish this Reel. It was not published as a Page video.")
+        raise ProviderConfigurationError(
+            "Facebook did not publish this Reel. It was not published as a Page video."
+        )
     post_id = body.get("post_id") or body.get("id") or video_id
     return ProviderPublishResult(post_id=str(post_id), status_code=response.status_code)
 
 
-def _publish_story(access_token: str, base: str, media_urls: list[str]) -> ProviderPublishResult:
+def _publish_story(
+    access_token: str, base: str, media_urls: list[str]
+) -> ProviderPublishResult:
     """Photo Stories and Video Stories. Never a feed photo or Page video.
 
     https://developers.facebook.com/docs/video-api/guides/page-stories/
@@ -192,18 +256,25 @@ def _publish_story(access_token: str, base: str, media_urls: list[str]) -> Provi
 
 def _photo_story(access_token: str, base: str, url: str) -> ProviderPublishResult:
     uploaded = provider_request(
-        "POST", f"{base}/photos", access_token=access_token,
+        "POST",
+        f"{base}/photos",
+        access_token=access_token,
         json={"url": public_media_url(url, platform="Facebook"), "published": False},
     ).json()
     photo_id = uploaded.get("id")
     if not photo_id:
         raise RuntimeError("Facebook did not return a photo id for this Story")
     response = provider_request(
-        "POST", f"{base}/photo_stories", access_token=access_token, json={"photo_id": str(photo_id)},
+        "POST",
+        f"{base}/photo_stories",
+        access_token=access_token,
+        json={"photo_id": str(photo_id)},
     )
     body = response.json()
     if body.get("success") is False:
-        raise ProviderConfigurationError("Facebook did not publish this photo Story. It was not posted to the feed.")
+        raise ProviderConfigurationError(
+            "Facebook did not publish this photo Story. It was not posted to the feed."
+        )
     post_id = body.get("post_id") or body.get("id")
     if not post_id:
         raise RuntimeError("Facebook did not return a Story id")
@@ -214,7 +285,10 @@ def _video_story(access_token: str, base: str, url: str) -> ProviderPublishResul
     video_url = public_media_url(url, platform="Facebook")
     edge = f"{base}/video_stories"
     started = provider_request(
-        "POST", edge, access_token=access_token, json={"upload_phase": "start"},
+        "POST",
+        edge,
+        access_token=access_token,
+        json={"upload_phase": "start"},
     ).json()
     video_id = started.get("video_id")
     upload_url = started.get("upload_url")
@@ -222,12 +296,16 @@ def _video_story(access_token: str, base: str, url: str) -> ProviderPublishResul
         raise RuntimeError("Facebook did not return a video Story upload session")
     _rupload(str(upload_url), access_token, video_url)
     response = provider_request(
-        "POST", edge, access_token=access_token,
+        "POST",
+        edge,
+        access_token=access_token,
         json={"upload_phase": "finish", "video_id": str(video_id)},
     )
     body = response.json()
     if body.get("success") is False:
-        raise ProviderConfigurationError("Facebook did not publish this video Story. It was not posted to the feed.")
+        raise ProviderConfigurationError(
+            "Facebook did not publish this video Story. It was not posted to the feed."
+        )
     post_id = body.get("post_id") or body.get("id") or video_id
     return ProviderPublishResult(post_id=str(post_id), status_code=response.status_code)
 

@@ -6,7 +6,12 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.config import ACCESS_TOKEN_EXPIRE_MINUTES
-from app.core.security import create_access_token, create_refresh_token, hash_password, verify_password
+from app.core.security import (
+    create_access_token,
+    create_refresh_token,
+    hash_password,
+    verify_password,
+)
 from app.models import User, Workspace
 
 
@@ -20,7 +25,9 @@ def register_user(
     """Create a user profile with a normalized email and password hash."""
     normalized = email.strip().lower()
     if db.scalar(select(User).where(User.email == normalized)):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered"
+        )
     cleaned_workspace = workspace_name.strip() or "My Workspace"
     user = User(
         email=normalized,
@@ -36,7 +43,9 @@ def register_user(
     except IntegrityError as exc:
         # The unique email constraint also protects concurrent signups.
         db.rollback()
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered") from exc
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered"
+        ) from exc
     except SQLAlchemyError as exc:
         db.rollback()
         raise HTTPException(
@@ -50,7 +59,11 @@ def register_user(
 def authenticate_user(db: Session, email: str, password: str) -> User | None:
     """Return an active matching user, or ``None`` for invalid credentials."""
     user = db.scalar(select(User).where(User.email == email.strip().lower()))
-    if user is None or not user.is_active or not verify_password(password, user.password_hash):
+    if (
+        user is None
+        or not user.is_active
+        or not verify_password(password, user.password_hash)
+    ):
         return None
     return user
 

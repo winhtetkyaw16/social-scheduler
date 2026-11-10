@@ -20,23 +20,27 @@ MIX = [V, *P]
 
 # ---- validation ---------------------------------------------------------------------------------
 
-@pytest.mark.parametrize("platform,media,ok", [
-    ("instagram", MIX, True),                                   # mixed carousel allowed
-    ("instagram", [f"https://a.test/{i}.jpg" for i in range(20)], True),
-    ("instagram", [f"https://a.test/{i}.jpg" for i in range(21)], False),
-    ("tiktok", [V], True),
-    ("tiktok", P, True),                                        # photo post
-    ("tiktok", [f"https://a.test/{i}.jpg" for i in range(35)], True),
-    ("tiktok", [f"https://a.test/{i}.jpg" for i in range(36)], False),
-    ("tiktok", MIX, False),
-    ("tiktok", [], False),
-    ("x", ["https://a.test/a.gif"], True),
-    ("x", ["https://a.test/a.gif", "https://a.test/b.jpg"], False),
-    ("youtube", MIX, True),                                     # YouTube just uses the video
-    ("youtube", P, False),
-    ("facebook", [V, "https://a.test/v2.mp4"], False),
-    ("threads", MIX, True),
-])
+
+@pytest.mark.parametrize(
+    "platform,media,ok",
+    [
+        ("instagram", MIX, True),  # mixed carousel allowed
+        ("instagram", [f"https://a.test/{i}.jpg" for i in range(20)], True),
+        ("instagram", [f"https://a.test/{i}.jpg" for i in range(21)], False),
+        ("tiktok", [V], True),
+        ("tiktok", P, True),  # photo post
+        ("tiktok", [f"https://a.test/{i}.jpg" for i in range(35)], True),
+        ("tiktok", [f"https://a.test/{i}.jpg" for i in range(36)], False),
+        ("tiktok", MIX, False),
+        ("tiktok", [], False),
+        ("x", ["https://a.test/a.gif"], True),
+        ("x", ["https://a.test/a.gif", "https://a.test/b.jpg"], False),
+        ("youtube", MIX, True),  # YouTube just uses the video
+        ("youtube", P, False),
+        ("facebook", [V, "https://a.test/v2.mp4"], False),
+        ("threads", MIX, True),
+    ],
+)
 def test_media_rules(platform, media, ok):
     assert (media_requirement_error(platform, media, "hi") is None) is ok
 
@@ -45,10 +49,13 @@ def test_linkedin_mov_allowed_only_with_ffmpeg(monkeypatch):
     monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/ffmpeg")
     assert media_requirement_error("linkedin", ["https://a.test/v.mov"], "hi") is None
     monkeypatch.setattr("shutil.which", lambda name: None)
-    assert "MP4 only" in media_requirement_error("linkedin", ["https://a.test/v.mov"], "hi")
+    assert "MP4 only" in media_requirement_error(
+        "linkedin", ["https://a.test/v.mov"], "hi"
+    )
 
 
 # ---- per-channel media --------------------------------------------------------------------------
+
 
 def test_media_selection_per_account_and_network():
     a, b, c = uuid4(), uuid4(), uuid4()
@@ -72,18 +79,30 @@ def test_old_posts_without_selection_are_unchanged():
     acct = uuid4()
     assert _media_for_account({"sharedMediaUrls": MIX}, acct, MIX) == MIX
     assert _media_for_account({}, acct, MIX) == MIX
-    custom = {"sharedMediaUrls": P, "captionMode": "custom", "channelMediaUrlsByAccount": {str(acct): [V]}}
+    custom = {
+        "sharedMediaUrls": P,
+        "captionMode": "custom",
+        "channelMediaUrlsByAccount": {str(acct): [V]},
+    }
     assert _media_for_account(custom, acct, P) == [*P, V]
 
 
 def test_selection_with_custom_channel_media():
     acct = uuid4()
-    meta = {"sharedMediaUrls": MIX, "captionMode": "custom", "mediaSelectionByAccount": {str(acct): [V]},
-            "channelMediaUrlsByAccount": {str(acct): ["https://cdn.example.com/extra.jpg"]}}
-    assert _media_for_account(meta, acct, MIX, "facebook") == [V, "https://cdn.example.com/extra.jpg"]
+    meta = {
+        "sharedMediaUrls": MIX,
+        "captionMode": "custom",
+        "mediaSelectionByAccount": {str(acct): [V]},
+        "channelMediaUrlsByAccount": {str(acct): ["https://cdn.example.com/extra.jpg"]},
+    }
+    assert _media_for_account(meta, acct, MIX, "facebook") == [
+        V,
+        "https://cdn.example.com/extra.jpg",
+    ]
 
 
 # ---- conversions --------------------------------------------------------------------------------
+
 
 @pytest.fixture
 def uploads(tmp_path, monkeypatch):
@@ -94,7 +113,9 @@ def uploads(tmp_path, monkeypatch):
     monkeypatch.setattr(media_convert, "local_upload_path", fake_local)
 
     def make(name, size=(100, 100), mode="RGB", noise=False):
-        img = Image.new(mode, size, (200, 30, 30, 120) if mode == "RGBA" else (200, 30, 30))
+        img = Image.new(
+            mode, size, (200, 30, 30, 120) if mode == "RGBA" else (200, 30, 30)
+        )
         if noise:
             img = Image.effect_noise(size, 90).convert("RGB")
         img.save(tmp_path / name)
@@ -114,9 +135,14 @@ def test_instagram_gets_jpg_and_center_crop(uploads):
     ok = uploads("ok.jpg", size=(1080, 1080))
     out = media_convert.prepare_media("instagram", [png, wide, ok, V])
     assert out[0].endswith(".jpg") and out[0] != png
-    assert _open(uploads, out[1]).size == (1000, 1000)         # carousel shares the first photo's 1:1 frame
-    assert out[2] == ok and out[3] == V                         # fine files and remote URLs untouched
-    assert media_convert.prepare_media("instagram", [png]) == [out[0]]  # cached on retry
+    assert _open(uploads, out[1]).size == (
+        1000,
+        1000,
+    )  # carousel shares the first photo's 1:1 frame
+    assert out[2] == ok and out[3] == V  # fine files and remote URLs untouched
+    assert media_convert.prepare_media("instagram", [png]) == [
+        out[0]
+    ]  # cached on retry
 
 
 def test_webp_for_linkedin_and_facebook(uploads):
@@ -139,13 +165,17 @@ def test_facebook_big_photo_is_compressed(uploads):
     assert (uploads.dir / "big.png").stat().st_size > media_convert.FB_MAX_PHOTO_BYTES
     out = media_convert.prepare_media("facebook", [big])
     assert out[0] != big
-    assert (uploads.dir / out[0].rsplit("/", 1)[-1]).stat().st_size <= media_convert.FB_MAX_PHOTO_BYTES
+    assert (
+        uploads.dir / out[0].rsplit("/", 1)[-1]
+    ).stat().st_size <= media_convert.FB_MAX_PHOTO_BYTES
 
 
 def test_linkedin_mov_without_ffmpeg_is_left_alone(uploads, monkeypatch):
     (uploads.dir / "v.mov").write_bytes(b"\x00" * 100)
     monkeypatch.setattr(media_convert.shutil, "which", lambda name: None)
-    assert media_convert.prepare_media("linkedin", ["/static/uploads/v.mov"]) == ["/static/uploads/v.mov"]
+    assert media_convert.prepare_media("linkedin", ["/static/uploads/v.mov"]) == [
+        "/static/uploads/v.mov"
+    ]
 
 
 def test_youtube_uses_only_the_video():
@@ -155,7 +185,11 @@ def test_youtube_uses_only_the_video():
 
 def test_conversion_failure_falls_back(uploads, monkeypatch):
     png = uploads("x.png")
-    monkeypatch.setattr(media_convert, "_save_image", lambda *a, **k: (_ for _ in ()).throw(OSError("disk")))
+    monkeypatch.setattr(
+        media_convert,
+        "_save_image",
+        lambda *a, **k: (_ for _ in ()).throw(OSError("disk")),
+    )
     assert media_convert.prepare_media("instagram", [png]) == [png]
 
 
@@ -166,6 +200,7 @@ def test_crop_box_matches_frontend():
 
 
 # ---- TikTok photo posts -------------------------------------------------------------------------
+
 
 class _Resp:
     def __init__(self, payload, status_code=200):
@@ -182,7 +217,12 @@ def test_tiktok_photo_post_pull_from_url(monkeypatch):
 
     def fake_post(url, **kwargs):
         if url.endswith("creator_info/query/"):
-            return _Resp({"data": {"privacy_level_options": ["SELF_ONLY"]}, "error": {"code": "ok"}})
+            return _Resp(
+                {
+                    "data": {"privacy_level_options": ["SELF_ONLY"]},
+                    "error": {"code": "ok"},
+                }
+            )
         bodies.append((url, kwargs.get("json")))
         return _Resp({"data": {"publish_id": "p_pub~1"}, "error": {"code": "ok"}})
 
@@ -192,8 +232,14 @@ def test_tiktok_photo_post_pull_from_url(monkeypatch):
     url, body = bodies[0]
     assert url.endswith("/post/publish/content/init/")
     assert body["media_type"] == "PHOTO" and body["post_mode"] == "DIRECT_POST"
-    assert body["source_info"] == {"source": "PULL_FROM_URL", "photo_cover_index": 0, "photo_images": P}
-    assert body["post_info"]["title"] == "Title line" and body["post_info"]["description"].startswith("Title line")
+    assert body["source_info"] == {
+        "source": "PULL_FROM_URL",
+        "photo_cover_index": 0,
+        "photo_images": P,
+    }
+    assert body["post_info"]["title"] == "Title line" and body["post_info"][
+        "description"
+    ].startswith("Title line")
 
 
 def test_tiktok_photo_falls_back_to_inbox(monkeypatch):
@@ -201,11 +247,18 @@ def test_tiktok_photo_falls_back_to_inbox(monkeypatch):
 
     def fake_post(url, **kwargs):
         if url.endswith("creator_info/query/"):
-            return _Resp({"data": {"privacy_level_options": ["SELF_ONLY"]}, "error": {"code": "ok"}})
+            return _Resp(
+                {
+                    "data": {"privacy_level_options": ["SELF_ONLY"]},
+                    "error": {"code": "ok"},
+                }
+            )
         body = kwargs.get("json")
         modes.append(body["post_mode"])
         if body["post_mode"] == "DIRECT_POST":
-            return _Resp({"error": {"code": "scope_not_authorized", "message": "scope"}}, 403)
+            return _Resp(
+                {"error": {"code": "scope_not_authorized", "message": "scope"}}, 403
+            )
         return _Resp({"data": {"publish_id": "p2"}, "error": {"code": "ok"}})
 
     monkeypatch.setattr(httpx, "post", fake_post)
@@ -219,14 +272,18 @@ def test_tiktok_photo_needs_public_https(monkeypatch):
     with pytest.raises(ProviderConfigurationError):
         TikTokPlatform().publish("tok", "open-id", "hi", ["/static/uploads/a.jpg"])
     with pytest.raises(ProviderConfigurationError, match="https"):
-        TikTokPlatform().publish("tok", "open-id", "hi", ["http://cdn.example.com/a.jpg"])
+        TikTokPlatform().publish(
+            "tok", "open-id", "hi", ["http://cdn.example.com/a.jpg"]
+        )
 
 
 def test_tiktok_rejects_mix_and_too_many():
     with pytest.raises(ProviderConfigurationError, match="not a mix"):
         TikTokPlatform().publish("tok", "open-id", "hi", MIX)
     with pytest.raises(ProviderConfigurationError, match="35"):
-        TikTokPlatform().publish("tok", "open-id", "hi", [f"https://a.test/{i}.jpg" for i in range(36)])
+        TikTokPlatform().publish(
+            "tok", "open-id", "hi", [f"https://a.test/{i}.jpg" for i in range(36)]
+        )
 
 
 def test_facebook_video_choice_publishes_as_video(monkeypatch):
@@ -234,7 +291,11 @@ def test_facebook_video_choice_publishes_as_video(monkeypatch):
     from app.integrations.platforms import facebook as fb_mod
 
     acct = uuid4()
-    meta = {"sharedMediaUrls": MIX, "captionMode": "custom", "mediaSelectionByAccount": {str(acct): [V]}}
+    meta = {
+        "sharedMediaUrls": MIX,
+        "captionMode": "custom",
+        "mediaSelectionByAccount": {str(acct): [V]},
+    }
     media = _media_for_account(meta, acct, MIX, "facebook")
     assert media == [V]
     assert media_requirement_error("facebook", media) is None
@@ -247,7 +308,11 @@ def test_facebook_video_choice_publishes_as_video(monkeypatch):
         def json(self):
             return {"id": "vid1"}
 
-    monkeypatch.setattr(fb_mod, "provider_request", lambda method, url, **kw: calls.append((method, url, kw)) or Resp())
+    monkeypatch.setattr(
+        fb_mod,
+        "provider_request",
+        lambda method, url, **kw: calls.append((method, url, kw)) or Resp(),
+    )
     result = fb_mod.FacebookPlatform().publish("tok", "111", "hello", media)
     assert result.post_id == "vid1"
     assert len(calls) == 1 and calls[0][1].endswith("/111/videos")
@@ -256,26 +321,34 @@ def test_facebook_video_choice_publishes_as_video(monkeypatch):
 
 # ---- Instagram shared frame (Instagram-only crop at publish) -------------------------------------
 
+
 def test_ig_frame_rules():
     assert media_convert.ig_nearest_frame(1080 / 2340) == 0.8
     assert media_convert.ig_nearest_frame(16 / 9) == 1.91
     assert media_convert.ig_nearest_frame(1.05) == 1.0
-    assert media_convert.ig_frame_ratio([0.46], 3) == 0.8          # carousel: snap to nearest standard frame
-    assert media_convert.ig_frame_ratio([1.3], 1) == 1.3           # single photo: clamp only
+    assert (
+        media_convert.ig_frame_ratio([0.46], 3) == 0.8
+    )  # carousel: snap to nearest standard frame
+    assert media_convert.ig_frame_ratio([1.3], 1) == 1.3  # single photo: clamp only
     assert media_convert.ig_frame_ratio([0.3], 1) == 0.8
     assert media_convert.ig_frame_ratio([0.46], 3, chosen=1.91) == 1.91
     assert media_convert.ig_frame_ratio([], 2) is None
     assert media_convert.frame_crop_box(1000, 2000, 0.8) == (0, 375, 1000, 1625)
     assert media_convert.frame_crop_box(1000, 2000, 0.8, 0.5, 0.0) == (0, 0, 1000, 1250)
-    assert media_convert.frame_crop_box(3000, 1000, 1.0, 1.0, 0.5) == (2000, 0, 3000, 1000)
+    assert media_convert.frame_crop_box(3000, 1000, 1.0, 1.0, 0.5) == (
+        2000,
+        0,
+        3000,
+        1000,
+    )
 
 
 def test_ig_carousel_all_photos_cropped_to_first_photo_frame(uploads):
-    tall = uploads("tall.jpg", size=(1080, 2340))     # phone screenshot -> 4:5
+    tall = uploads("tall.jpg", size=(1080, 2340))  # phone screenshot -> 4:5
     wide = uploads("wide2.jpg", size=(1920, 1080))
     sq = uploads("sq.jpg", size=(1000, 1000))
     out = media_convert.prepare_media("instagram", [V, tall, wide, sq])
-    assert out[0] == V                                   # videos are never re-encoded
+    assert out[0] == V  # videos are never re-encoded
     sizes = [_open(uploads, u).size for u in out[1:]]
     assert all(abs(w / h - 0.8) < 0.01 for w, h in sizes), sizes
     assert all(u != o for u, o in zip(out[1:], [tall, wide, sq]))
@@ -289,11 +362,23 @@ def test_ig_crop_metadata_ratio_and_offsets(uploads):
     a, b = _open(uploads, out[0]), _open(uploads, out[1])
     assert a.size == (1000, 1000) and b.size == (1000, 1000)
     src_a = Image.open(uploads.dir / "t2.png").convert("RGB").crop((0, 0, 1000, 1000))
-    src_b = Image.open(uploads.dir / "w2.jpg").convert("RGB").crop((2000, 0, 3000, 1000))
-    diff = lambda x, y: sum(abs(p - q) for p, q in zip(x.resize((20, 20)).tobytes(), y.resize((20, 20)).tobytes())) / 1200
-    assert diff(a.convert("RGB"), src_a) < 25 and diff(b.convert("RGB"), src_b) < 25   # offsets picked the top / right
-    other = media_convert.prepare_media("instagram", [tall, wide], ig_crop={"ratio": 1.0})
-    assert other[0] != out[0]                            # different offsets -> different cached file
+    src_b = (
+        Image.open(uploads.dir / "w2.jpg").convert("RGB").crop((2000, 0, 3000, 1000))
+    )
+    diff = (
+        lambda x, y: sum(
+            abs(p - q)
+            for p, q in zip(x.resize((20, 20)).tobytes(), y.resize((20, 20)).tobytes())
+        )
+        / 1200
+    )
+    assert (
+        diff(a.convert("RGB"), src_a) < 25 and diff(b.convert("RGB"), src_b) < 25
+    )  # offsets picked the top / right
+    other = media_convert.prepare_media(
+        "instagram", [tall, wide], ig_crop={"ratio": 1.0}
+    )
+    assert other[0] != out[0]  # different offsets -> different cached file
 
 
 def test_ig_crop_never_touches_other_networks(uploads):
@@ -301,20 +386,29 @@ def test_ig_crop_never_touches_other_networks(uploads):
     wide = uploads("w3.jpg", size=(1920, 1080))
     crop = {"ratio": 1.0, "offsets": [[0.5, 0.0], [0.5, 0.5]]}
     for net in ("facebook", "linkedin", "threads", "x"):
-        assert media_convert.prepare_media(net, [tall, wide], ig_crop=crop) == [tall, wide]
-    assert media_convert.prepare_media("instagram", [tall], ig_crop={"format": "Story"}) == [tall]
+        assert media_convert.prepare_media(net, [tall, wide], ig_crop=crop) == [
+            tall,
+            wide,
+        ]
+    assert media_convert.prepare_media(
+        "instagram", [tall], ig_crop={"format": "Story"}
+    ) == [tall]
 
 
 def test_publish_task_passes_ig_crop_only_for_instagram():
     from app.tasks.publish_post import _ig_crop_kwargs
+
     meta = {"format": "Post", "ig_crop": {"ratio": 0.8}}
-    assert _ig_crop_kwargs("instagram", meta) == {"ig_crop": {"ratio": 0.8, "format": "Post"}}
+    assert _ig_crop_kwargs("instagram", meta) == {
+        "ig_crop": {"ratio": 0.8, "format": "Post"}
+    }
     assert _ig_crop_kwargs("facebook", meta) == {}
     assert _ig_crop_kwargs("instagram", None) == {"ig_crop": {"format": None}}
 
 
 def test_publish_sends_cropped_urls_to_instagram(monkeypatch):
     from app.services import publishing
+
     seen = {}
 
     def fake_prepare(platform, media, ig_crop=None):
@@ -328,23 +422,55 @@ def test_publish_sends_cropped_urls_to_instagram(monkeypatch):
 
     monkeypatch.setattr(media_convert, "prepare_media", fake_prepare)
     monkeypatch.setattr(publishing, "get_platform", lambda name: Fake())
-    publishing.publish("instagram", "tok", "acct", "hi", ["/static/uploads/a.png"], ig_crop={"ratio": 1.0}, format="Post")
+    publishing.publish(
+        "instagram",
+        "tok",
+        "acct",
+        "hi",
+        ["/static/uploads/a.png"],
+        ig_crop={"ratio": 1.0},
+        format="Post",
+    )
     assert seen["prepare"] == ("instagram", ["/static/uploads/a.png"], {"ratio": 1.0})
-    assert seen["adapter"] == ["/static/uploads/a-ig.jpg"]          # Instagram really gets the cropped files
-    publishing.publish("facebook", "tok", "acct", "hi", ["/static/uploads/a.png"], ig_crop={"ratio": 1.0}, format="Post")
-    assert seen["prepare"][2] is None                               # never forwarded to other networks
+    assert seen["adapter"] == [
+        "/static/uploads/a-ig.jpg"
+    ]  # Instagram really gets the cropped files
+    publishing.publish(
+        "facebook",
+        "tok",
+        "acct",
+        "hi",
+        ["/static/uploads/a.png"],
+        ig_crop={"ratio": 1.0},
+        format="Post",
+    )
+    assert seen["prepare"][2] is None  # never forwarded to other networks
 
 
 def test_draft_ig_crop_maps_offsets_to_indices():
     from app.services.posts import _ig_crop_for_account
-    meta = {"igCropByAccount": {"7": {"ratio": 1, "offsets": {"/static/uploads/b.jpg": [0.1, 0.9]}}}}
-    assert _ig_crop_for_account(meta, 7, ["/static/uploads/a.jpg", "/static/uploads/b.jpg"]) == {"ratio": 1.0, "offsets": [[0.5, 0.5], [0.1, 0.9]]}
+
+    meta = {
+        "igCropByAccount": {
+            "7": {"ratio": 1, "offsets": {"/static/uploads/b.jpg": [0.1, 0.9]}}
+        }
+    }
+    assert _ig_crop_for_account(
+        meta, 7, ["/static/uploads/a.jpg", "/static/uploads/b.jpg"]
+    ) == {"ratio": 1.0, "offsets": [[0.5, 0.5], [0.1, 0.9]]}
     assert _ig_crop_for_account({}, 7, ["x"]) == {}
 
 
 def test_threads_and_facebook_publish_original_media_for_any_count(uploads):
     # The Threads/Facebook preview layouts are display-only; publishing keeps every original URL.
-    sizes = [(1080, 1920), (1920, 1080), (1000, 1000), (1080, 2340), (2400, 1000), (800, 1000)]
+    sizes = [
+        (1080, 1920),
+        (1920, 1080),
+        (1000, 1000),
+        (1080, 2340),
+        (2400, 1000),
+        (800, 1000),
+    ]
     urls = [uploads(f"pv{i}.jpg", size=s) for i, s in enumerate(sizes)]
     for net in ("threads", "facebook"):
         for n in (1, 2, 3, 4, 6):
@@ -358,18 +484,28 @@ def test_instagram_upscales_small_photos_after_crop(uploads):
         out = media_convert.prepare_media("instagram", [url])[0]
         assert out != url and out.endswith(".jpg")
         w, h = _open(uploads, out).size
-        assert min(w, h) >= 320 and 0.8 - 0.01 <= w / h <= 1.91 + 0.01   # cropped into range, then upscaled
-    story = media_convert.prepare_media("instagram", [tiny], ig_crop={"format": "Story"})[0]
+        assert (
+            min(w, h) >= 320 and 0.8 - 0.01 <= w / h <= 1.91 + 0.01
+        )  # cropped into range, then upscaled
+    story = media_convert.prepare_media(
+        "instagram", [tiny], ig_crop={"format": "Story"}
+    )[0]
     assert min(_open(uploads, story).size) >= 320
     for net in ("facebook", "x", "linkedin", "threads", "tiktok"):
         assert media_convert.prepare_media(net, [tiny]) == [tiny]
 
 
-def test_publish_ig_gets_processed_file_other_network_gets_original_bytes(uploads, monkeypatch):
+def test_publish_ig_gets_processed_file_other_network_gets_original_bytes(
+    uploads, monkeypatch
+):
     import hashlib
+
     from app.services import publishing
+
     small = uploads("small.jpg", size=(95, 200), noise=True)
-    digest = lambda url: hashlib.sha256((uploads.dir / url.rsplit("/", 1)[-1]).read_bytes()).hexdigest()
+    digest = lambda url: hashlib.sha256(
+        (uploads.dir / url.rsplit("/", 1)[-1]).read_bytes()
+    ).hexdigest()
     original = digest(small)
     sent = {}
 
@@ -384,7 +520,9 @@ def test_publish_ig_gets_processed_file_other_network_gets_original_bytes(upload
     monkeypatch.setattr(publishing, "get_platform", lambda name: Fake(name))
     crop = {"ratio": 0.8, "offsets": [[0.5, 0.5]], "format": "Post"}
     for net in ("instagram", "facebook", "x", "linkedin", "threads", "tiktok"):
-        publishing.publish(net, "tok", "acct", "hi", [small], ig_crop=crop, format="Post")
+        publishing.publish(
+            net, "tok", "acct", "hi", [small], ig_crop=crop, format="Post"
+        )
     ig = sent["instagram"][0]
     assert ig != small and digest(ig) != original
     w, h = _open(uploads, ig).size

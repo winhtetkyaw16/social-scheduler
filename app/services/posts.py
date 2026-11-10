@@ -42,6 +42,13 @@ def _attach_execution_summaries(db: Session, posts: list[ScheduledPost]) -> list
 _VIDEO_FORMATS = {"Short", "Reel / Video"}
 
 
+def video_format_message(post_format: str) -> str:
+    """Same wording as frontend/src/fixPlan.js videoFormatMessage."""
+    if post_format == "Short":
+        return "Please include a video for this Short — tick a video for this account, or remove YouTube Shorts from the post."
+    return "Please include a video for this video post — tick a video for this account, or switch the post type to Post."
+
+
 def publish_problem(platform: str | None, media_urls: list | None, content: str | None, post_format: str | None = None) -> str | None:
     """Blocking reason a post can't be scheduled/published (the composer disables posting for the same errors).
 
@@ -52,7 +59,7 @@ def publish_problem(platform: str | None, media_urls: list | None, content: str 
 
     media = [str(m) for m in (media_urls or [])]
     if post_format in _VIDEO_FORMATS and not any(is_video_url(m) for m in media):
-        return f"Please include a video for this {'Short' if post_format == 'Short' else 'video post'}."
+        return video_format_message(post_format)
     if post_format == "Story" and not media:
         return "Add a photo or video to create this Story."
     return media_requirement_error(platform, media, content)

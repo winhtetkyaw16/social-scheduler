@@ -245,7 +245,7 @@ export function channelErrors({ platform, label, format = "Post", text = "", lim
   if (!(SUPPORTED_FORMATS[platform] || ["Post"]).includes(format)) out.push(`${format} is not available for ${label || platform}; choose a supported format.`);
   if (!String(text).trim()) out.push("Add a caption for this channel.");
   if (String(text).length > limit) out.push(`Caption is over this channel’s ${limit.toLocaleString()} character limit.`);
-  if ((format === "Short" || format === "Reel / Video") && !hasVideo) out.push(`Please include a video for this ${format === "Short" ? "Short" : "video post"}.`);
+  if ((format === "Short" || format === "Reel / Video") && !hasVideo) out.push(videoFormatMessage(format));
   if (format === "Story" && !mediaCount) out.push("Add a photo or video to create this Story.");
   return out;
 }
@@ -266,4 +266,34 @@ export function savedPostBlock({ account, post, content, limit }) {
   const check = checkMedia(platform, infos, { format });
   const result = publishBlock({ channelWarnings: errs.map((message) => ({ account: acc, message })), mediaReport: [{ account: acc, check }] });
   return { ...result, messages: [...errs, ...check.problems.map((p) => (typeof p === "string" ? p : p?.title || ""))].filter(Boolean) };
+}
+
+// One wording for the "video format without a video" error, shared with app/services/posts.py publish_problem
+// (422 backstop + worker re-check) so the composer, the API and the worker all say the same, actionable thing.
+export function videoFormatMessage(format) {
+  return format === "Short"
+    ? "Please include a video for this Short — tick a video for this account, or remove YouTube Shorts from the post."
+    : "Please include a video for this video post — tick a video for this account, or switch the post type to Post.";
+}
+
+// Format the composer picks by itself from the media an account currently uses (same rule as the old
+// suggestFormatForMedia, but synchronous and re-run on every render). infos = mediaInfo() rows.
+export function autoFormat(platform, infos = []) {
+  const supported = SUPPORTED_FORMATS[platform] || ["Post"];
+  const fallback = supported.includes("Post") ? "Post" : supported[0];
+  const videos = (infos || []).filter((i) => i?.kind === "video");
+  if (!videos.length) return fallback;
+  const v = videos[0];
+  const vertical = v.height > v.width * 1.15;
+  const candidate = vertical && platform === "youtube" ? "Short"
+    : !vertical && (platform === "instagram" || platform === "facebook") ? "Post"
+      : "Reel / Video";
+  return supported.includes(candidate) ? candidate : fallback;
+}
+
+// The format actually used for an account: the user's explicit choice wins; otherwise it is derived live from the
+// media ticked for that account, so unticking every video can never leave a stale "video post" behind.
+export function effectiveFormat({ platform, stored, overridden, infos = [] }) {
+  if (overridden) return stored || "Post";
+  return autoFormat(platform, infos);
 }

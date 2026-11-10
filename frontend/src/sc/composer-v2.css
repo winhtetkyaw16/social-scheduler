@@ -384,3 +384,6 @@ html.dark .scd .c2 .c2-pbtn,[data-theme=dark] .scd .c2 .c2-pbtn{background:linea
 .scd .cpv .lig-c>img:not(.ph),.scd .cpv .lig-c>video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
 .scd .cpv .lig-c>img.ph{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}
 .scd .cpv .lig .play{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}
+
+/* Blocked = visibly disabled at every width (button state and hint both come from publishBlock). */
+.scd .c2 .c2-pbar.fix-first .c2-pbtn,.scd .c2 .c2-pbtn:disabled{background:var(--surface);color:var(--muted,#6b7280);border:1px solid var(--border);opacity:1;cursor:not-allowed;box-shadow:none}

@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { igCropPayload } from "./igFrame.js";
-import { SUPPORTED_FORMATS, channelErrors, urlsForSelection } from "./fixPlan.js";
+import { SUPPORTED_FORMATS, channelErrors, effectiveFormat, urlsForSelection } from "./fixPlan.js";
+import { useObjectUrl } from "./objectUrl.js";
+import { accessTokenExpiresAtMs } from "./accessToken.js";
 import { actionIndices, autoSplit, checkMedia, cropIndices, defaultIndices, mediaInfo, mediaKeyOf, selectionFor, splitLabel, igPhotoWarnings } from "./mediaRules.js";
 import { ChannelTile } from "./sc/ui.jsx";
 import { createPortal } from "react-dom";
@@ -237,15 +239,32 @@ async function refreshAccessToken() {
   return refreshInFlight;
 }
 
+
+async function ensureFreshAccessToken(token) {
+  const current = token || sessionAccessToken;
+  if (!current) return "";
+  const exp = accessTokenExpiresAtMs(current);
+  // Still good for >60s: use as-is. Missing/undecodable exp: try a refresh anyway.
+  if (exp && exp - Date.now() > 60_000) return current;
+  if (!readStoredValue(REFRESH_KEY)) return current;
+  const next = await refreshAccessToken();
+  return next || current;
+}
+
 async function api(path, { token, _retried = false, ...options } = {}) {
-  const bearer = token || sessionAccessToken;
+  const authPaths = ["/auth/refresh", "/auth/login", "/auth/token"];
+  let bearer = token || sessionAccessToken;
+  // Refresh early so the first /posts (and friends) never go out with an expired Bearer.
+  if (!_retried && bearer && !authPaths.includes(path)) {
+    bearer = (await ensureFreshAccessToken(bearer)) || bearer;
+  }
   const headers = new Headers(options.headers || {});
   if (bearer) headers.set("Authorization", `Bearer ${bearer}`);
   if (options.body && !(options.body instanceof FormData)) headers.set("Content-Type", "application/json");
   let response;
   try { response = await fetch(`${API_BASE}${path}`, { cache: "no-store", ...options, headers }); }
   catch { throw new Error("Could not reach SocialCastly. Check that the API is running and try again."); }
-  if (response.status === 401 && !_retried && !["/auth/refresh", "/auth/login", "/auth/token"].includes(path)) {
+  if (response.status === 401 && !_retried && !authPaths.includes(path)) {
     const next = await refreshAccessToken();
     if (next) return api(path, { ...options, token: next, _retried: true });
   }
@@ -342,15 +361,6 @@ function AuthScreen({ onAuthenticated, dark, toggleTheme, remember, setRemember,
   </main></div>;
 }
 
-function useObjectUrl(file) {
-  const [url, setUrl] = useState("");
-  useEffect(() => {
-    if (!file) { setUrl(""); return undefined; }
-    const nextUrl = URL.createObjectURL(file); setUrl(nextUrl);
-    return () => URL.revokeObjectURL(nextUrl);
-  }, [file]);
-  return url;
-}
 
 function MediaThumb({ file, onRemove, onEdit, onDragStart, onDragOver, onDrop }) {
   const url = useObjectUrl(file);
@@ -668,7 +678,11 @@ function App() {
   const selectedAccounts = useMemo(() => accounts.filter((account) => selectedIds.includes(account.id) && account.is_active), [accounts, selectedIds]);
   const previewAccount = selectedAccounts.find((item) => item.id === previewId) || selectedAccounts[0] || null;
   const previewChannel = CHANNELS.find((item) => item.id === previewAccount?.platform) || null;
-  const formatForAccount = (account) => formatsByAccount[account?.id] || "Post";
+  // Derived every render from the account's current picks (fixPlan.effectiveFormat) unless the user chose a format.
+  const formatForAccount = (account) => effectiveFormat({
+    platform: account?.platform, stored: formatsByAccount[account?.id], overridden: !!formatOverridesByAccount[account?.id],
+    infos: account ? mediaForAccount(account).map((item) => mediaInfo(item, mediaDims[mediaKeyOf(item)])) : [],
+  });
   const setAccountFormat = (accountId, nextFormat) => {
     setPreviewId(accountId);
     setFormatsByAccount((current) => ({ ...current, [accountId]: nextFormat }));
@@ -790,7 +804,7 @@ function App() {
       });
     }
     return warnings.map((message) => ({ account, message }));
-  }), [selectedAccounts, captionMode, captionsByAccount, useUniversalCaptionByAccount, caption, channelFiles, channelMediaUrlsByAccount, useSharedMediaByAccount, files, libraryMediaUrls, formatsByAccount, mediaDims, mediaSelectionByAccount]);
+  }), [selectedAccounts, captionMode, captionsByAccount, useUniversalCaptionByAccount, caption, channelFiles, channelMediaUrlsByAccount, useSharedMediaByAccount, files, libraryMediaUrls, formatsByAccount, formatOverridesByAccount, mediaDims, sharedInfos, mediaSelectionByAccount]);
 
   // Non-blocking tips shown under the composer (publishing still allowed).
   const channelNotices = useMemo(() => selectedAccounts.flatMap((account) => {
@@ -814,7 +828,7 @@ function App() {
       split, splitLabel: splitLabel(account.platform, sharedInfos, split, { format, cropped: cropIndices(account.platform, sharedInfos, split, { format, igRatio: igCropByAccount[account.id]?.ratio || null }) }),
       picked: Array.isArray(mediaSelectionByAccount[account.id]),
     };
-  }), [selectedAccounts, captionMode, channelFiles, channelMediaUrlsByAccount, useSharedMediaByAccount, sharedInfos, mediaDims, formatsByAccount, mediaSelectionByAccount, cropOkByAccount, igCropByAccount]);
+  }), [selectedAccounts, captionMode, channelFiles, channelMediaUrlsByAccount, useSharedMediaByAccount, sharedInfos, mediaDims, formatsByAccount, formatOverridesByAccount, mediaSelectionByAccount, cropOkByAccount, igCropByAccount, files, libraryMediaUrls, captionMode]);
   const setAccountMediaKeys = (accountId, keys) => setMediaSelectionByAccount((cur) => {
     const next = { ...cur };
     if (keys === null) delete next[accountId]; else next[accountId] = keys;
@@ -985,7 +999,7 @@ function App() {
       }
       const metadata = {
         caption, title, captionMode, captionsByAccount, useUniversalCaptionByAccount, selectedIds,
-        formatsByAccount, formatOverridesByAccount, platformSettingsByAccount,
+        formatsByAccount: { ...formatsByAccount, ...Object.fromEntries(selectedAccounts.map((a) => [a.id, formatForAccount(a)])) }, formatOverridesByAccount, platformSettingsByAccount,
         useSharedMediaByAccount, scheduleMode, date, time, timeZone,
         sharedMediaUrls: sharedUrls, channelMediaUrlsByAccount: savedChannelUrls,
         mediaSelectionByAccount: selectionUrls(sharedUrls), cropOkByAccount, igCropByAccount: igCropForDraft(sharedUrls),
@@ -1332,7 +1346,7 @@ function App() {
               captionMode={captionMode} changeCaptionMode={changeCaptionMode} caption={caption} setCaption={setCaption} captionsByAccount={captionsByAccount} setCaptionsByAccount={setCaptionsByAccount} useUniversalCaptionByAccount={useUniversalCaptionByAccount} setUseUniversalCaptionByAccount={setUseUniversalCaptionByAccount}
               captionForAccount={captionForAccount} mediaForAccount={mediaForAccount} mediaReport={mediaReport} sharedMedia={sharedMedia} mediaSelectionByAccount={mediaSelectionByAccount} setAccountMediaKeys={setAccountMediaKeys} applyMediaFix={applyMediaFix} applyMediaAction={applyMediaAction} channelWarnings={channelWarnings} channelNotices={channelNotices} igCropByAccount={igCropByAccount} onIgCrop={setIgCrop} templates={COMPOSER_TEMPLATES}
               files={files} setFiles={setFiles} libraryMediaUrls={libraryMediaUrls} setLibraryMediaUrls={setLibraryMediaUrls} onFilesAdded={(incoming) => { void suggestFormatsForAccounts(incoming); }} onEditFile={(file) => { setQuickFile(file); setQuickTool(file.type.startsWith("video/") ? "video" : "image"); }}
-              title={title} setTitle={setTitle} formatForAccount={formatForAccount} formatsByAccount={formatsByAccount} formatOverridesByAccount={formatOverridesByAccount} setAccountFormat={setAccountFormat} platformSettingsByAccount={platformSettingsByAccount} setPlatformSetting={setPlatformSetting}
+              title={title} setTitle={setTitle} formatForAccount={formatForAccount} formatsByAccount={{ ...formatsByAccount, ...Object.fromEntries(selectedAccounts.map((a) => [a.id, formatForAccount(a)])) }} formatOverridesByAccount={formatOverridesByAccount} setAccountFormat={setAccountFormat} platformSettingsByAccount={platformSettingsByAccount} setPlatformSetting={setPlatformSetting}
               date={date} setDate={setDate} time={time} setTime={setTime} timeZone={timeZone} setTimeZone={setTimeZone} timezones={TIMEZONES} minDate={dateInZone(new Date(), timeZone)}
               saving={saving} uploadBusy={uploadBusy} loadingAccounts={loadingAccounts} saveAsDraft={saveAsDraft} submit={(m) => { setScheduleMode(m); void createPost({ preventDefault() {} }, m); }} publishMode={scheduleMode} setPublishMode={setScheduleMode} request={authenticatedFetch} onSetupQueue={() => goToTab("queue")}
               onDiscard={() => { if ((caption || files.length || libraryMediaUrls.length) && !window.confirm("Discard this post?")) return; setCaption(""); setCaptionsByAccount({}); setUseUniversalCaptionByAccount({}); setCaptionMode("universal"); setTitle(""); setFiles([]); setLibraryMediaUrls([]); setChannelFiles({}); setChannelMediaUrlsByAccount({}); setMediaSelectionByAccount({}); setCropOkByAccount({}); setIgCropByAccount({}); setEditingDraftId(""); }}

@@ -29,9 +29,9 @@ function useUrls(items) {
   }), [same]);
   useEffect(() => {
     const live = new Set(same);
-    for (const [f, u] of cache.current) if (!live.has(f)) { URL.revokeObjectURL(u); cache.current.delete(f); }
+    for (const [f, u] of cache.current) if (!live.has(f)) { cache.current.delete(f); setTimeout(() => URL.revokeObjectURL(u), 0); }
   }, [urls]);
-  useEffect(() => () => { for (const u of cache.current.values()) URL.revokeObjectURL(u); cache.current.clear(); }, []);
+  useEffect(() => () => { const pending = [...cache.current.values()]; cache.current.clear(); setTimeout(() => pending.forEach((u) => URL.revokeObjectURL(u)), 0); }, []);
   return urls;
 }
 function Av({ account, size = 40 }) {

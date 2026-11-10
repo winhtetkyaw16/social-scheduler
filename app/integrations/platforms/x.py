@@ -242,19 +242,28 @@ def _upload_call(method: str, url: str, access_token: str, **kwargs) -> dict:
     return body.get("data") or {}
 
 
+# Composer "Who can reply" -> POST /2/tweets reply_settings ("Everyone" = omit the field).
+X_REPLY_SETTINGS = {"Accounts you follow": "following", "Only accounts you mention": "mentionedUsers"}
+
+
 class XPlatform(SocialPlatform):
     """Publish text, photo, GIF and video posts to X."""
 
     platform = "x"
     supports_remote_delete = True
 
-    def publish(self, access_token: str, account_id: str, content: str, media_urls: list[str]) -> ProviderPublishResult:
+    def publish(
+        self, access_token: str, account_id: str, content: str, media_urls: list[str], settings: dict | None = None
+    ) -> ProviderPublishResult:
         """Upload media (if any), create a post and return its X status identifier."""
         media = [str(m) for m in (media_urls or [])]
         problem = x_media_problem(media)
         if problem:
             raise ProviderConfigurationError(problem)
         body: dict = {"text": content}
+        reply_settings = X_REPLY_SETTINGS.get(str((settings or {}).get("reply_permission") or ""))
+        if reply_settings:
+            body["reply_settings"] = reply_settings
         if media:
             ids = []
             for url in media:

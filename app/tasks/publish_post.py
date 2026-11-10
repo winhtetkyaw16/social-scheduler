@@ -44,6 +44,13 @@ def _ig_crop_kwargs(platform: str, metadata) -> dict:
     return {"ig_crop": crop}
 
 
+def _settings_kwargs(metadata) -> dict:
+    """Per-network settings saved by the composer's Platform settings popover."""
+    meta = metadata if isinstance(metadata, dict) else {}
+    settings = meta.get("settings")
+    return {"settings": dict(settings)} if isinstance(settings, dict) and settings else {}
+
+
 @celery_app.task(name="app.tasks.publish_post.publish_post_task")
 def publish_post_task(post_id: str) -> dict[str, str]:
     """Claim a post, call its platform adapter, and persist the outcome.
@@ -173,6 +180,7 @@ def publish_post_task(post_id: str) -> dict[str, str]:
                 post.content,
                 post.media_urls,
                 **_ig_crop_kwargs(account.platform, post.post_metadata),
+                **_settings_kwargs(post.post_metadata),
             )
             # Re-load and write success even if another session touched the row.
             db.refresh(post)

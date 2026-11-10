@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 import os
 
 from app.core.exceptions import ProviderConfigurationError
 from app.integrations.base import ProviderPublishResult, SocialPlatform, provider_delete, provider_request
 from app.integrations.media_urls import guess_media_kind, public_media_url
+
+
+logger = logging.getLogger(__name__)
 
 
 class FacebookPlatform(SocialPlatform):
@@ -15,7 +19,25 @@ class FacebookPlatform(SocialPlatform):
     platform = "facebook"
     supports_remote_delete = True
 
-    def publish(self, access_token: str, account_id: str, content: str, media_urls: list[str]) -> ProviderPublishResult:
+    def publish(
+        self, access_token: str, account_id: str, content: str, media_urls: list[str], settings: dict | None = None
+    ) -> ProviderPublishResult:
+        result = self._publish(access_token, account_id, content, media_urls)
+        first_comment = str((settings or {}).get("first_comment") or "").strip()
+        if first_comment:
+            # Graph API: POST /{object-id}/comments. Best effort: the post is already live, so a failed
+            # comment must not fail (and re-run) the publish.
+            version = os.getenv("FACEBOOK_GRAPH_API_VERSION", "v21.0")
+            try:
+                provider_request(
+                    "POST", f"https://graph.facebook.com/{version}/{result.post_id}/comments",
+                    access_token=access_token, json={"message": first_comment[:8000]},
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Facebook first comment failed for %s: %s", result.post_id, type(exc).__name__)
+        return result
+
+    def _publish(self, access_token: str, account_id: str, content: str, media_urls: list[str]) -> ProviderPublishResult:
         if not account_id or not str(account_id).strip():
             raise ProviderConfigurationError(
                 "Facebook publishing needs a Page or Group id. Personal profiles are not publishable destinations."

@@ -155,6 +155,9 @@ def _providers() -> dict[str, _ProviderOAuth]:
                 "pages_show_list",
                 "pages_manage_posts",
                 "pages_read_engagement",
+                # POST /{post-id}/comments as the Page (first comment). pages_read_user_content is only
+                # needed to read/delete other people's comments, so it is not requested.
+                "pages_manage_engagement",
                 "business_management",
             ),
             use_pkce=False,
@@ -235,7 +238,7 @@ def _providers() -> dict[str, _ProviderOAuth]:
             client_id=threads_id,
             client_secret=threads_secret,
             redirect_uri=config.THREADS_REDIRECT_URI,
-            scopes=("threads_basic", "threads_content_publish"),
+            scopes=("threads_basic", "threads_content_publish", "threads_manage_replies"),
             use_pkce=False,
             missing_env=tuple(
                 name

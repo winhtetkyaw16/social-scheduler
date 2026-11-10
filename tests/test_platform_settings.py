@@ -212,8 +212,8 @@ def test_publish_passes_settings_only_to_adapters_that_take_them(monkeypatch):
     import app.services.media_convert as mc
     monkeypatch.setattr(mc, "prepare_media", lambda platform, media, ig_crop=None: media)
     monkeypatch.setattr(publishing, "get_platform", lambda p: New() if p == "x" else Old())
-    publishing.publish("x", "t", "a", "hi", [], settings={"reply_permission": "Everyone"})
-    publishing.publish("threads", "t", "a", "hi", [], settings={"k": 1})
+    publishing.publish("x", "t", "a", "hi", [], settings={"reply_permission": "Everyone"}, format="Post")
+    publishing.publish("threads", "t", "a", "hi", [], settings={"k": 1}, format="Post")
     assert seen == {"new": {"reply_permission": "Everyone"}, "old": True}
 
 

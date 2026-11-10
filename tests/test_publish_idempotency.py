@@ -44,7 +44,7 @@ def test_duplicate_publish_task_calls_provider_once(client, auth_headers, monkey
             "media_urls": [],
             "scheduled_at": scheduled_at,
             "idempotency_key": uuid4().hex,
-            "post_metadata": {"scheduleMode": "now"},
+            "post_metadata": {"scheduleMode": "now", "format": "Post"},
         },
     )
     assert created.status_code == 200, created.text
@@ -81,7 +81,7 @@ def test_list_posts_reconciles_provider_id_with_scheduled_status(client, auth_he
             "media_urls": [],
             "scheduled_at": scheduled_at,
             "idempotency_key": uuid4().hex,
-            "post_metadata": {},
+            "post_metadata": {"format": "Post"},
         },
     )
     assert created.status_code == 200, created.text

@@ -7,6 +7,7 @@ import httpx
 from app.core.exceptions import ProviderConfigurationError
 from app.integrations.base import ProviderHTTPError, ProviderPublishResult, SocialPlatform
 from app.integrations.media_urls import guess_media_kind, local_upload_path, public_media_url
+from app.services.post_formats import POST, REEL, STORY
 
 _DIRECT_INIT = "https://open.tiktokapis.com/v2/post/publish/video/init/"
 _INBOX_INIT = "https://open.tiktokapis.com/v2/post/publish/inbox/video/init/"
@@ -22,8 +23,19 @@ class TikTokPlatform(SocialPlatform):
     supports_remote_delete = False
 
     def publish(
-        self, access_token: str, account_id: str, content: str, media_urls: list[str], settings: dict | None = None
+        self, access_token: str, account_id: str, content: str, media_urls: list[str],
+        settings: dict | None = None, format: str | None = None,
     ) -> ProviderPublishResult:
+        fmt = (format or "").strip()
+        if fmt == STORY:
+            raise ProviderConfigurationError(
+                "TikTok Story is not part of TikTok's Content Posting API. "
+                "Choose Photo post or Video. Nothing was posted."
+            )
+        if fmt not in {"", POST, REEL}:
+            raise ProviderConfigurationError(
+                f"{fmt} is not available for TikTok. Choose Photo post or Video. Nothing was posted."
+            )
         if not account_id or not str(account_id).strip():
             raise ProviderConfigurationError("TikTok publishing needs the creator open_id from OAuth connect.")
         if not media_urls:
@@ -31,6 +43,14 @@ class TikTokPlatform(SocialPlatform):
                 "TikTok publishing requires exactly one video. Text-only posts are not supported by the Content Posting API."
             )
         kinds = [guess_media_kind(m) for m in media_urls]
+        if fmt == POST and "video" in kinds:
+            raise ProviderConfigurationError(
+                "A TikTok photo post needs photos, not a video. Switch the format to Video. Nothing was posted."
+            )
+        if fmt == REEL and kinds != ["video"]:
+            raise ProviderConfigurationError(
+                "A TikTok video needs exactly one video. It was not posted as a photo post."
+            )
         if all(k == "image" for k in kinds):
             return _publish_photos(access_token, content, media_urls, settings)
         if "image" in kinds:

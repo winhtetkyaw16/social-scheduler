@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { choiceOptions, indicesForChoice, choiceOf, pickerFor, togglePick, rowText, buildFixPlan, planResult, identityLine, fmtDuration } from "./fixPlan.js";
+import { choiceOptions, indicesForChoice, choiceOf, pickerFor, togglePick, rowText, buildFixPlan, planResult, identityLine, fmtDuration, SUPPORTED_FORMATS, autoFormat, effectiveFormat, channelErrors } from "./fixPlan.js";
 import { checkMedia } from "./mediaRules.js";
 
 const P = (n) => ({ kind: "photo", width: 1080, height: 1080, name: `p${n}.jpg` });
@@ -204,4 +204,22 @@ test("schedule popover: Date/Time/Time zone read as inputs (border, radius, padd
   assert.match(css, /\.scd\.dark \.c2 \.c2-whenpop input[^{]*\{border-color:rgba\(255,255,255,\.6\)/);
   assert.match(css, /\.c2-whenpop input:focus-visible/);
   assert.ok(!/\.c2-whenpop[^{]*\.btn[^{]*\{/.test(css), "Done button untouched");
+});
+
+test("auto format never offers YouTube Community, TikTok Story, or Story", () => {
+  assert.deepEqual(SUPPORTED_FORMATS.youtube, ["Reel / Video", "Short"]);
+  assert.deepEqual(SUPPORTED_FORMATS.tiktok, ["Post", "Reel / Video"]);
+  assert.equal(autoFormat("youtube", []), "Reel / Video");
+  assert.equal(autoFormat("youtube", [{ kind: "video", width: 1080, height: 1920 }]), "Short");
+  assert.equal(autoFormat("youtube", [{ kind: "video", width: 1920, height: 1080 }]), "Reel / Video");
+  assert.equal(autoFormat("instagram", [{ kind: "video", width: 1920, height: 1080 }]), "Post");
+  assert.equal(autoFormat("tiktok", [{ kind: "video", width: 1080, height: 1920 }]), "Reel / Video");
+  assert.equal(autoFormat("tiktok", [{ kind: "photo" }]), "Post");
+  for (const platform of Object.keys(SUPPORTED_FORMATS)) {
+    assert.notEqual(autoFormat(platform, [{ kind: "video", width: 1080, height: 1920 }]), "Story");
+  }
+  assert.equal(effectiveFormat({ platform: "youtube", stored: "Reel / Video", overridden: true, infos: [{ kind: "video", width: 1080, height: 1920 }] }), "Reel / Video");
+  assert.equal(channelErrors({ platform: "youtube", format: "Post", text: "hi", hasVideo: true, mediaCount: 1 })[0], "Post is not available for youtube; choose a supported format.");
+  assert.equal(channelErrors({ platform: "tiktok", format: "Story", text: "hi", mediaCount: 1 })[0], "Story is not available for tiktok; choose a supported format.");
+  assert.match(channelErrors({ platform: "facebook", format: "", text: "hi", mediaCount: 1 })[0], /no saved format/);
 });

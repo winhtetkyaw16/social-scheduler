@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { igCropPayload } from "./igFrame.js";
-import { SUPPORTED_FORMATS, channelErrors, effectiveFormat, urlsForSelection } from "./fixPlan.js";
+import { SUPPORTED_FORMATS, autoFormat, channelErrors, effectiveFormat, urlsForSelection } from "./fixPlan.js";
 import { useObjectUrl } from "./objectUrl.js";
 import { accessTokenExpiresAtMs } from "./accessToken.js";
 import { actionIndices, autoSplit, checkMedia, cropIndices, defaultIndices, mediaInfo, mediaKeyOf, selectionFor, splitLabel, igPhotoWarnings } from "./mediaRules.js";
@@ -191,17 +191,14 @@ async function getMediaDimensions(file) {
 }
 
 async function suggestFormatForMedia(files, platform) {
-  const supported = SUPPORTED_FORMATS[platform] || ["Post"];
   const media = Array.from(files || []).filter((file) => file?.type?.startsWith("image/") || file?.type?.startsWith("video/"));
   if (!media.length) return "";
-  const videos = media.filter((file) => file.type.startsWith("video/"));
-  if (!videos.length) return supported.includes("Post") ? "Post" : supported[0];
-  const dimensions = await getMediaDimensions(videos[0]);
-  const vertical = dimensions?.height > dimensions?.width * 1.15;
-  const candidate = vertical && platform === "youtube" ? "Short"
-    : !vertical && (platform === "instagram" || platform === "facebook") ? "Post"
-      : "Reel / Video";
-  return supported.includes(candidate) ? candidate : supported.includes("Post") ? "Post" : supported[0];
+  const infos = [];
+  for (const file of media) {
+    const dims = file.type?.startsWith("video/") ? await getMediaDimensions(file) : null;
+    infos.push(mediaInfo(file, dims));
+  }
+  return autoFormat(platform, infos);
 }
 
 function sessionRemembered() {
@@ -680,7 +677,9 @@ function App() {
   const previewChannel = CHANNELS.find((item) => item.id === previewAccount?.platform) || null;
   // Derived every render from the account's current picks (fixPlan.effectiveFormat) unless the user chose a format.
   const formatForAccount = (account) => effectiveFormat({
-    platform: account?.platform, stored: formatsByAccount[account?.id], overridden: !!formatOverridesByAccount[account?.id],
+    platform: account?.platform,
+    stored: formatsByAccount[account?.id],
+    overridden: !!formatOverridesByAccount[account?.id],
     infos: account ? mediaForAccount(account).map((item) => mediaInfo(item, mediaDims[mediaKeyOf(item)])) : [],
   });
   const setAccountFormat = (accountId, nextFormat) => {
@@ -810,11 +809,11 @@ function App() {
   const channelNotices = useMemo(() => selectedAccounts.flatMap((account) => {
     if (account.platform !== "instagram") return [];
     const media = mediaForAccount(account);
-    const photos = media.filter((m) => !isVideoMedia(m));
     const notices = [];
-    if (media.length === 1 && isVideoMedia(media[0])) notices.push({ account, message: "This video will be published as an Instagram Reel (also shared to the feed)." });
+    // A feed Post with one video is an Instagram Reel that is also shared to the feed. Story and Reel do not use this notice.
+    if (formatForAccount(account) === "Post" && media.length === 1 && isVideoMedia(media[0])) notices.push({ account, message: "This video will be published as an Instagram Reel (also shared to the feed)." });
     return notices;
-  }), [selectedAccounts, captionMode, channelFiles, channelMediaUrlsByAccount, useSharedMediaByAccount, files, libraryMediaUrls, mediaSelectionByAccount]);
+  }), [selectedAccounts, captionMode, channelFiles, channelMediaUrlsByAccount, useSharedMediaByAccount, files, libraryMediaUrls, mediaSelectionByAccount, formatsByAccount, formatOverridesByAccount, mediaDims]);
 
   // Media rules per selected account (mediaRules.js): problems for the panel, muted conversion notes, hints.
   const mediaReport = useMemo(() => selectedAccounts.map((account) => {
@@ -999,7 +998,8 @@ function App() {
       }
       const metadata = {
         caption, title, captionMode, captionsByAccount, useUniversalCaptionByAccount, selectedIds,
-        formatsByAccount: { ...formatsByAccount, ...Object.fromEntries(selectedAccounts.map((a) => [a.id, formatForAccount(a)])) }, formatOverridesByAccount, platformSettingsByAccount,
+        formatsByAccount: { ...formatsByAccount, ...Object.fromEntries(selectedAccounts.map((account) => [account.id, formatForAccount(account)])) },
+        formatOverridesByAccount, platformSettingsByAccount,
         useSharedMediaByAccount, scheduleMode, date, time, timeZone,
         sharedMediaUrls: sharedUrls, channelMediaUrlsByAccount: savedChannelUrls,
         mediaSelectionByAccount: selectionUrls(sharedUrls), cropOkByAccount, igCropByAccount: igCropForDraft(sharedUrls),

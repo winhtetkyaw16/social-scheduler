@@ -328,10 +328,10 @@ def test_publish_sends_cropped_urls_to_instagram(monkeypatch):
 
     monkeypatch.setattr(media_convert, "prepare_media", fake_prepare)
     monkeypatch.setattr(publishing, "get_platform", lambda name: Fake())
-    publishing.publish("instagram", "tok", "acct", "hi", ["/static/uploads/a.png"], ig_crop={"ratio": 1.0})
+    publishing.publish("instagram", "tok", "acct", "hi", ["/static/uploads/a.png"], ig_crop={"ratio": 1.0}, format="Post")
     assert seen["prepare"] == ("instagram", ["/static/uploads/a.png"], {"ratio": 1.0})
     assert seen["adapter"] == ["/static/uploads/a-ig.jpg"]          # Instagram really gets the cropped files
-    publishing.publish("facebook", "tok", "acct", "hi", ["/static/uploads/a.png"], ig_crop={"ratio": 1.0})
+    publishing.publish("facebook", "tok", "acct", "hi", ["/static/uploads/a.png"], ig_crop={"ratio": 1.0}, format="Post")
     assert seen["prepare"][2] is None                               # never forwarded to other networks
 
 
@@ -383,11 +383,11 @@ def test_publish_ig_gets_processed_file_other_network_gets_original_bytes(upload
 
     monkeypatch.setattr(publishing, "get_platform", lambda name: Fake(name))
     crop = {"ratio": 0.8, "offsets": [[0.5, 0.5]], "format": "Post"}
-    for net in ("instagram", "facebook", "x", "linkedin", "threads", "tiktok", "youtube"):
-        publishing.publish(net, "tok", "acct", "hi", [small], ig_crop=crop)
+    for net in ("instagram", "facebook", "x", "linkedin", "threads", "tiktok"):
+        publishing.publish(net, "tok", "acct", "hi", [small], ig_crop=crop, format="Post")
     ig = sent["instagram"][0]
     assert ig != small and digest(ig) != original
     w, h = _open(uploads, ig).size
     assert min(w, h) >= 320 and abs(w / h - 0.8) < 0.01
-    for net in ("facebook", "x", "linkedin", "threads", "tiktok", "youtube"):
+    for net in ("facebook", "x", "linkedin", "threads", "tiktok"):
         assert [digest(u) for u in sent[net]] == [original], net

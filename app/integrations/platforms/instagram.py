@@ -9,6 +9,7 @@ from urllib.parse import urlparse, urlunparse
 from app.core.config import PUBLIC_BASE_URL
 from app.core.exceptions import ProviderConfigurationError
 from app.integrations.media_urls import guess_media_kind
+from app.services.post_formats import POST, REEL, STORY
 from app.integrations.base import ProviderPublishResult, SocialPlatform, provider_delete, provider_request
 
 logger = logging.getLogger(__name__)
@@ -80,7 +81,8 @@ class InstagramPlatform(SocialPlatform):
     supports_remote_delete = True
 
     def publish(
-        self, access_token: str, account_id: str, content: str, media_urls: list[str], settings: dict | None = None
+        self, access_token: str, account_id: str, content: str, media_urls: list[str],
+        settings: dict | None = None, format: str | None = None,
     ) -> ProviderPublishResult:
         """Create the right media container(s), wait for processing, publish, and return Instagram's ID."""
         if not media_urls:
@@ -108,9 +110,46 @@ class InstagramPlatform(SocialPlatform):
                 raise RuntimeError("Instagram did not return a media container identifier")
             return str(container_id)
 
-        if len(media_urls) == 1:
+        fmt = (format or "").strip()
+        # Story and Reel are their own containers. They must not become a feed image, a carousel, or share_to_feed.
+        if fmt == STORY:
+            if len(media_urls) != 1:
+                raise ProviderConfigurationError(
+                    "An Instagram Story needs one photo or one video. It was not published to the feed."
+                )
             url = media_urls[0]
             if _is_video(url):
+                creation_id = create({
+                    "media_type": "STORIES",
+                    "video_url": instagram_image_url(url),
+                })
+                _wait_for_container(graph, access_token, creation_id, "Story")
+            else:
+                creation_id = create({
+                    "media_type": "STORIES",
+                    "image_url": instagram_image_url(url),
+                })
+        elif fmt == REEL:
+            if len(media_urls) != 1 or not _is_video(media_urls[0]):
+                raise ProviderConfigurationError(
+                    "An Instagram Reel needs exactly one video. It was not published as a carousel or feed post."
+                )
+            creation_id = create({
+                "media_type": "REELS",
+                "video_url": instagram_image_url(media_urls[0]),
+                "caption": content,
+                "share_to_feed": True,
+            })
+            _wait_for_container(graph, access_token, creation_id, "Reel")
+        elif fmt not in {"", POST}:
+            raise ProviderConfigurationError(
+                f"{fmt} is not available for Instagram. Choose Post, Reel, or Story. Nothing was published."
+            )
+        elif len(media_urls) == 1:
+            url = media_urls[0]
+            if _is_video(url):
+                # Instagram's content publishing API has no separate feed-video type.
+                # A Post with one video is a Reel that is also shared to the feed. A Story never takes this path.
                 creation_id = create({
                     "media_type": "REELS",
                     "video_url": instagram_image_url(url),

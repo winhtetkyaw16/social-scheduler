@@ -52,9 +52,12 @@ def broker_reachable(timeout: float = 0.5) -> bool:
         return False
 
 
-def _due_post_ids(db, now: datetime, limit: int = 50) -> list[str]:
+def _due_post_ids(db, now: datetime, limit: int = 50) -> list[tuple[str, str | None]]:
+    """Due post ids plus the format saved on each row (passed into the worker)."""
+    from app.services.post_formats import row_format
+
     stmt = (
-        select(ScheduledPost.id)
+        select(ScheduledPost)
         .where(
             ScheduledPost.status.in_(["scheduled", "queued"]),
             ScheduledPost.scheduled_at <= now,
@@ -63,7 +66,7 @@ def _due_post_ids(db, now: datetime, limit: int = 50) -> list[str]:
         .order_by(ScheduledPost.scheduled_at)
         .limit(limit)
     )
-    return [str(pid) for pid in db.scalars(stmt).all()]
+    return [(str(post.id), row_format(post.post_metadata)) for post in db.scalars(stmt).all()]
 
 
 def _fail_stale_publishing(db, now: datetime) -> None:
@@ -100,13 +103,13 @@ def run_due_posts_once(use_celery: bool | None = None) -> int:
     try:
         now = datetime.now(timezone.utc)
         _fail_stale_publishing(db, now)
-        ids = _due_post_ids(db, now)
+        due = _due_post_ids(db, now)
     finally:
         db.close()
     handled = 0
-    for post_id in ids:
+    for post_id, post_format in due:
         try:
-            result = publish_post_task.run(post_id)
+            result = publish_post_task.run(post_id, post_format=post_format)
             handled += 1
             logger.info("Background scheduler processed post %s -> %s", post_id, result.get("status"))
         except Exception:

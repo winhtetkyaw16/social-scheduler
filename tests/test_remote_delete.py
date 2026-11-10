@@ -38,7 +38,7 @@ def _schedule_and_mark_published(client, headers, account, *, provider_post_id="
             "media_urls": ["https://cdn.example.com/clip.mp4"] if account.get("platform") in {"tiktok", "youtube"} else [],
             "scheduled_at": scheduled_at,
             "idempotency_key": uuid4().hex,
-            "post_metadata": {},
+            "post_metadata": {"format": "Reel / Video" if account.get("platform") in {"tiktok", "youtube"} else "Post"},
         },
     )
     assert created.status_code == 200, created.text
@@ -113,7 +113,7 @@ def test_delete_without_provider_id_is_local_only(client, auth_headers, monkeypa
             "media_urls": [],
             "scheduled_at": scheduled_at,
             "idempotency_key": uuid4().hex,
-            "post_metadata": {},
+            "post_metadata": {"format": "Post"},
         },
     )
     assert created.status_code == 200, created.text

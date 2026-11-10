@@ -230,54 +230,25 @@ export function publishBlock({ channelWarnings = [], mediaReport = [] } = {}) {
   return { blocked: ids.size > 0, accounts: ids.size, hint: ids.size ? "Fix the errors above to post" : "" };
 }
 
-/** Formats each network can publish (composer picker + blocking check). */
+/** Formats each network can publish (composer picker + blocking check).
+ * YouTube has no Community post (no Data API create). TikTok has no Story (not in the Content Posting API). */
 export const SUPPORTED_FORMATS = {
   x: ["Post", "Reel / Video"], facebook: ["Post", "Reel / Video", "Story"],
-  instagram: ["Post", "Reel / Video", "Story"], youtube: ["Post", "Reel / Video", "Short"],
-  tiktok: ["Post", "Reel / Video", "Story"], linkedin: ["Post", "Reel / Video"],
+  instagram: ["Post", "Reel / Video", "Story"], youtube: ["Reel / Video", "Short"],
+  tiktok: ["Post", "Reel / Video"], linkedin: ["Post", "Reel / Video"],
   pinterest: ["Post", "Reel / Video"],
   threads: ["Post"],
 };
 
-/** Blocking channel errors that don't depend on files (format, caption, video needed). Shared by the composer and the post panel. */
-export function channelErrors({ platform, label, format = "Post", text = "", limit = Infinity, hasVideo = false, mediaCount = 0 }) {
-  const out = [];
-  if (!(SUPPORTED_FORMATS[platform] || ["Post"]).includes(format)) out.push(`${format} is not available for ${label || platform}; choose a supported format.`);
-  if (!String(text).trim()) out.push("Add a caption for this channel.");
-  if (String(text).length > limit) out.push(`Caption is over this channel’s ${limit.toLocaleString()} character limit.`);
-  if ((format === "Short" || format === "Reel / Video") && !hasVideo) out.push(videoFormatMessage(format));
-  if (format === "Story" && !mediaCount) out.push("Add a photo or video to create this Story.");
-  return out;
-}
-
-/**
- * Blocking errors for an already-saved post (post detail panel), using the same rules as the composer:
- * channelErrors + checkMedia problems, combined by publishBlock. Auto-fixed issues and warnings never block.
- */
-export function savedPostBlock({ account, post, content, limit }) {
-  const md = post?.post_metadata && typeof post.post_metadata === "object" ? post.post_metadata : {};
-  const format = typeof md.format === "string" ? md.format : "Post";
-  const platform = net(account?.platform || "");
-  const urls = (Array.isArray(post?.media_urls) ? post.media_urls : []).map(String);
-  const infos = urls.map((u) => mediaInfo(u));
-  const text = typeof content === "string" ? content : String(post?.content || "");
-  const errs = channelErrors({ platform, format, text, limit, hasVideo: infos.some((m) => m.kind === "video"), mediaCount: infos.length });
-  const acc = account || { id: post?.connected_account_id, platform };
-  const check = checkMedia(platform, infos, { format });
-  const result = publishBlock({ channelWarnings: errs.map((message) => ({ account: acc, message })), mediaReport: [{ account: acc, check }] });
-  return { ...result, messages: [...errs, ...check.problems.map((p) => (typeof p === "string" ? p : p?.title || ""))].filter(Boolean) };
-}
-
-// One wording for the "video format without a video" error, shared with app/services/posts.py publish_problem
-// (422 backstop + worker re-check) so the composer, the API and the worker all say the same, actionable thing.
+// One wording for the "video format without a video" error, shared with app/services/post_formats.py
+// so the composer, the API and the worker all say the same, actionable thing.
 export function videoFormatMessage(format) {
   return format === "Short"
     ? "Please include a video for this Short — tick a video for this account, or remove YouTube Shorts from the post."
     : "Please include a video for this video post — tick a video for this account, or switch the post type to Post.";
 }
 
-// Format the composer picks by itself from the media an account currently uses (same rule as the old
-// suggestFormatForMedia, but synchronous and re-run on every render). infos = mediaInfo() rows.
+// Format the composer picks by itself from the media an account currently uses. Never picks Story.
 export function autoFormat(platform, infos = []) {
   const supported = SUPPORTED_FORMATS[platform] || ["Post"];
   const fallback = supported.includes("Post") ? "Post" : supported[0];
@@ -291,9 +262,39 @@ export function autoFormat(platform, infos = []) {
   return supported.includes(candidate) ? candidate : fallback;
 }
 
-// The format actually used for an account: the user's explicit choice wins; otherwise it is derived live from the
-// media ticked for that account, so unticking every video can never leave a stale "video post" behind.
+// The user's explicit choice wins. Otherwise the format is derived from the media ticked for that account.
 export function effectiveFormat({ platform, stored, overridden, infos = [] }) {
-  if (overridden) return stored || "Post";
+  if (overridden && typeof stored === "string" && stored) return stored;
   return autoFormat(platform, infos);
+}
+
+/** Blocking channel errors that don't depend on files (format, caption, video needed). Shared by the composer and the post panel. */
+export function channelErrors({ platform, label, format = "Post", text = "", limit = Infinity, hasVideo = false, mediaCount = 0 }) {
+  const out = [];
+  const chosen = typeof format === "string" ? format.trim() : "";
+  if (!chosen) out.push("Choose a format before publishing. This post has no saved format.");
+  else if (!(SUPPORTED_FORMATS[platform] || ["Post"]).includes(chosen)) out.push(`${chosen} is not available for ${label || platform}; choose a supported format.`);
+  if (!String(text).trim()) out.push("Add a caption for this channel.");
+  if (String(text).length > limit) out.push(`Caption is over this channel’s ${limit.toLocaleString()} character limit.`);
+  if ((chosen === "Short" || chosen === "Reel / Video") && !hasVideo) out.push(videoFormatMessage(chosen));
+  if (chosen === "Story" && !mediaCount) out.push("Add a photo or video to create this Story.");
+  return out;
+}
+
+/**
+ * Blocking errors for an already-saved post (post detail panel), using the same rules as the composer:
+ * channelErrors + checkMedia problems, combined by publishBlock. Auto-fixed issues and warnings never block.
+ */
+export function savedPostBlock({ account, post, content, limit }) {
+  const md = post?.post_metadata && typeof post.post_metadata === "object" ? post.post_metadata : {};
+  const format = typeof md.format === "string" ? md.format.trim() : "";
+  const platform = net(account?.platform || "");
+  const urls = (Array.isArray(post?.media_urls) ? post.media_urls : []).map(String);
+  const infos = urls.map((u) => mediaInfo(u));
+  const text = typeof content === "string" ? content : String(post?.content || "");
+  const errs = channelErrors({ platform, format, text, limit, hasVideo: infos.some((m) => m.kind === "video"), mediaCount: infos.length });
+  const acc = account || { id: post?.connected_account_id, platform };
+  const check = checkMedia(platform, infos, { format });
+  const result = publishBlock({ channelWarnings: errs.map((message) => ({ account: acc, message })), mediaReport: [{ account: acc, check }] });
+  return { ...result, messages: [...errs, ...check.problems.map((p) => (typeof p === "string" ? p : p?.title || ""))].filter(Boolean) };
 }

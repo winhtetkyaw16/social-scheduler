@@ -6,12 +6,14 @@ import { igChipLabel, igFrameRatio, igNeedsCrop } from "./igFrame.js";
 export const NETWORK = { x: "X", twitter: "X", facebook: "Facebook", instagram: "Instagram", linkedin: "LinkedIn", tiktok: "TikTok", youtube: "YouTube", pinterest: "Pinterest", threads: "Threads" };
 const MB = 1024 * 1024;
 export const LIMITS = {
-  instagram: { carousel: 20, minRatio: 0.8, maxRatio: 1.91, reelMin: 3, reelMax: 900, storyMax: 60 },
+  instagram: { carousel: 20, minRatio: 0.8, maxRatio: 1.91, reelMin: 3, reelMax: 900, storyMin: 3, storyMax: 60, storyAspectMin: 0.1, storyAspectMax: 10, reelAspectMin: 0.01, reelAspectMax: 10 },
   threads: { carousel: 20 },
   linkedin: { photos: 20 },
   x: { photos: 4, minVideoRatio: 1 / 3, maxVideoRatio: 3 },
   tiktok: { photos: 35 },
-  facebook: { photoBytes: 4 * MB },
+  facebook: { photoBytes: 4 * MB, reelMin: 3, reelMax: 90, storyMin: 3, storyMax: 60, reelMinWidth: 540, reelMinHeight: 960 },
+  youtube: { shortMax: 180 },
+  pinterest: { videoMin: 4, videoMax: 300 },
 };
 const VIDEO_EXT = ["mp4", "mov", "webm", "m4v", "ogv", "avi", "mkv"];
 
@@ -38,6 +40,7 @@ const videosOf = (infos) => idx(infos, (m) => m.kind === "video");
 const gifsOf = (infos) => idx(infos, (m) => m.kind === "gif");
 const stills = (infos) => idx(infos, (m) => m.kind !== "video"); // photos + GIFs (still accepted as images on FB/LI/IG)
 const ratio = (m) => (m.width && m.height ? m.width / m.height : null);
+const near916 = (m) => { const r = ratio(m); return r == null ? null : Math.abs(r - 9 / 16) / (9 / 16) <= 0.03; };
 
 /** Which indices of the shared media this network should use by default ("Fix for me"). Keeps the user's order. */
 export function autoSplit(platform, infos, { format = "Post" } = {}) {
@@ -56,7 +59,12 @@ export function autoSplit(platform, infos, { format = "Post" } = {}) {
   if (p === "threads") return all.slice(0, LIMITS.threads.carousel);
   if (p === "youtube") return vids.slice(0, 1);
   if (p === "tiktok") return vids.length ? vids.slice(0, 1) : pics.slice(0, LIMITS.tiktok.photos);
-  if (p === "facebook") return still.length ? still : vids.slice(0, 1);
+  if (p === "facebook") {
+    if (format === "Story") return (still.length ? still : vids).slice(0, 1);
+    if (format === "Reel / Video") return vids.slice(0, 1);
+    return still.length ? still : vids.slice(0, 1);
+  }
+  if (p === "pinterest") return format === "Reel / Video" ? [...vids.slice(0, 1), ...pics.slice(0, 1)] : pics.slice(0, 1);
   if (p === "linkedin") return still.length ? still.slice(0, LIMITS.linkedin.photos) : vids.slice(0, 1);
   if (p === "x") {
     if (pics.length) return pics.slice(0, LIMITS.x.photos);
@@ -101,11 +109,20 @@ export function checkMedia(platform, infos, { format = "Post", igRatio = null } 
       if (!n) problems.push(P("no_media", "Add a photo or video", "A Story needs one photo or one video.", { id: "add_media", label: "Add media" }));
       else if (n > 1) problems.push(P("too_many", "Too many items", "A Story takes one photo or one video.", vids.length ? { id: "use_video", label: "Use the video" } : { id: "use_photo", label: "Use a photo" }));
       const v = n === 1 && vids.length ? infos[vids[0]] : null;
+      if (v && v.duration != null && v.duration < LIMITS.instagram.storyMin) problems.push(P("story_short", "This video is too short for a Story", "Story videos need at least 3 seconds.", still.length ? { id: "use_photo", label: "Use a photo" } : { id: "replace", label: "Pick another" }));
       if (v && v.duration != null && v.duration > LIMITS.instagram.storyMax) problems.push(P("story_long", "This video is too long for a Story", "Story videos can be up to 60 seconds.", still.length ? { id: "use_photo", label: "Use a photo" } : { id: "shorten", label: "Shorten video" }));
+      const storyRatio = v ? ratio(v) : null;
+      if (storyRatio != null && (storyRatio < LIMITS.instagram.storyAspectMin || storyRatio > LIMITS.instagram.storyAspectMax)) problems.push(P("story_ratio", "This video's shape doesn't fit a Story", "Story videos can be between 0.1:1 and 10:1.", { id: "replace", label: "Pick another" }));
+    } else if (format === "Reel / Video") {
+      if (n !== 1 || vids.length !== 1) problems.push(P("reel_count", "A Reel needs exactly one video", "It will not be published as a carousel.", vids.length ? { id: "use_video", label: "Use the video" } : { id: "add_video", label: "Add a video" }));
+      const v = n === 1 && vids.length === 1 ? infos[vids[0]] : null;
+      if (v && v.duration != null && v.duration < LIMITS.instagram.reelMin) problems.push(P("video_short", "This video is too short", "Reels need at least 3 seconds.", { id: "replace", label: "Pick another" }));
+      if (v && v.duration != null && v.duration > LIMITS.instagram.reelMax) problems.push(P("video_long", "This video is too long", "Reels can be up to 15 minutes.", { id: "shorten", label: "Shorten video" }));
+      const reelRatio = v ? ratio(v) : null;
+      if (reelRatio != null && (reelRatio < LIMITS.instagram.reelAspectMin || reelRatio > LIMITS.instagram.reelAspectMax)) problems.push(P("reel_ratio", "This video's shape doesn't fit a Reel", "Reels can be between 0.01:1 and 10:1.", { id: "replace", label: "Pick another" }));
     } else {
       if (!n) problems.push(P("no_media", "Add a photo or video", "Instagram posts need at least one photo or video.", { id: "add_media", label: "Add media" }));
       if (n > LIMITS.instagram.carousel) problems.push(P("too_many", "Too many items", "Carousels take up to 20 photos and videos.", { id: "keep_first", label: "Keep first 20" }));
-      if (format === "Reel / Video" && n && !vids.length) problems.push(P("no_video", "Add a video", "A Reel needs a video.", { id: "add_video", label: "Add a video" }));
       if (n === 1 && vids.length) {
         const d = infos[vids[0]].duration;
         if (d != null && d < LIMITS.instagram.reelMin) problems.push(P("video_short", "This video is too short", "Reels need at least 3 seconds.", { id: "replace", label: "Pick another" }));
@@ -116,6 +133,17 @@ export function checkMedia(platform, infos, { format = "Post", igRatio = null } 
   } else if (p === "facebook") {
     if (mixed) problems.push(P("mixed", "Use photos or the video, not both", "Facebook can't mix photos and a video in one post.", { id: "pick_photos", label: "Pick photos" }));
     else if (vids.length > 1) problems.push(P("too_many", "Too many videos", "Facebook Page posts carry 1 video. Use Fix for me to pick which one.", { id: "use_video", label: "Use the first video" }));
+    if (format === "Story") {
+      if (n !== 1) problems.push(P("story_count", "A Story needs one photo or one video", "It will not be published to the feed.", vids.length ? { id: "use_video", label: "Use the video" } : { id: "use_photo", label: "Use a photo" }));
+      const v = n === 1 && vids.length === 1 ? infos[0] : null;
+      if (v && v.kind === "video" && v.duration != null && (v.duration < LIMITS.facebook.storyMin || v.duration > LIMITS.facebook.storyMax)) problems.push(P("story_long", "This video doesn't fit a Facebook Story", "Video Stories are 3 to 60 seconds and vertical 9:16.", { id: "shorten", label: "Shorten video" }));
+      if (v && v.kind === "video" && v.width && v.height && (near916(v) === false || v.width < LIMITS.facebook.reelMinWidth || v.height < LIMITS.facebook.reelMinHeight)) problems.push(P("story_ratio", "This video's shape doesn't fit a Facebook Story", "Video Stories are vertical 9:16 and at least 540×960.", { id: "replace", label: "Pick another" }));
+    }
+    if (format === "Reel / Video" && vids.length === 1 && !still.length) {
+      const v = infos[vids[0]];
+      if (v.duration != null && (v.duration < LIMITS.facebook.reelMin || v.duration > LIMITS.facebook.reelMax)) problems.push(P("reel_long", "This video doesn't fit a Facebook Reel", "Reels are 3 to 90 seconds, vertical 9:16.", { id: "shorten", label: "Shorten video" }));
+      if (v.width && v.height && (near916(v) === false || v.width < LIMITS.facebook.reelMinWidth || v.height < LIMITS.facebook.reelMinHeight)) problems.push(P("reel_ratio", "This video's shape doesn't fit a Facebook Reel", "Reels are vertical 9:16 and at least 540×960. It will not be published as a Page video.", { id: "replace", label: "Pick another" }));
+    }
   } else if (p === "linkedin") {
     if (mixed) problems.push(P("mixed", "Use photos or the video, not both", "One video, or up to 20 photos.", { id: "pick_photos", label: "Pick photos" }));
     else if (vids.length > 1) problems.push(P("too_many", "Too many videos", "One video, or up to 20 photos.", { id: "use_video", label: "Use the first video" }));
@@ -128,6 +156,7 @@ export function checkMedia(platform, infos, { format = "Post", igRatio = null } 
       if (r != null && (r < LIMITS.x.minVideoRatio || r > LIMITS.x.maxVideoRatio)) problems.push(P("x_ratio", "This video's shape doesn't fit X", "X takes videos from tall 1:3 to wide 3:1.", pics.length ? { id: "keep_photos", label: "Use photos" } : { id: "replace", label: "Pick another" }));
     });
   } else if (p === "tiktok") {
+    if (format === "Story") problems.push(P("unsupported", "TikTok Story isn't available", "TikTok's posting API has photo posts and videos only. Choose one of those.", { id: "use_video", label: "Use the video" }));
     if (!n) problems.push(P("no_media", "Add a video or photos", "TikTok posts one video, or up to 35 photos.", { id: "add_video", label: "Add a video" }));
     else if (mixed || gifs.length) problems.push(P("mixed", "Use photos or the video, not both", "TikTok posts one video, or up to 35 photos.", vids.length ? { id: "use_video", label: "Use the video" } : { id: "use_photos", label: "Use photos" }));
     else if (vids.length > 1) problems.push(P("too_many", "Too many videos", "TikTok posts one video, or up to 35 photos.", { id: "use_video", label: "Use the video" }));
@@ -136,7 +165,17 @@ export function checkMedia(platform, infos, { format = "Post", igRatio = null } 
     if (!vids.length) problems.push(P("no_video", "Add a video", "YouTube posts need a video.", { id: "add_video", label: "Add a video" }));
     const v = vids.length ? infos[vids[0]] : null;
     const r = v ? ratio(v) : null;
-    if (r != null && Math.abs(r - 16 / 9) > 0.05 && Math.abs(r - 9 / 16) > 0.05) hints.push("16:9 or 9:16 looks best on YouTube.");
+    if (format === "Short") {
+      if (v && v.duration != null && v.duration > LIMITS.youtube.shortMax) problems.push(P("short_long", "This video is too long for a Short", "Shorts are square or vertical and at most 3 minutes. YouTube has no setting that forces a Short.", { id: "shorten", label: "Shorten video" }));
+      if (r != null && r > 1) problems.push(P("short_landscape", "This video is too wide for a Short", "Shorts must be square or vertical. YouTube has no setting that forces a Short, so choose Video to post it as a regular video.", { id: "replace", label: "Pick another" }));
+      hints.push("YouTube classifies Shorts after upload (square or vertical, up to 3 minutes). There is no setting that forces a Short.");
+    } else if (r != null && Math.abs(r - 16 / 9) > 0.05 && Math.abs(r - 9 / 16) > 0.05) hints.push("16:9 or 9:16 looks best on YouTube.");
+  } else if (p === "pinterest") {
+    if (format === "Reel / Video") {
+      if (vids.length !== 1 || pics.length !== 1) problems.push(P("pin_cover", "A Video Pin needs a video and a cover image", "Pinterest requires a cover image. Nothing is pinned without both.", vids.length ? { id: "add_media", label: "Add a cover" } : { id: "add_video", label: "Add a video" }));
+      const v = vids.length === 1 ? infos[vids[0]] : null;
+      if (v && v.duration != null && (v.duration < LIMITS.pinterest.videoMin || v.duration > LIMITS.pinterest.videoMax)) problems.push(P("pin_long", "This video doesn't fit a Video Pin", "Video Pins are 4 seconds to 5 minutes.", { id: "shorten", label: "Shorten video" }));
+    } else if (vids.length) problems.push(P("pin_video", "Choose Video Pin for a video", "A photo Pin was not created.", { id: "use_photo", label: "Use a photo" }));
   } else if (p === "threads") {
     if (n > LIMITS.threads.carousel) problems.push(P("too_many", "Too many items", "Threads carousels take up to 20 items.", { id: "keep_first", label: "Keep first 20" }));
   }

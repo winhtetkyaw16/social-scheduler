@@ -165,6 +165,31 @@ test("Instagram: small photos are fixed at publish, only unreadable files show a
   assert.match(igPhotoWarnings({ which: "Photo 4", loaded: true, dims: null })[0], /Photo 4 can't be opened/);
 });
 
+test("format limits mirror the publisher rules", () => {
+  const vertical = (d) => vid(d, 1080, 1920);
+  assert.deepEqual(codes(checkMedia("facebook", [vertical(3)], { format: "Reel / Video" })), []);
+  assert.deepEqual(codes(checkMedia("facebook", [vertical(90)], { format: "Reel / Video" })), []);
+  assert.ok(codes(checkMedia("facebook", [vertical(2)], { format: "Reel / Video" })).includes("reel_long"));
+  assert.ok(codes(checkMedia("facebook", [vertical(91)], { format: "Reel / Video" })).includes("reel_long"));
+  assert.ok(codes(checkMedia("facebook", [vid(10, 1920, 1080)], { format: "Reel / Video" })).includes("reel_ratio"));
+  assert.deepEqual(codes(checkMedia("facebook", [vertical(60)], { format: "Story" })), []);
+  assert.ok(codes(checkMedia("facebook", [vertical(61)], { format: "Story" })).includes("story_long"));
+  assert.deepEqual(codes(checkMedia("instagram", [vertical(3)], { format: "Story" })), []);
+  assert.ok(codes(checkMedia("instagram", [vertical(2)], { format: "Story" })).includes("story_short"));
+  assert.deepEqual(codes(checkMedia("instagram", [vertical(10), vertical(12)], { format: "Reel / Video" })), ["reel_count"]);
+  assert.deepEqual(codes(checkMedia("instagram", [vertical(900)], { format: "Reel / Video" })), []);
+  assert.ok(codes(checkMedia("instagram", [vertical(901)], { format: "Reel / Video" })).includes("video_long"));
+  assert.deepEqual(codes(checkMedia("youtube", [vid(180, 1080, 1080)], { format: "Short" })), []);
+  assert.ok(codes(checkMedia("youtube", [vid(181, 1080, 1920)], { format: "Short" })).includes("short_long"));
+  assert.ok(codes(checkMedia("youtube", [vid(20, 1920, 1080)], { format: "Short" })).includes("short_landscape"));
+  assert.ok(checkMedia("youtube", [vid(20, 1080, 1920)], { format: "Short" }).hints.some((hint) => /no setting that forces a Short/.test(hint)));
+  assert.deepEqual(codes(checkMedia("pinterest", [vertical(4), pic()], { format: "Reel / Video" })), []);
+  assert.deepEqual(codes(checkMedia("pinterest", [vertical(300), pic()], { format: "Reel / Video" })), []);
+  assert.ok(codes(checkMedia("pinterest", [vertical(3), pic()], { format: "Reel / Video" })).includes("pin_long"));
+  assert.ok(codes(checkMedia("pinterest", [vertical(10)], { format: "Reel / Video" })).includes("pin_cover"));
+  assert.ok(codes(checkMedia("tiktok", [vertical(10)], { format: "Story" })).includes("unsupported"));
+});
+
 test("facebook 2 videos says 1 video + Fix for me; a real mix keeps the mix message", () => {
   const two = checkMedia("facebook", [{ kind: "video" }, { kind: "video" }]);
   assert.ok(two.problems.some((p) => p.detail === "Facebook Page posts carry 1 video. Use Fix for me to pick which one."));

@@ -9,6 +9,8 @@ import httpx
 from app.core.exceptions import ProviderConfigurationError
 from app.integrations.base import ProviderHTTPError, ProviderPublishResult, SocialPlatform, provider_delete
 from app.integrations.media_urls import guess_media_kind, local_upload_path, public_media_url
+from app.services.media_probe import measure_bytes
+from app.services.post_formats import POST, REEL, SHORT, short_problem
 
 
 
@@ -46,8 +48,19 @@ class YouTubePlatform(SocialPlatform):
     supports_remote_delete = True
 
     def publish(
-        self, access_token: str, account_id: str, content: str, media_urls: list[str], settings: dict | None = None
+        self, access_token: str, account_id: str, content: str, media_urls: list[str],
+        settings: dict | None = None, format: str | None = None,
     ) -> ProviderPublishResult:
+        fmt = (format or "").strip()
+        if fmt == POST:
+            raise ProviderConfigurationError(
+                "YouTube Community posts are not available through YouTube's API. "
+                "Choose Video or Short. Nothing was uploaded."
+            )
+        if fmt not in {"", REEL, SHORT}:
+            raise ProviderConfigurationError(
+                f"{fmt} is not available for YouTube. Choose Video or Short. Nothing was uploaded."
+            )
         if not account_id or not str(account_id).strip():
             raise ProviderConfigurationError("YouTube publishing needs a Channel id from OAuth connect.")
         if not media_urls:
@@ -60,6 +73,11 @@ class YouTubePlatform(SocialPlatform):
             raise ProviderConfigurationError("YouTube publishing requires a video, not an image.")
 
         video_bytes, content_type = _load_video_bytes(media_urls[0])
+        if fmt == SHORT:
+            # Classification only. videos.insert has no Shorts flag and this does not add #Shorts.
+            problem = short_problem(measure_bytes(video_bytes))
+            if problem:
+                raise ProviderConfigurationError(problem)
         title, description = _title_and_description(content)
         metadata = {
             "snippet": {

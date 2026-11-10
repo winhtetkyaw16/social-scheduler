@@ -51,8 +51,22 @@ def _settings_kwargs(metadata) -> dict:
     return {"settings": dict(settings)} if isinstance(settings, dict) and settings else {}
 
 
+def stored_format(post_id: str) -> str | None:
+    """Format saved on the row. Used by dispatchers so the queue payload carries it."""
+    from app.services.post_formats import row_format
+
+    db = SessionLocal()
+    try:
+        post = db.get(ScheduledPost, UUID(post_id))
+        if post is None:
+            return None
+        return row_format(post.post_metadata)
+    finally:
+        db.close()
+
+
 @celery_app.task(name="app.tasks.publish_post.publish_post_task")
-def publish_post_task(post_id: str) -> dict[str, str]:
+def publish_post_task(post_id: str, post_format: str | None = None) -> dict[str, str]:
     """Claim a post, call its platform adapter, and persist the outcome.
 
     Claim uses a conditional UPDATE so SQLite (no FOR UPDATE) and double
@@ -102,8 +116,18 @@ def publish_post_task(post_id: str) -> dict[str, str]:
         # scheduled before the composer checks existed never reach the network with media it would reject.
         from app.services.posts import publish_problem
 
+        from app.services.post_formats import row_format
+
         meta = post.post_metadata if isinstance(post.post_metadata, dict) else {}
-        problem = publish_problem(account.platform, list(post.media_urls or []), post.content, meta.get("format"))
+        # The row is the source of truth. A queue payload must not fill in a missing format
+        # or override an edit that landed after dispatch.
+        chosen = row_format(meta)
+        if isinstance(post_format, str) and post_format.strip() and chosen and post_format.strip() != chosen:
+            logger.info(
+                "Dispatch format %s differs from saved format %s for post %s; using the saved format",
+                post_format, chosen, post.id,
+            )
+        problem = publish_problem(account.platform, list(post.media_urls or []), post.content, chosen)
         if problem:
             now = datetime.now(timezone.utc)
             post.status = "failed"
@@ -179,6 +203,7 @@ def publish_post_task(post_id: str) -> dict[str, str]:
                 account.platform_account_id,
                 post.content,
                 post.media_urls,
+                format=chosen,
                 **_ig_crop_kwargs(account.platform, post.post_metadata),
                 **_settings_kwargs(post.post_metadata),
             )
@@ -214,7 +239,9 @@ def publish_post_task(post_id: str) -> dict[str, str]:
             db.commit()
             if will_retry:
                 try:
-                    publish_post_task.apply_async(args=[post_id], countdown=min(300, 2**attempt * 5))
+                    publish_post_task.apply_async(
+                        args=[post_id], kwargs={"post_format": chosen}, countdown=min(300, 2**attempt * 5)
+                    )
                 except Exception as queue_error:
                     # Leave it queued; the periodic dispatcher reclaims stale
                     # queued work after the broker becomes reachable again.

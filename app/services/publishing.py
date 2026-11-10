@@ -18,33 +18,49 @@ class PublishingError(Exception):
 PublishResult = ProviderPublishResult
 
 
-def _accepts_settings(fn) -> bool:
-    """True when the adapter's publish() takes the per-network composer settings."""
+def _accepts_param(fn, name: str) -> bool:
+    """True when the adapter's publish() takes this keyword."""
     import inspect
 
     try:
-        return "settings" in inspect.signature(fn).parameters
+        return name in inspect.signature(fn).parameters
     except (TypeError, ValueError):
         return False
 
 
+def _accepts_settings(fn) -> bool:
+    """True when the adapter's publish() takes the per-network composer settings."""
+    return _accepts_param(fn, "settings")
+
+
 def publish(
     platform: str, access_token: str, account_id: str, content: str, media_urls: list[str], *, ig_crop: dict | None = None,
-    settings: dict | None = None,
+    settings: dict | None = None, format: str | None = None,
 ) -> PublishResult:
     """Publish through the registered platform adapter with normalized errors.
+
+    ``format`` is the composer choice (Post, Reel / Video, Story, Short). It is checked
+    before any provider call and forwarded to every adapter that accepts it. A missing
+    format is not treated as a feed post.
 
     Media is first run through the automatic per-network conversions (JPG for Instagram, WebP for
     LinkedIn/Facebook, PNG for TikTok photos, large Facebook photos, MOV->MP4 for LinkedIn with ffmpeg).
     """
     from app.services.media_convert import prepare_media
+    from app.services.posts import publish_problem
 
+    problem = publish_problem(platform, media_urls, content, format)
+    if problem:
+        raise PublishingError(problem, code="format_invalid", retryable=False)
     media_urls = prepare_media(platform, media_urls, ig_crop=ig_crop if platform == "instagram" else None)
     try:
         adapter = get_platform(platform)
+        kwargs: dict = {}
         if settings and _accepts_settings(adapter.publish):
-            return adapter.publish(access_token, account_id, content, media_urls, settings=dict(settings))
-        return adapter.publish(access_token, account_id, content, media_urls)
+            kwargs["settings"] = dict(settings)
+        if _accepts_param(adapter.publish, "format"):
+            kwargs["format"] = format
+        return adapter.publish(access_token, account_id, content, media_urls, **kwargs)
     except ProviderHTTPError as exc:
         retryable = exc.status_code == 429 or exc.status_code >= 500
         raise PublishingError(

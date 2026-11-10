@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { ChevronDown, Expand, Facebook, Globe2, GripVertical, Hash, Instagram, Link2, Linkedin, MapPin, MessageCircle, Pencil, Settings2, Shrink, Smile, Sparkles, Video, X, Youtube } from "lucide-react";
 import EmojiPicker from "./EmojiPicker.jsx";
 import { openDraft, updateDraft, isDraftDirty, commitDraft, UNSUPPORTED_FIELDS } from "./settingsDraft.js";
+import { SUPPORTED_FORMATS } from "./fixPlan.js";
 import { AccountAvatar } from "./ManageAccounts.jsx";
 import facebookPng from "./assets/logos/facebook.svg";
 import instagramPng from "./assets/logos/instagram.svg";
@@ -24,15 +25,22 @@ const CHANNEL_UI = {
   tiktok: { label: "TikTok", brand: "#111827", mark: "♪" },
   pinterest: { label: "Pinterest", brand: "#BD081C", mark: "p" },
 };
-const FORMAT_SUPPORT = {
-  x: [{ value: "Post", label: "Post" }, { value: "Reel / Video", label: "Video" }],
-  facebook: [{ value: "Post", label: "Post" }, { value: "Reel / Video", label: "Reel / video" }, { value: "Story", label: "Story" }],
-  instagram: [{ value: "Post", label: "Post" }, { value: "Reel / Video", label: "Reel" }, { value: "Story", label: "Story" }],
-  youtube: [{ value: "Post", label: "Community post" }, { value: "Reel / Video", label: "Video" }, { value: "Short", label: "Short" }],
-  tiktok: [{ value: "Post", label: "Photo post" }, { value: "Reel / Video", label: "Video" }, { value: "Story", label: "Story" }],
-  linkedin: [{ value: "Post", label: "Post" }, { value: "Reel / Video", label: "Video" }],
-  pinterest: [{ value: "Post", label: "Pin" }, { value: "Reel / Video", label: "Video Pin" }],
+const FORMAT_LABEL = {
+  x: { Post: "Post", "Reel / Video": "Video" },
+  facebook: { Post: "Post", "Reel / Video": "Reel / video", Story: "Story" },
+  instagram: { Post: "Post", "Reel / Video": "Reel", Story: "Story" },
+  youtube: { "Reel / Video": "Video", Short: "Short" },
+  tiktok: { Post: "Photo post", "Reel / Video": "Video" },
+  linkedin: { Post: "Post", "Reel / Video": "Video" },
+  pinterest: { Post: "Pin", "Reel / Video": "Video Pin" },
+  threads: { Post: "Post" },
 };
+
+function formatOptions(platform) {
+  const values = SUPPORTED_FORMATS[platform] || ["Post"];
+  const labels = FORMAT_LABEL[platform] || {};
+  return values.map((value) => ({ value, label: labels[value] || value }));
+}
 
 const BRAND_PNGS = { facebook: facebookPng, instagram: instagramPng, linkedin: linkedinPng, pinterest: pinterestPng, tiktok: tiktokPng, x: xPng, youtube: youtubePng, threads: threadsPng };
 
@@ -59,16 +67,18 @@ function ChannelFileThumb({ file, onRemove, onEdit, onDragStart, onDragOver, onD
 }
 
 export function ChannelFormatSelector({ account, format, automatic, onSelect }) {
-  const options = FORMAT_SUPPORT[account?.platform] || [{ value: "Post", label: "Post" }];
+  const options = formatOptions(account?.platform);
+  const known = options.some((option) => option.value === format);
   return (
     <label className="inline-flex shrink-0 items-center gap-1.5 text-[9px] font-bold text-slate-500">
       <span className="sr-only">Publish format for {CHANNEL_UI[account?.platform]?.label || "channel"}</span>
       <span className="relative block">
         <select
-          value={format}
+          value={known ? format : (format || options[0]?.value || "Post")}
           onChange={(event) => onSelect?.(event.target.value)}
           className="max-w-[132px] appearance-none rounded-xl border border-slate-200/80 bg-white/90 py-2 pl-3 pr-8 text-[10px] font-bold text-slate-700 shadow-sm outline-none backdrop-blur-md transition focus:border-indigo-400 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-900/90 dark:text-slate-200"
         >
+          {!known && format ? <option value={format}>{format} (not available)</option> : null}
           {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
         </select>
         <ChevronDown aria-hidden="true" size={12} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" />

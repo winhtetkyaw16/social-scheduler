@@ -42,14 +42,25 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(
-            ["user_id"], ["users.id"], name=op.f("fk_connected_accounts_user_id_users"), ondelete="CASCADE"
+            ["user_id"],
+            ["users.id"],
+            name=op.f("fk_connected_accounts_user_id_users"),
+            ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_connected_accounts")),
         sa.UniqueConstraint(
-            "user_id", "platform", "platform_account_id", name="uq_connected_account_owner_platform_identity"
+            "user_id",
+            "platform",
+            "platform_account_id",
+            name="uq_connected_account_owner_platform_identity",
         ),
     )
-    op.create_index("ix_connected_accounts_user_platform", "connected_accounts", ["user_id", "platform"], unique=False)
+    op.create_index(
+        "ix_connected_accounts_user_platform",
+        "connected_accounts",
+        ["user_id", "platform"],
+        unique=False,
+    )
 
     op.create_table(
         "scheduled_posts",
@@ -75,7 +86,8 @@ def upgrade() -> None:
             name=op.f("ck_scheduled_posts_valid_status"),
         ),
         sa.CheckConstraint(
-            "attempt_count >= 0 AND max_attempts > 0", name=op.f("ck_scheduled_posts_valid_attempt_limits")
+            "attempt_count >= 0 AND max_attempts > 0",
+            name=op.f("ck_scheduled_posts_valid_attempt_limits"),
         ),
         sa.ForeignKeyConstraint(
             ["connected_account_id"],
@@ -84,13 +96,25 @@ def upgrade() -> None:
             ondelete="RESTRICT",
         ),
         sa.ForeignKeyConstraint(
-            ["user_id"], ["users.id"], name=op.f("fk_scheduled_posts_user_id_users"), ondelete="CASCADE"
+            ["user_id"],
+            ["users.id"],
+            name=op.f("fk_scheduled_posts_user_id_users"),
+            ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_scheduled_posts")),
-        sa.UniqueConstraint("idempotency_key", name=op.f("uq_scheduled_posts_idempotency_key")),
+        sa.UniqueConstraint(
+            "idempotency_key", name=op.f("uq_scheduled_posts_idempotency_key")
+        ),
     )
-    op.create_index("ix_posts_due", "scheduled_posts", ["status", "scheduled_at"], unique=False)
-    op.create_index("ix_posts_user_created", "scheduled_posts", ["user_id", "created_at"], unique=False)
+    op.create_index(
+        "ix_posts_due", "scheduled_posts", ["status", "scheduled_at"], unique=False
+    )
+    op.create_index(
+        "ix_posts_user_created",
+        "scheduled_posts",
+        ["user_id", "created_at"],
+        unique=False,
+    )
 
     op.create_table(
         "execution_logs",
@@ -110,7 +134,9 @@ def upgrade() -> None:
             "outcome IN ('started','succeeded','retrying','failed','skipped')",
             name=op.f("ck_execution_logs_valid_outcome"),
         ),
-        sa.CheckConstraint("attempt_number > 0", name=op.f("ck_execution_logs_positive_attempt_number")),
+        sa.CheckConstraint(
+            "attempt_number > 0", name=op.f("ck_execution_logs_positive_attempt_number")
+        ),
         sa.ForeignKeyConstraint(
             ["scheduled_post_id"],
             ["scheduled_posts.id"],
@@ -120,7 +146,10 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id", name=op.f("pk_execution_logs")),
     )
     op.create_index(
-        "ix_execution_logs_post_created", "execution_logs", ["scheduled_post_id", "created_at"], unique=False
+        "ix_execution_logs_post_created",
+        "execution_logs",
+        ["scheduled_post_id", "created_at"],
+        unique=False,
     )
 
 
@@ -130,7 +159,9 @@ def downgrade() -> None:
     op.drop_index("ix_posts_user_created", table_name="scheduled_posts")
     op.drop_index("ix_posts_due", table_name="scheduled_posts")
     op.drop_table("scheduled_posts")
-    op.drop_index("ix_connected_accounts_user_platform", table_name="connected_accounts")
+    op.drop_index(
+        "ix_connected_accounts_user_platform", table_name="connected_accounts"
+    )
     op.drop_table("connected_accounts")
     op.drop_index("ix_users_email", table_name="users")
     op.drop_table("users")

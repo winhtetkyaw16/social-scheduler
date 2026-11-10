@@ -76,8 +76,14 @@ def local_upload_path(url: str) -> Path | None:
 def guess_media_kind(url: str) -> str:
     """Return 'image', 'video', or 'unknown' from the URL extension."""
     path = urlparse(url).path.lower() if "://" in url else url.lower()
-    if any(path.endswith(ext) for ext in (".mp4", ".mov", ".m4v", ".webm", ".ogv", ".avi", ".mkv")):
+    if any(
+        path.endswith(ext)
+        for ext in (".mp4", ".mov", ".m4v", ".webm", ".ogv", ".avi", ".mkv")
+    ):
         return "video"
-    if any(path.endswith(ext) for ext in (".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".avif")):
+    if any(
+        path.endswith(ext)
+        for ext in (".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".avif")
+    ):
         return "image"
     return "unknown"

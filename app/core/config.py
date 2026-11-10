@@ -1,3 +1,9 @@
+"""Process environment for the API, OAuth apps, and the scheduler.
+
+Values are read once at import. load_dotenv does not override variables
+already set in the process, so tests and Docker win over .env.
+"""
+
 import os
 from pathlib import Path
 
@@ -22,51 +28,80 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
 INSTAGRAM_CLIENT_ID = os.getenv("INSTAGRAM_CLIENT_ID", "")
 INSTAGRAM_CLIENT_SECRET = os.getenv("INSTAGRAM_CLIENT_SECRET", "")
-INSTAGRAM_REDIRECT_URI = (os.getenv("INSTAGRAM_REDIRECT_URI") or f"{PUBLIC_BASE_URL}/api/v1/accounts/instagram/callback")
+INSTAGRAM_REDIRECT_URI = (
+    os.getenv("INSTAGRAM_REDIRECT_URI")
+    or f"{PUBLIC_BASE_URL}/api/v1/accounts/instagram/callback"
+)
 INSTAGRAM_GRAPH_API_VERSION = os.getenv("INSTAGRAM_GRAPH_API_VERSION", "v24.0")
 # Facebook Login for Business configuration (permissions are defined by the config, not scope=).
 INSTAGRAM_CONFIG_ID = os.getenv("INSTAGRAM_CONFIG_ID", "")
 
 LINKEDIN_CLIENT_ID = os.getenv("LINKEDIN_CLIENT_ID", "")
 LINKEDIN_CLIENT_SECRET = os.getenv("LINKEDIN_CLIENT_SECRET", "")
-LINKEDIN_REDIRECT_URI = (os.getenv("LINKEDIN_REDIRECT_URI") or f"{PUBLIC_BASE_URL}/api/v1/accounts/linkedin/callback")
+LINKEDIN_REDIRECT_URI = (
+    os.getenv("LINKEDIN_REDIRECT_URI")
+    or f"{PUBLIC_BASE_URL}/api/v1/accounts/linkedin/callback"
+)
 LINKEDIN_VERSION = os.getenv("LINKEDIN_VERSION", "202610")
 
 X_CLIENT_ID = os.getenv("X_CLIENT_ID", "")
 X_CLIENT_SECRET = os.getenv("X_CLIENT_SECRET", "")
-X_REDIRECT_URI = (os.getenv("X_REDIRECT_URI") or f"{PUBLIC_BASE_URL}/api/v1/accounts/x/callback")
+X_REDIRECT_URI = (
+    os.getenv("X_REDIRECT_URI") or f"{PUBLIC_BASE_URL}/api/v1/accounts/x/callback"
+)
 
 FACEBOOK_CLIENT_ID = os.getenv("FACEBOOK_CLIENT_ID", "")
 FACEBOOK_CLIENT_SECRET = os.getenv("FACEBOOK_CLIENT_SECRET", "")
-FACEBOOK_REDIRECT_URI = (os.getenv("FACEBOOK_REDIRECT_URI") or f"{PUBLIC_BASE_URL}/api/v1/accounts/facebook/callback")
+FACEBOOK_REDIRECT_URI = (
+    os.getenv("FACEBOOK_REDIRECT_URI")
+    or f"{PUBLIC_BASE_URL}/api/v1/accounts/facebook/callback"
+)
 FACEBOOK_GRAPH_API_VERSION = os.getenv("FACEBOOK_GRAPH_API_VERSION", "v21.0")
 
 YOUTUBE_CLIENT_ID = os.getenv("YOUTUBE_CLIENT_ID", "")
 YOUTUBE_CLIENT_SECRET = os.getenv("YOUTUBE_CLIENT_SECRET", "")
-YOUTUBE_REDIRECT_URI = (os.getenv("YOUTUBE_REDIRECT_URI") or f"{PUBLIC_BASE_URL}/api/v1/accounts/youtube/callback")
+YOUTUBE_REDIRECT_URI = (
+    os.getenv("YOUTUBE_REDIRECT_URI")
+    or f"{PUBLIC_BASE_URL}/api/v1/accounts/youtube/callback"
+)
 
 TIKTOK_CLIENT_KEY = os.getenv("TIKTOK_CLIENT_KEY", "")
 TIKTOK_CLIENT_SECRET = os.getenv("TIKTOK_CLIENT_SECRET", "")
-TIKTOK_REDIRECT_URI = (os.getenv("TIKTOK_REDIRECT_URI") or f"{PUBLIC_BASE_URL}/api/v1/accounts/tiktok/callback")
+TIKTOK_REDIRECT_URI = (
+    os.getenv("TIKTOK_REDIRECT_URI")
+    or f"{PUBLIC_BASE_URL}/api/v1/accounts/tiktok/callback"
+)
 
 PINTEREST_CLIENT_ID = os.getenv("PINTEREST_CLIENT_ID", "")
 PINTEREST_CLIENT_SECRET = os.getenv("PINTEREST_CLIENT_SECRET", "")
-PINTEREST_REDIRECT_URI = (os.getenv("PINTEREST_REDIRECT_URI") or f"{PUBLIC_BASE_URL}/api/v1/accounts/pinterest/callback")
+PINTEREST_REDIRECT_URI = (
+    os.getenv("PINTEREST_REDIRECT_URI")
+    or f"{PUBLIC_BASE_URL}/api/v1/accounts/pinterest/callback"
+)
 
 THREADS_CLIENT_ID = os.getenv("THREADS_CLIENT_ID", "")
 THREADS_CLIENT_SECRET = os.getenv("THREADS_CLIENT_SECRET", "")
-THREADS_REDIRECT_URI = (os.getenv("THREADS_REDIRECT_URI") or f"{PUBLIC_BASE_URL}/api/v1/accounts/threads/callback")
+THREADS_REDIRECT_URI = (
+    os.getenv("THREADS_REDIRECT_URI")
+    or f"{PUBLIC_BASE_URL}/api/v1/accounts/threads/callback"
+)
 THREADS_API_VERSION = os.getenv("THREADS_API_VERSION", "v1.0")
 
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", REDIS_URL)
 CELERY_RESULT_BACKEND = None
 POST_MAX_ATTEMPTS = int(os.getenv("POST_MAX_ATTEMPTS", "5"))
 SCHEDULER_POLL_SECONDS = int(os.getenv("SCHEDULER_POLL_SECONDS", "30"))
-ALLOWED_ORIGINS = [value.strip() for value in os.getenv("ALLOWED_ORIGINS", "").split(",") if value.strip()]
+ALLOWED_ORIGINS = [
+    value.strip()
+    for value in os.getenv("ALLOWED_ORIGINS", "").split(",")
+    if value.strip()
+]
 
 if APP_ENV == "production":
     if len(SECRET_KEY) < 32 or SECRET_KEY == "development-only-change-me":
-        raise RuntimeError("Set a strong SECRET_KEY (at least 32 characters) in production")
+        raise RuntimeError(
+            "Set a strong SECRET_KEY (at least 32 characters) in production"
+        )
     if not TOKEN_ENCRYPTION_KEY or TOKEN_ENCRYPTION_KEY.startswith("REPLACE_"):
         raise RuntimeError("Set TOKEN_ENCRYPTION_KEY in production")
     if not ALLOWED_ORIGINS or "*" in ALLOWED_ORIGINS:

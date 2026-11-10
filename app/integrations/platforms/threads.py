@@ -8,10 +8,14 @@ import time
 import httpx
 
 from app.core.exceptions import ProviderConfigurationError
-from app.integrations.base import ProviderPublishResult, SocialPlatform, provider_delete, provider_request
+from app.integrations.base import (
+    ProviderPublishResult,
+    SocialPlatform,
+    provider_delete,
+    provider_request,
+)
 from app.integrations.media_urls import guess_media_kind, public_media_url
 from app.services.post_formats import POST
-
 
 MAX_CAROUSEL_ITEMS = 20
 _sleep = time.sleep
@@ -26,7 +30,9 @@ THREADS_REPLY_CONTROL = {
 
 
 def threads_reply_control(settings: dict | None) -> str | None:
-    value = THREADS_REPLY_CONTROL.get(str((settings or {}).get("reply_control") or "Everyone"))
+    value = THREADS_REPLY_CONTROL.get(
+        str((settings or {}).get("reply_control") or "Everyone")
+    )
     return None if value in (None, "everyone") else value
 
 
@@ -37,8 +43,13 @@ class ThreadsPlatform(SocialPlatform):
     supports_remote_delete = True
 
     def publish(
-        self, access_token: str, account_id: str, content: str, media_urls: list[str],
-        settings: dict | None = None, format: str | None = None,
+        self,
+        access_token: str,
+        account_id: str,
+        content: str,
+        media_urls: list[str],
+        settings: dict | None = None,
+        format: str | None = None,
     ) -> ProviderPublishResult:
         fmt = (format or "").strip()
         if fmt not in {"", POST}:
@@ -46,12 +57,18 @@ class ThreadsPlatform(SocialPlatform):
                 f"{fmt} is not available for Threads. Choose Post. Nothing was published."
             )
         if not account_id or not str(account_id).strip():
-            raise ProviderConfigurationError("Threads publishing needs a Threads profile id from OAuth connect.")
+            raise ProviderConfigurationError(
+                "Threads publishing needs a Threads profile id from OAuth connect."
+            )
         text = (content or "").strip()
         if len(text) > 500:
-            raise ProviderConfigurationError("Threads text posts are limited to 500 characters.")
+            raise ProviderConfigurationError(
+                "Threads text posts are limited to 500 characters."
+            )
         if not text and not media_urls:
-            raise ProviderConfigurationError("Threads posts need text and/or one image or video.")
+            raise ProviderConfigurationError(
+                "Threads posts need text and/or one image or video."
+            )
         if len(media_urls) > MAX_CAROUSEL_ITEMS:
             raise ProviderConfigurationError(
                 f"Threads carousels can have at most {MAX_CAROUSEL_ITEMS} items (this post has {len(media_urls)})."
@@ -70,15 +87,26 @@ class ThreadsPlatform(SocialPlatform):
             # Carousel: one child container per item (is_carousel_item), then a CAROUSEL container.
             children: list[str] = []
             for url in media_urls:
-                child = provider_request(
-                    "POST", f"{base}/threads", access_token=access_token,
-                    json={**item_body(url), "is_carousel_item": True},
-                ).json().get("id")
+                child = (
+                    provider_request(
+                        "POST",
+                        f"{base}/threads",
+                        access_token=access_token,
+                        json={**item_body(url), "is_carousel_item": True},
+                    )
+                    .json()
+                    .get("id")
+                )
                 if not child:
-                    raise RuntimeError("Threads did not return a carousel item container identifier")
+                    raise RuntimeError(
+                        "Threads did not return a carousel item container identifier"
+                    )
                 _wait_for_threads_container(access_token, version, str(child))
                 children.append(str(child))
-            container_body: dict = {"media_type": "CAROUSEL", "children": ",".join(children)}
+            container_body: dict = {
+                "media_type": "CAROUSEL",
+                "children": ",".join(children),
+            }
             if text:
                 container_body["text"] = text
         elif media_urls:
@@ -90,8 +118,12 @@ class ThreadsPlatform(SocialPlatform):
 
         reply_control = threads_reply_control(settings)
         if reply_control:
-            container_body["reply_control"] = reply_control  # set on the top-level container only
-        container = provider_request("POST", f"{base}/threads", access_token=access_token, json=container_body).json()
+            container_body["reply_control"] = (
+                reply_control  # set on the top-level container only
+            )
+        container = provider_request(
+            "POST", f"{base}/threads", access_token=access_token, json=container_body
+        ).json()
         creation_id = container.get("id")
         if not creation_id:
             raise RuntimeError("Threads did not return a media container identifier")
@@ -110,18 +142,22 @@ class ThreadsPlatform(SocialPlatform):
             raise RuntimeError("Threads did not return a published media identifier")
         return ProviderPublishResult(post_id=str(post_id), status_code=200)
 
-
-
     def delete(self, access_token: str, provider_post_id: str) -> None:
         """Delete a published Threads media object."""
         media_id = (provider_post_id or "").strip()
         if not media_id:
-            raise ProviderConfigurationError("Threads delete needs a provider media id.")
+            raise ProviderConfigurationError(
+                "Threads delete needs a provider media id."
+            )
         version = os.getenv("THREADS_API_VERSION", "v1.0")
-        provider_delete(f"https://graph.threads.net/{version}/{media_id}", access_token=access_token)
+        provider_delete(
+            f"https://graph.threads.net/{version}/{media_id}", access_token=access_token
+        )
 
 
-def _wait_for_threads_container(access_token: str, version: str, creation_id: str) -> None:
+def _wait_for_threads_container(
+    access_token: str, version: str, creation_id: str
+) -> None:
     """Poll until Threads finishes processing media, or fail with a clear error."""
     deadline = time.time() + 90
     url = f"https://graph.threads.net/{version}/{creation_id}"
@@ -134,7 +170,9 @@ def _wait_for_threads_container(access_token: str, version: str, creation_id: st
                 timeout=30.0,
             )
         except httpx.HTTPError as exc:
-            raise RuntimeError("Could not check Threads media container status") from exc
+            raise RuntimeError(
+                "Could not check Threads media container status"
+            ) from exc
         if response.is_error:
             # Give the container a moment and let publish decide; avoid blocking forever.
             _sleep(3)
@@ -145,9 +183,10 @@ def _wait_for_threads_container(access_token: str, version: str, creation_id: st
             return
         if state in {"ERROR", "EXPIRED"}:
             detail = body.get("error_message") or state
-            raise ProviderConfigurationError(f"Threads media container failed ({detail}). Check the media URL.")
+            raise ProviderConfigurationError(
+                f"Threads media container failed ({detail}). Check the media URL."
+            )
         _sleep(2)
     raise ProviderConfigurationError(
         "Threads is still processing the media after 90s. Try a smaller file or publish again shortly."
     )
-

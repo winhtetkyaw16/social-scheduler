@@ -35,6 +35,7 @@ _JPEG_EXT = {".jpg", ".jpeg"}
 
 
 def ffmpeg_available() -> bool:
+    """Return True when the ffmpeg binary is on PATH."""
     return shutil.which("ffmpeg") is not None
 
 
@@ -42,13 +43,13 @@ def instagram_crop_box(width: int, height: int) -> tuple[int, int, int, int]:
     """Center-crop box (left, top, right, bottom) that brings a photo into Instagram's 4:5 .. 1.91:1 range."""
     ratio = width / height
     if ratio > IG_MAX_RATIO:
-        w = round(height * IG_MAX_RATIO)
-        left = (width - w) // 2
-        return left, 0, left + w, height
+        crop_width = round(height * IG_MAX_RATIO)
+        left = (width - crop_width) // 2
+        return left, 0, left + crop_width, height
     if ratio < IG_MIN_RATIO:
-        h = round(width / IG_MIN_RATIO)
-        top = (height - h) // 2
-        return 0, top, width, top + h
+        crop_height = round(width / IG_MIN_RATIO)
+        top = (height - crop_height) // 2
+        return 0, top, width, top + crop_height
     return 0, 0, width, height
 
 
@@ -56,16 +57,19 @@ IG_FRAMES = (0.8, 1.0, 1.91)
 
 
 def ig_clamp(ratio: float) -> float:
+    """Clamp a width/height ratio into Instagram's 4:5 .. 1.91:1 feed range."""
     return min(IG_MAX_RATIO, max(IG_MIN_RATIO, ratio))
 
 
 def ig_nearest_frame(ratio: float) -> float:
     """Clamp into 4:5 .. 1.91:1, then snap to the nearest of 4:5, 1:1 and 1.91:1."""
-    r = ig_clamp(ratio)
-    return min(IG_FRAMES, key=lambda f: abs(f - r))
+    clamped = ig_clamp(ratio)
+    return min(IG_FRAMES, key=lambda frame_ratio: abs(frame_ratio - clamped))
 
 
-def ig_frame_ratio(photo_ratios: list[float], item_count: int, chosen: float | None = None) -> float | None:
+def ig_frame_ratio(
+    photo_ratios: list[float], item_count: int, chosen: float | None = None
+) -> float | None:
     """One frame for the whole Instagram feed post (like Instagram's own Create post).
 
     ``chosen`` (the user's 4:5 / 1:1 / 1.91:1 chip) wins. Otherwise the first photo decides: a carousel snaps to the
@@ -82,26 +86,30 @@ def ig_frame_ratio(photo_ratios: list[float], item_count: int, chosen: float | N
     return ig_nearest_frame(first) if item_count > 1 else ig_clamp(first)
 
 
-def _unit(v, default: float = 0.5) -> float:
+def _unit(value, default: float = 0.5) -> float:
+    """Clamp a crop offset into 0..1. Non-numeric and NaN values use default."""
     try:
-        f = float(v)
+        parsed = float(value)
     except (TypeError, ValueError):
         return default
-    return default if f != f else min(1.0, max(0.0, f))
+    # NaN is not equal to itself; treat it like any other non-offset.
+    return default if parsed != parsed else min(1.0, max(0.0, parsed))
 
 
-def frame_crop_box(width: int, height: int, frame: float, off_x: float = 0.5, off_y: float = 0.5) -> tuple[int, int, int, int]:
+def frame_crop_box(
+    width: int, height: int, frame: float, off_x: float = 0.5, off_y: float = 0.5
+) -> tuple[int, int, int, int]:
     """Crop box (left, top, right, bottom) of ``frame`` aspect inside the photo; offsets 0..1 pick the position."""
     ratio = width / height
     if abs(ratio - frame) < 0.005:
         return 0, 0, width, height
     if ratio > frame:
-        w = max(1, round(height * frame))
-        left = round((width - w) * _unit(off_x))
-        return left, 0, left + w, height
-    h = max(1, round(width / frame))
-    top = round((height - h) * _unit(off_y))
-    return 0, top, width, top + h
+        crop_width = max(1, round(height * frame))
+        left = round((width - crop_width) * _unit(off_x))
+        return left, 0, left + crop_width, height
+    crop_height = max(1, round(width / frame))
+    top = round((height - crop_height) * _unit(off_y))
+    return 0, top, width, top + crop_height
 
 
 def _ext(url: str) -> str:
@@ -109,17 +117,30 @@ def _ext(url: str) -> str:
 
 
 def _sibling_url(url: str, name: str) -> str:
+    """URL in the same directory as url, with the filename replaced."""
     base = str(url).split("?")[0].split("#")[0]
     return base.rsplit("/", 1)[0] + "/" + name
 
 
 def _out_path(src: Path, tag: str, ext: str) -> Path:
-    digest = hashlib.sha1(f"{src.name}:{src.stat().st_size}:{tag}".encode()).hexdigest()[:8]
+    """Stable sibling path for a converted file, keyed by name, size, and tag."""
+    digest = hashlib.sha1(
+        f"{src.name}:{src.stat().st_size}:{tag}".encode()
+    ).hexdigest()[:8]
     return src.with_name(f"{src.stem}-{tag}-{digest}{ext}")
 
 
-def _save_image(src: Path, tag: str, *, fmt: str, crop_instagram: bool = False, max_bytes: int | None = None,
-                frame: tuple[float, float, float] | None = None, min_side: int | None = None) -> Path:
+def _save_image(
+    src: Path,
+    tag: str,
+    *,
+    fmt: str,
+    crop_instagram: bool = False,
+    max_bytes: int | None = None,
+    frame: tuple[float, float, float] | None = None,
+    min_side: int | None = None,
+) -> Path:
+    """Write a JPEG or PNG sibling, applying an optional crop, upscale, and size cap."""
     from PIL import Image, ImageOps
 
     ext = ".jpg" if fmt == "JPEG" else ".png"
@@ -140,7 +161,10 @@ def _save_image(src: Path, tag: str, *, fmt: str, crop_instagram: bool = False, 
     if min_side and img.width and img.height and min(img.width, img.height) < min_side:
         # Crop first, then upscale, so the final output always meets the minimum.
         scale = min_side / min(img.width, img.height)
-        size = (max(min_side, round(img.width * scale)), max(min_side, round(img.height * scale)))
+        size = (
+            max(min_side, round(img.width * scale)),
+            max(min_side, round(img.height * scale)),
+        )
         img = img.resize(size, Image.LANCZOS)
     if fmt == "JPEG":
         if img.mode in ("RGBA", "LA", "P"):
@@ -158,7 +182,9 @@ def _save_image(src: Path, tag: str, *, fmt: str, crop_instagram: bool = False, 
             elif min_side and min(img.width, img.height) * 0.85 < min_side:
                 break
             else:
-                img = img.resize((max(1, int(img.width * 0.85)), max(1, int(img.height * 0.85))))
+                img = img.resize(
+                    (max(1, int(img.width * 0.85)), max(1, int(img.height * 0.85)))
+                )
             img.save(out, "JPEG", quality=quality, optimize=True)
     else:
         img.save(out, "PNG", optimize=True)
@@ -166,45 +192,73 @@ def _save_image(src: Path, tag: str, *, fmt: str, crop_instagram: bool = False, 
 
 
 def _has_alpha(src: Path) -> bool:
+    """True when the image has an alpha channel or a palette transparency key."""
     from PIL import Image
 
     with Image.open(src) as img:
-        return img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info)
+        return img.mode in ("RGBA", "LA") or (
+            img.mode == "P" and "transparency" in img.info
+        )
 
 
 def _photo_ratio(src: Path) -> float | None:
+    """Width/height after EXIF orientation, or None when a side is zero."""
     from PIL import Image, ImageOps
 
     with Image.open(src) as img:
-        w, h = ImageOps.exif_transpose(img).size if img.getexif().get(0x0112, 1) in (5, 6, 7, 8) else img.size
-    return (w / h) if w and h else None
+        width, height = (
+            ImageOps.exif_transpose(img).size
+            if img.getexif().get(0x0112, 1) in (5, 6, 7, 8)
+            else img.size
+        )
+    return (width / height) if width and height else None
 
 
 def _ig_small(src: Path) -> bool:
+    """True when the shorter side is under Instagram's 320px minimum."""
     from PIL import Image
 
     with Image.open(src) as img:
-        w, h = img.size
-    return bool(w and h) and min(w, h) < IG_MIN_SIDE
+        width, height = img.size
+    return bool(width and height) and min(width, height) < IG_MIN_SIDE
 
 
 def _needs_ig_crop(src: Path) -> bool:
+    """True when the photo's ratio sits outside Instagram's feed range."""
     from PIL import Image
 
     with Image.open(src) as img:
-        w, h = img.size
-    return bool(w and h) and not (IG_MIN_RATIO <= w / h <= IG_MAX_RATIO)
+        width, height = img.size
+    return bool(width and height) and not (
+        IG_MIN_RATIO <= width / height <= IG_MAX_RATIO
+    )
 
 
 def _video_to_mp4(src: Path) -> Path | None:
+    """Transcode src to H.264/AAC MP4. None if ffmpeg is missing or the encode fails."""
     exe = shutil.which("ffmpeg")
     if not exe:
         return None
     out = _out_path(src, "mp4", ".mp4")
     if out.is_file():
         return out
-    cmd = [exe, "-y", "-loglevel", "error", "-i", str(src), "-c:v", "libx264", "-pix_fmt", "yuv420p",
-           "-c:a", "aac", "-movflags", "+faststart", str(out)]
+    cmd = [
+        exe,
+        "-y",
+        "-loglevel",
+        "error",
+        "-i",
+        str(src),
+        "-c:v",
+        "libx264",
+        "-pix_fmt",
+        "yuv420p",
+        "-c:a",
+        "aac",
+        "-movflags",
+        "+faststart",
+        str(out),
+    ]
     result = subprocess.run(cmd, capture_output=True, timeout=1800, check=False)
     if result.returncode != 0 or not out.is_file():
         out.unlink(missing_ok=True)
@@ -212,7 +266,9 @@ def _video_to_mp4(src: Path) -> Path | None:
     return out
 
 
-def convert_one(platform: str, url: str, frame: tuple[float, float, float] | None = None) -> str:
+def convert_one(
+    platform: str, url: str, frame: tuple[float, float, float] | None = None
+) -> str:
     """Return the URL to publish for ``platform`` (a converted sibling upload, or ``url`` unchanged).
 
     ``frame`` = (ratio, off_x, off_y) crops an Instagram photo to the post's shared frame (Instagram only).
@@ -226,21 +282,63 @@ def convert_one(platform: str, url: str, frame: tuple[float, float, float] | Non
     out: Path | None = None
     if kind == "image" and ext != ".gif":
         if key == "instagram" and frame == "story":
-            if ext not in _JPEG_EXT or _ig_small(src) or src.stat().st_size > IG_MAX_PHOTO_BYTES:
-                out = _save_image(src, "igs", fmt="JPEG", min_side=IG_MIN_SIDE, max_bytes=IG_MAX_PHOTO_BYTES)
+            if (
+                ext not in _JPEG_EXT
+                or _ig_small(src)
+                or src.stat().st_size > IG_MAX_PHOTO_BYTES
+            ):
+                out = _save_image(
+                    src,
+                    "igs",
+                    fmt="JPEG",
+                    min_side=IG_MIN_SIDE,
+                    max_bytes=IG_MAX_PHOTO_BYTES,
+                )
         elif key == "instagram" and frame:
-            r = _photo_ratio(src)
-            if ((r is not None and abs(r - frame[0]) >= 0.005) or ext not in _JPEG_EXT or _ig_small(src)
-                    or src.stat().st_size > IG_MAX_PHOTO_BYTES):
-                tag = "ig" + hashlib.sha1(("%.4f:%.3f:%.3f:%d" % (*frame, IG_MIN_SIDE)).encode()).hexdigest()[:6]
-                out = _save_image(src, tag, fmt="JPEG", frame=frame, min_side=IG_MIN_SIDE, max_bytes=IG_MAX_PHOTO_BYTES)
+            photo_ratio = _photo_ratio(src)
+            if (
+                (photo_ratio is not None and abs(photo_ratio - frame[0]) >= 0.005)
+                or ext not in _JPEG_EXT
+                or _ig_small(src)
+                or src.stat().st_size > IG_MAX_PHOTO_BYTES
+            ):
+                tag = (
+                    "ig"
+                    + hashlib.sha1(
+                        ("%.4f:%.3f:%.3f:%d" % (*frame, IG_MIN_SIDE)).encode()
+                    ).hexdigest()[:6]
+                )
+                out = _save_image(
+                    src,
+                    tag,
+                    fmt="JPEG",
+                    frame=frame,
+                    min_side=IG_MIN_SIDE,
+                    max_bytes=IG_MAX_PHOTO_BYTES,
+                )
         elif key == "instagram":
             crop = _needs_ig_crop(src)
-            if crop or ext not in _JPEG_EXT or _ig_small(src) or src.stat().st_size > IG_MAX_PHOTO_BYTES:
-                out = _save_image(src, "ig", fmt="JPEG", crop_instagram=crop, min_side=IG_MIN_SIDE, max_bytes=IG_MAX_PHOTO_BYTES)
+            if (
+                crop
+                or ext not in _JPEG_EXT
+                or _ig_small(src)
+                or src.stat().st_size > IG_MAX_PHOTO_BYTES
+            ):
+                out = _save_image(
+                    src,
+                    "ig",
+                    fmt="JPEG",
+                    crop_instagram=crop,
+                    min_side=IG_MIN_SIDE,
+                    max_bytes=IG_MAX_PHOTO_BYTES,
+                )
         elif key in {"linkedin", "facebook"} and ext == ".webp":
-            out = _save_image(src, key[:2], fmt="PNG" if _has_alpha(src) else "JPEG",
-                              max_bytes=FB_MAX_PHOTO_BYTES if key == "facebook" else None)
+            out = _save_image(
+                src,
+                key[:2],
+                fmt="PNG" if _has_alpha(src) else "JPEG",
+                max_bytes=FB_MAX_PHOTO_BYTES if key == "facebook" else None,
+            )
         elif key == "facebook" and src.stat().st_size > FB_MAX_PHOTO_BYTES:
             out = _save_image(src, "fb", fmt="JPEG", max_bytes=FB_MAX_PHOTO_BYTES)
         elif key == "tiktok" and ext not in _JPEG_EXT | {".webp"}:
@@ -250,11 +348,15 @@ def convert_one(platform: str, url: str, frame: tuple[float, float, float] | Non
     return _sibling_url(url, out.name) if out is not None else url
 
 
-def _ig_frames(media: list[str], ig_crop: dict | None) -> list[tuple[float, float, float] | None]:
+def _ig_frames(
+    media: list[str], ig_crop: dict | None
+) -> list[tuple[float, float, float] | None]:
     """Per-item crop frames for an Instagram feed post: one shared ratio, per-item offsets (by index)."""
     crop = ig_crop if isinstance(ig_crop, dict) else {}
     if crop.get("format") == "Story":
-        return ["story"] * len(media)  # Stories: no feed frame, Instagram fits 9:16 itself
+        return ["story"] * len(
+            media
+        )  # Stories: no feed frame, Instagram fits 9:16 itself
     ratios: list[float] = []
     for url in media:
         if guess_media_kind(url) != "image" or _ext(url) == ".gif":
@@ -263,11 +365,13 @@ def _ig_frames(media: list[str], ig_crop: dict | None) -> list[tuple[float, floa
         if src is None or not src.is_file():
             continue
         try:
-            r = _photo_ratio(src)
-        except Exception:  # noqa: BLE001 - unreadable photo: let the network validate it
-            r = None
-        if r:
-            ratios.append(r)
+            photo_ratio = _photo_ratio(src)
+        except (
+            Exception
+        ):  # noqa: BLE001 - unreadable photo: let the network validate it
+            photo_ratio = None
+        if photo_ratio:
+            ratios.append(photo_ratio)
             break
     frame = ig_frame_ratio(ratios, len(media), crop.get("ratio"))
     if frame is None:
@@ -275,12 +379,20 @@ def _ig_frames(media: list[str], ig_crop: dict | None) -> list[tuple[float, floa
     offsets = crop.get("offsets") if isinstance(crop.get("offsets"), list) else []
     out = []
     for i in range(len(media)):
-        o = offsets[i] if i < len(offsets) and isinstance(offsets[i], (list, tuple)) and len(offsets[i]) == 2 else (0.5, 0.5)
-        out.append((frame, _unit(o[0]), _unit(o[1])))
+        offset = (
+            offsets[i]
+            if i < len(offsets)
+            and isinstance(offsets[i], (list, tuple))
+            and len(offsets[i]) == 2
+            else (0.5, 0.5)
+        )
+        out.append((frame, _unit(offset[0]), _unit(offset[1])))
     return out
 
 
-def prepare_media(platform: str, media_urls: list[str] | None, ig_crop: dict | None = None) -> list[str]:
+def prepare_media(
+    platform: str, media_urls: list[str] | None, ig_crop: dict | None = None
+) -> list[str]:
     """Apply the automatic conversions for one network. Never raises; falls back to the original URL.
 
     For Instagram feed posts every photo is cropped to ONE frame (``ig_crop`` = {"ratio", "offsets", "format"} from
@@ -301,8 +413,12 @@ def prepare_media(platform: str, media_urls: list[str] | None, ig_crop: dict | N
     prepared = []
     for i, url in enumerate(media):
         try:
-            prepared.append(convert_one(key, url, frames[i] if i < len(frames) else None))
-        except Exception:  # noqa: BLE001 - conversion is best effort, the network validates the original
+            prepared.append(
+                convert_one(key, url, frames[i] if i < len(frames) else None)
+            )
+        except (
+            Exception
+        ):  # noqa: BLE001 - conversion is best effort, the network validates the original
             log.warning("media conversion failed for %s", key, exc_info=True)
             prepared.append(url)
     return prepared

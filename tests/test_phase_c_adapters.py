@@ -46,7 +46,9 @@ def test_facebook_text_and_photo(monkeypatch):
     assert text.post_id == "page_123_456"
     assert seen["url"].endswith("/111/feed")
 
-    photo = FacebookPlatform().publish("tok", "111", "Caption", ["https://cdn.example.com/a.jpg"])
+    photo = FacebookPlatform().publish(
+        "tok", "111", "Caption", ["https://cdn.example.com/a.jpg"]
+    )
     assert photo.post_id == "page_ph_1"
     assert seen["url"].endswith("/111/photos")
     assert seen["json"]["url"] == "https://cdn.example.com/a.jpg"
@@ -59,11 +61,15 @@ def test_pinterest_requires_one_image(monkeypatch):
     def fake_request(method, url, **kwargs):
         assert url == "https://api.pinterest.com/v5/pins"
         assert kwargs["json"]["board_id"] == "board-9"
-        assert kwargs["json"]["media_source"]["url"] == "https://cdn.example.com/pin.jpg"
+        assert (
+            kwargs["json"]["media_source"]["url"] == "https://cdn.example.com/pin.jpg"
+        )
         return _Response({"id": "pin-99"}, status_code=201)
 
     monkeypatch.setattr(httpx, "request", fake_request)
-    result = PinterestPlatform().publish("tok", "board-9", "Nice pin", ["https://cdn.example.com/pin.jpg"])
+    result = PinterestPlatform().publish(
+        "tok", "board-9", "Nice pin", ["https://cdn.example.com/pin.jpg"]
+    )
     assert result.post_id == "pin-99"
     with pytest.raises(ProviderConfigurationError):
         PinterestPlatform().publish("tok", "board-9", "Nice pin", [])
@@ -92,7 +98,9 @@ def test_youtube_requires_video(monkeypatch):
     with pytest.raises(ProviderConfigurationError):
         YouTubePlatform().publish("tok", "channel-1", "Title only", [])
     with pytest.raises(ProviderConfigurationError):
-        YouTubePlatform().publish("tok", "channel-1", "Title", ["https://cdn.example.com/pic.jpg"])
+        YouTubePlatform().publish(
+            "tok", "channel-1", "Title", ["https://cdn.example.com/pic.jpg"]
+        )
 
 
 def test_tiktok_direct_pull(monkeypatch):
@@ -101,15 +109,26 @@ def test_tiktok_direct_pull(monkeypatch):
     def fake_post(url, **kwargs):
         posts.append(url)
         if url.endswith("creator_info/query/"):
-            return _Response({"data": {"privacy_level_options": ["SELF_ONLY", "PUBLIC_TO_EVERYONE"]}, "error": {"code": "ok"}})
+            return _Response(
+                {
+                    "data": {
+                        "privacy_level_options": ["SELF_ONLY", "PUBLIC_TO_EVERYONE"]
+                    },
+                    "error": {"code": "ok"},
+                }
+            )
         if url.endswith("video/init/"):
             body = kwargs.get("json") or {}
             assert body["source_info"]["source"] == "PULL_FROM_URL"
-            return _Response({"data": {"publish_id": "v_pub~1"}, "error": {"code": "ok"}})
+            return _Response(
+                {"data": {"publish_id": "v_pub~1"}, "error": {"code": "ok"}}
+            )
         return _Response({"error": {"code": "ok"}}, is_error=True, status_code=500)
 
     monkeypatch.setattr(httpx, "post", fake_post)
-    result = TikTokPlatform().publish("tok", "open-id", "Caption", ["https://cdn.example.com/clip.mp4"])
+    result = TikTokPlatform().publish(
+        "tok", "open-id", "Caption", ["https://cdn.example.com/clip.mp4"]
+    )
     assert result.post_id == "v_pub~1"
     assert any(url.endswith("video/init/") for url in posts)
 

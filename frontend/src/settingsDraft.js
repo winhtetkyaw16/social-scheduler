@@ -12,7 +12,9 @@ export function updateDraft(draft, key, value) {
 // Keys whose draft value differs from what is effectively saved (saved value, else default).
 export function draftChanges(saved = {}, draft = {}, defaults = {}) {
   const base = openDraft(saved, defaults);
-  return Object.keys(draft).filter((key) => draft[key] !== base[key]).map((key) => [key, draft[key]]);
+  return Object.keys(draft)
+    .filter((key) => draft[key] !== base[key])
+    .map((key) => [key, draft[key]]);
 }
 
 export function isDraftDirty(saved, draft, defaults) {

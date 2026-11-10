@@ -22,7 +22,10 @@ class QueueSlot(UUIDPrimaryKey, Timestamped, Base):
     __tablename__ = "queue_slots"
     __table_args__ = (
         UniqueConstraint(
-            "user_id", "platform", "weekday", "time_local",
+            "user_id",
+            "platform",
+            "weekday",
+            "time_local",
             name="uq_queue_slot_user_platform_weekday_time",
         ),
         Index("ix_queue_slots_user_platform", "user_id", "platform"),

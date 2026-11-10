@@ -67,10 +67,14 @@ def _stub(monkeypatch):
 
     def fake_publish(*args, **kwargs):
         calls.append(1)
-        return ProviderPublishResult(post_id=f"prov-{uuid4().hex[:6]}", request_id="req", status_code=200)
+        return ProviderPublishResult(
+            post_id=f"prov-{uuid4().hex[:6]}", request_id="req", status_code=200
+        )
 
     monkeypatch.setattr("app.tasks.publish_post.publish", fake_publish)
-    monkeypatch.setattr("app.tasks.publish_post.publish_post_task.apply_async", lambda *a, **k: None)
+    monkeypatch.setattr(
+        "app.tasks.publish_post.publish_post_task.apply_async", lambda *a, **k: None
+    )
     return calls
 
 
@@ -78,7 +82,9 @@ def test_list_posts_has_no_publish_side_effect(client, auth_headers, monkeypatch
     headers, _ = auth_headers
     calls = _stub(monkeypatch)
     account = _connect_x(client, headers)
-    post_id = _create(client, headers, account["id"], datetime.now(timezone.utc) + timedelta(hours=1))
+    post_id = _create(
+        client, headers, account["id"], datetime.now(timezone.utc) + timedelta(hours=1)
+    )
     _make_due(post_id)
     listed = client.get("/api/v1/posts", headers=headers)
     assert listed.status_code == 200
@@ -93,7 +99,9 @@ def test_run_due_posts_once_publishes_exactly_once(client, auth_headers, monkeyp
     headers, _ = auth_headers
     calls = _stub(monkeypatch)
     account = _connect_x(client, headers)
-    post_id = _create(client, headers, account["id"], datetime.now(timezone.utc) + timedelta(hours=1))
+    post_id = _create(
+        client, headers, account["id"], datetime.now(timezone.utc) + timedelta(hours=1)
+    )
     _make_due(post_id)
     run_due_posts_once(use_celery=False)
     assert _status(post_id) == "published"
@@ -112,7 +120,12 @@ def test_background_loop_publishes_without_client_requests(auth_headers, monkeyp
     with TestClient(app) as client:
         headers, _ = auth_headers
         account = _connect_x(client, headers)
-        post_id = _create(client, headers, account["id"], datetime.now(timezone.utc) + timedelta(hours=1))
+        post_id = _create(
+            client,
+            headers,
+            account["id"],
+            datetime.now(timezone.utc) + timedelta(hours=1),
+        )
         _make_due(post_id)
         deadline = time.time() + 10
         while time.time() < deadline and _status(post_id) != "published":

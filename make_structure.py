@@ -1,3 +1,8 @@
+"""One-shot helper that creates the original empty project folders.
+
+Existing files are left untouched. This is not part of the running app.
+"""
+
 import os
 
 # Create directory sturcture and files

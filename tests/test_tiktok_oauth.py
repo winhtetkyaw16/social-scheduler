@@ -17,7 +17,11 @@ _HEX_CHALLENGE = re.compile(r"^[0-9a-f]{64}$")
 _UNRESERVED = re.compile(r"^[A-Za-z0-9\-._~]{43,128}$")
 
 
-def _enable_tiktok(monkeypatch, *, redirect_uri: str = "https://app.example/api/v1/accounts/tiktok/callback") -> None:
+def _enable_tiktok(
+    monkeypatch,
+    *,
+    redirect_uri: str = "https://app.example/api/v1/accounts/tiktok/callback",
+) -> None:
     monkeypatch.setenv("TIKTOK_CLIENT_KEY", "tt-client-key")
     monkeypatch.setenv("TIKTOK_CLIENT_SECRET", "tt-client-secret")
     monkeypatch.setenv("TIKTOK_REDIRECT_URI", redirect_uri)
@@ -47,13 +51,18 @@ def test_tiktok_connect_url_includes_hex_pkce(client, auth_headers, monkeypatch)
     assert started.status_code == 200, started.text
     url = started.json()["authorization_url"]
     parsed = urlparse(url)
-    assert f"{parsed.scheme}://{parsed.netloc}{parsed.path}" == "https://www.tiktok.com/v2/auth/authorize/"
+    assert (
+        f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+        == "https://www.tiktok.com/v2/auth/authorize/"
+    )
     query = _query(url)
     assert query["client_key"] == ["tt-client-key"]
     assert "client_id" not in query
     assert query["response_type"] == ["code"]
     assert query["redirect_uri"] == [redirect_uri]
-    assert query["scope"] == ["user.info.basic,user.info.profile,video.publish,video.upload"]
+    assert query["scope"] == [
+        "user.info.basic,user.info.profile,video.publish,video.upload"
+    ]
     assert "user.info.profile" in query["scope"][0].split(",")
     assert query["code_challenge_method"] == ["S256"]
     challenge = query["code_challenge"][0]
@@ -115,7 +124,9 @@ def test_tiktok_token_exchange_rejects_missing_verifier(monkeypatch):
     _enable_tiktok(monkeypatch)
 
     def fail_post(*_args, **_kwargs):
-        raise AssertionError("token endpoint must not be called without a code_verifier")
+        raise AssertionError(
+            "token endpoint must not be called without a code_verifier"
+        )
 
     monkeypatch.setattr(oauth.httpx, "post", fail_post)
     with pytest.raises(HTTPException) as exc:
@@ -123,7 +134,9 @@ def test_tiktok_token_exchange_rejects_missing_verifier(monkeypatch):
     assert exc.value.status_code == 400
 
 
-def test_tiktok_callback_uses_verifier_stored_in_state(client, auth_headers, monkeypatch):
+def test_tiktok_callback_uses_verifier_stored_in_state(
+    client, auth_headers, monkeypatch
+):
     _enable_tiktok(monkeypatch, redirect_uri=config.TIKTOK_REDIRECT_URI)
     headers, _tokens = auth_headers
     started = client.get("/api/v1/accounts/tiktok/connect", headers=headers)

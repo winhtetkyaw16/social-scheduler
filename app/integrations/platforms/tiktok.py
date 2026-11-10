@@ -5,8 +5,16 @@ from __future__ import annotations
 import httpx
 
 from app.core.exceptions import ProviderConfigurationError
-from app.integrations.base import ProviderHTTPError, ProviderPublishResult, SocialPlatform
-from app.integrations.media_urls import guess_media_kind, local_upload_path, public_media_url
+from app.integrations.base import (
+    ProviderHTTPError,
+    ProviderPublishResult,
+    SocialPlatform,
+)
+from app.integrations.media_urls import (
+    guess_media_kind,
+    local_upload_path,
+    public_media_url,
+)
 from app.services.post_formats import POST, REEL, STORY
 
 _DIRECT_INIT = "https://open.tiktokapis.com/v2/post/publish/video/init/"
@@ -23,8 +31,13 @@ class TikTokPlatform(SocialPlatform):
     supports_remote_delete = False
 
     def publish(
-        self, access_token: str, account_id: str, content: str, media_urls: list[str],
-        settings: dict | None = None, format: str | None = None,
+        self,
+        access_token: str,
+        account_id: str,
+        content: str,
+        media_urls: list[str],
+        settings: dict | None = None,
+        format: str | None = None,
     ) -> ProviderPublishResult:
         fmt = (format or "").strip()
         if fmt == STORY:
@@ -37,7 +50,9 @@ class TikTokPlatform(SocialPlatform):
                 f"{fmt} is not available for TikTok. Choose Photo post or Video. Nothing was posted."
             )
         if not account_id or not str(account_id).strip():
-            raise ProviderConfigurationError("TikTok publishing needs the creator open_id from OAuth connect.")
+            raise ProviderConfigurationError(
+                "TikTok publishing needs the creator open_id from OAuth connect."
+            )
         if not media_urls:
             raise ProviderConfigurationError(
                 "TikTok publishing requires exactly one video. Text-only posts are not supported by the Content Posting API."
@@ -54,13 +69,19 @@ class TikTokPlatform(SocialPlatform):
         if all(k == "image" for k in kinds):
             return _publish_photos(access_token, content, media_urls, settings)
         if "image" in kinds:
-            raise ProviderConfigurationError("TikTok posts one video or up to 35 photos, not a mix. Pick photos or the video.")
+            raise ProviderConfigurationError(
+                "TikTok posts one video or up to 35 photos, not a mix. Pick photos or the video."
+            )
         if len(media_urls) != 1:
-            raise ProviderConfigurationError("TikTok publishing supports exactly one video per post.")
+            raise ProviderConfigurationError(
+                "TikTok publishing supports exactly one video per post."
+            )
 
         title = (content or "").strip()
         if len(title) > 2200:
-            raise ProviderConfigurationError("TikTok captions are limited to 2200 characters.")
+            raise ProviderConfigurationError(
+                "TikTok captions are limited to 2200 characters."
+            )
 
         local = local_upload_path(media_urls[0])
         if local is not None:
@@ -99,14 +120,17 @@ class TikTokPlatform(SocialPlatform):
 
         direct = _tiktok_json_post(access_token, _DIRECT_INIT, direct_body)
         if direct is not None:
-            return _finish_tiktok_publish(access_token, direct, upload_bytes, mode="direct")
+            return _finish_tiktok_publish(
+                access_token, direct, upload_bytes, mode="direct"
+            )
 
         # Direct Post often needs app audit / video.publish. Fall back to inbox draft (video.upload).
         inbox_body = {"source_info": source_info}
-        inbox = _tiktok_json_post(access_token, _INBOX_INIT, inbox_body, raise_on_error=True)
+        inbox = _tiktok_json_post(
+            access_token, _INBOX_INIT, inbox_body, raise_on_error=True
+        )
         assert inbox is not None
         return _finish_tiktok_publish(access_token, inbox, upload_bytes, mode="inbox")
-
 
     def delete(self, access_token: str, provider_post_id: str) -> None:
         """TikTok Content Posting API has no general remote delete for live posts."""
@@ -116,11 +140,16 @@ class TikTokPlatform(SocialPlatform):
         )
 
 
-def _publish_photos(access_token: str, content: str, media_urls: list[str], settings: dict | None = None) -> ProviderPublishResult:
+def _publish_photos(
+    access_token: str, content: str, media_urls: list[str], settings: dict | None = None
+) -> ProviderPublishResult:
     """Photo post (1-35 images). TikTok only supports PULL_FROM_URL for photos, so every image must be on a
-    public https URL whose domain/prefix is verified in the TikTok developer portal (URL properties)."""
+    public https URL whose domain/prefix is verified in the TikTok developer portal (URL properties).
+    """
     if len(media_urls) > MAX_PHOTOS:
-        raise ProviderConfigurationError(f"TikTok photo posts can have up to {MAX_PHOTOS} photos. This post has {len(media_urls)}.")
+        raise ProviderConfigurationError(
+            f"TikTok photo posts can have up to {MAX_PHOTOS} photos. This post has {len(media_urls)}."
+        )
     urls = []
     for url in media_urls:
         public = public_media_url(url, platform="TikTok")
@@ -133,7 +162,11 @@ def _publish_photos(access_token: str, content: str, media_urls: list[str], sett
     text = (content or "").strip()
     first_line = text.splitlines()[0] if text else ""
     privacy = _privacy_level(access_token, settings)
-    source_info = {"source": "PULL_FROM_URL", "photo_cover_index": 0, "photo_images": urls}
+    source_info = {
+        "source": "PULL_FROM_URL",
+        "photo_cover_index": 0,
+        "photo_images": urls,
+    }
     post_info = {
         "title": first_line[:90],
         "description": text[:4000],
@@ -141,20 +174,34 @@ def _publish_photos(access_token: str, content: str, media_urls: list[str], sett
         "disable_comment": not _allowed(settings, "allow_comments"),
         "auto_add_music": True,
     }
-    body = {"post_info": post_info, "source_info": source_info, "post_mode": "DIRECT_POST", "media_type": "PHOTO"}
+    body = {
+        "post_info": post_info,
+        "source_info": source_info,
+        "post_mode": "DIRECT_POST",
+        "media_type": "PHOTO",
+    }
     direct = _tiktok_json_post(access_token, _CONTENT_INIT, body)
     if direct is not None:
         return _finish_tiktok_publish(access_token, direct, None, mode="direct")
     # Without Direct Post approval, send to the creator's TikTok inbox (needs video.upload).
     inbox_info = {k: post_info[k] for k in ("title", "description")}
-    body = {"post_info": inbox_info, "source_info": source_info, "post_mode": "MEDIA_UPLOAD", "media_type": "PHOTO"}
+    body = {
+        "post_info": inbox_info,
+        "source_info": source_info,
+        "post_mode": "MEDIA_UPLOAD",
+        "media_type": "PHOTO",
+    }
     inbox = _tiktok_json_post(access_token, _CONTENT_INIT, body, raise_on_error=True)
     assert inbox is not None
     return _finish_tiktok_publish(access_token, inbox, None, mode="inbox")
 
 
 # Composer "Visibility" -> Content Posting API privacy_level (must be one of creator_info's options).
-TIKTOK_PRIVACY = {"Public": "PUBLIC_TO_EVERYONE", "Friends": "MUTUAL_FOLLOW_FRIENDS", "Only me": "SELF_ONLY"}
+TIKTOK_PRIVACY = {
+    "Public": "PUBLIC_TO_EVERYONE",
+    "Friends": "MUTUAL_FOLLOW_FRIENDS",
+    "Only me": "SELF_ONLY",
+}
 
 
 def _allowed(settings: dict | None, key: str) -> bool:
@@ -184,7 +231,12 @@ def _privacy_level(access_token: str, settings: dict | None = None) -> str:
     wanted = TIKTOK_PRIVACY.get(str((settings or {}).get("audience") or ""))
     if wanted and wanted in options:
         return wanted
-    preferred = ("PUBLIC_TO_EVERYONE", "MUTUAL_FOLLOW_FRIENDS", "FOLLOWER_OF_CREATOR", "SELF_ONLY")
+    preferred = (
+        "PUBLIC_TO_EVERYONE",
+        "MUTUAL_FOLLOW_FRIENDS",
+        "FOLLOWER_OF_CREATOR",
+        "SELF_ONLY",
+    )
     for level in preferred:
         if level in options:
             return level
@@ -219,13 +271,19 @@ def _tiktok_json_post(
     if isinstance(error, dict):
         err_code = str(error.get("code") or "")
         err_msg = str(error.get("message") or "")
-    ok = (not response.is_error) and (not err_code or err_code.lower() in {"ok", "0", ""})
+    ok = (not response.is_error) and (
+        not err_code or err_code.lower() in {"ok", "0", ""}
+    )
     if ok:
         data = payload.get("data") if isinstance(payload, dict) else None
         return data if isinstance(data, dict) else {}
     if not raise_on_error:
         # Likely unaudited direct-post or missing video.publish — caller may fall back.
-        if response.status_code in {401, 403} or "scope" in err_msg.lower() or "audit" in err_msg.lower():
+        if (
+            response.status_code in {401, 403}
+            or "scope" in err_msg.lower()
+            or "audit" in err_msg.lower()
+        ):
             return None
         if err_code and err_code.lower() not in {"ok"}:
             return None
@@ -235,7 +293,11 @@ def _tiktok_json_post(
             "TikTok refused publishing (missing video.upload / video.publish scopes, or the app needs TikTok audit). "
             f"Provider message: {err_msg or response.status_code}"
         )
-    if "url" in err_msg.lower() or "domain" in err_msg.lower() or "verify" in err_msg.lower():
+    if (
+        "url" in err_msg.lower()
+        or "domain" in err_msg.lower()
+        or "verify" in err_msg.lower()
+    ):
         raise ProviderConfigurationError(
             "TikTok could not pull the video URL. Verify the media domain in the TikTok developer portal "
             "(URL properties), or upload via /static/uploads so SocialStudio can FILE_UPLOAD."

@@ -22,7 +22,9 @@ def dispatch_due_posts(batch_size: int = 100) -> int:
     db = SessionLocal()
     try:
         now = datetime.now(timezone.utc)
-        stale_queued_before = now - timedelta(seconds=max(10, SCHEDULER_POLL_SECONDS * 2))
+        stale_queued_before = now - timedelta(
+            seconds=max(10, SCHEDULER_POLL_SECONDS * 2)
+        )
         # A worker that died mid-publish leaves the row in "publishing" forever.
         # Mark it failed (not re-queued: the provider may have accepted it) so
         # the user can review and Retry explicitly.
@@ -42,7 +44,9 @@ def dispatch_due_posts(batch_size: int = 100) -> int:
             )
             logger.warning("Marked stale publishing post %s as failed", stuck.id)
         db.commit()
-        due_schedule = (ScheduledPost.status == "scheduled") & (ScheduledPost.scheduled_at <= now)
+        due_schedule = (ScheduledPost.status == "scheduled") & (
+            ScheduledPost.scheduled_at <= now
+        )
         stale_queued = (
             (ScheduledPost.status == "queued")
             & (ScheduledPost.scheduled_at <= now)
@@ -73,7 +77,10 @@ def dispatch_due_posts(batch_size: int = 100) -> int:
         for post in posts:
             post_id = str(post.id)
             try:
-                publish_post_task.apply_async(args=[post_id], kwargs={"post_format": row_format(post.post_metadata)})
+                publish_post_task.apply_async(
+                    args=[post_id],
+                    kwargs={"post_format": row_format(post.post_metadata)},
+                )
                 queued_count += 1
             except Exception as exc:
                 # Make the due item eligible for the next dispatcher pass.

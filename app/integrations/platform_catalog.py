@@ -20,7 +20,16 @@ CONNECTABLE_PLATFORMS: frozenset[str] = frozenset(
 
 # Platforms with a working publisher adapter today (Phase A/B keep these publishing).
 PUBLISHABLE_PLATFORMS: frozenset[str] = frozenset(
-    {"x", "linkedin", "instagram", "facebook", "youtube", "tiktok", "pinterest", "threads"}
+    {
+        "x",
+        "linkedin",
+        "instagram",
+        "facebook",
+        "youtube",
+        "tiktok",
+        "pinterest",
+        "threads",
+    }
 )
 
 # Honest Buffer/Later-style account types. Personal Facebook profiles are NOT publishable.
@@ -48,8 +57,16 @@ ACCOUNT_TYPE_CATALOG: dict[str, dict[str, Any]] = {
     "instagram": {
         "label": "Instagram",
         "types": {
-            "business": {"label": "Business", "publishable_when_ready": True, "primary": True},
-            "creator": {"label": "Creator", "publishable_when_ready": True, "primary": True},
+            "business": {
+                "label": "Business",
+                "publishable_when_ready": True,
+                "primary": True,
+            },
+            "creator": {
+                "label": "Creator",
+                "publishable_when_ready": True,
+                "primary": True,
+            },
         },
         "needs_destination_pick": True,
         "notes": "Business/Creator accounts via Facebook Login for Business (linked to a Facebook Page). Personal profiles are not supported.",
@@ -57,7 +74,11 @@ ACCOUNT_TYPE_CATALOG: dict[str, dict[str, Any]] = {
     "x": {
         "label": "X",
         "types": {
-            "user": {"label": "User account", "publishable_when_ready": True, "primary": True},
+            "user": {
+                "label": "User account",
+                "publishable_when_ready": True,
+                "primary": True,
+            },
         },
         "needs_destination_pick": False,
         "notes": "X user account.",
@@ -65,7 +86,11 @@ ACCOUNT_TYPE_CATALOG: dict[str, dict[str, Any]] = {
     "linkedin": {
         "label": "LinkedIn",
         "types": {
-            "personal": {"label": "Personal profile", "publishable_when_ready": True, "primary": True},
+            "personal": {
+                "label": "Personal profile",
+                "publishable_when_ready": True,
+                "primary": True,
+            },
             "organization": {
                 "label": "Company / Organization Page",
                 "publishable_when_ready": True,
@@ -78,8 +103,16 @@ ACCOUNT_TYPE_CATALOG: dict[str, dict[str, Any]] = {
     "youtube": {
         "label": "YouTube",
         "types": {
-            "channel": {"label": "Channel", "publishable_when_ready": True, "primary": True},
-            "brand_channel": {"label": "Brand channel", "publishable_when_ready": True, "primary": True},
+            "channel": {
+                "label": "Channel",
+                "publishable_when_ready": True,
+                "primary": True,
+            },
+            "brand_channel": {
+                "label": "Brand channel",
+                "publishable_when_ready": True,
+                "primary": True,
+            },
         },
         "needs_destination_pick": True,
         "notes": "YouTube Channel / Brand channel from Google OAuth.",
@@ -87,8 +120,16 @@ ACCOUNT_TYPE_CATALOG: dict[str, dict[str, Any]] = {
     "tiktok": {
         "label": "TikTok",
         "types": {
-            "creator": {"label": "Creator", "publishable_when_ready": True, "primary": True},
-            "business": {"label": "Business", "publishable_when_ready": True, "primary": True},
+            "creator": {
+                "label": "Creator",
+                "publishable_when_ready": True,
+                "primary": True,
+            },
+            "business": {
+                "label": "Business",
+                "publishable_when_ready": True,
+                "primary": True,
+            },
         },
         "needs_destination_pick": False,
         "notes": "Creator/Business account for the Content Posting API.",
@@ -96,8 +137,16 @@ ACCOUNT_TYPE_CATALOG: dict[str, dict[str, Any]] = {
     "pinterest": {
         "label": "Pinterest",
         "types": {
-            "user": {"label": "User", "publishable_when_ready": False, "primary": False},
-            "board": {"label": "Board", "publishable_when_ready": True, "primary": True},
+            "user": {
+                "label": "User",
+                "publishable_when_ready": False,
+                "primary": False,
+            },
+            "board": {
+                "label": "Board",
+                "publishable_when_ready": True,
+                "primary": True,
+            },
         },
         "needs_destination_pick": True,
         "notes": "Pinterest user plus Boards as pin destinations.",
@@ -105,7 +154,11 @@ ACCOUNT_TYPE_CATALOG: dict[str, dict[str, Any]] = {
     "threads": {
         "label": "Threads",
         "types": {
-            "profile": {"label": "Threads profile", "publishable_when_ready": True, "primary": True},
+            "profile": {
+                "label": "Threads profile",
+                "publishable_when_ready": True,
+                "primary": True,
+            },
         },
         "needs_destination_pick": False,
         "notes": "Threads profile via the Meta Threads API.",
@@ -160,7 +213,9 @@ def catalog_public() -> list[dict[str, Any]]:
                         "id": type_id,
                         "label": info["label"],
                         "primary": bool(info.get("primary")),
-                        "publishable_when_ready": bool(info.get("publishable_when_ready")),
+                        "publishable_when_ready": bool(
+                            info.get("publishable_when_ready")
+                        ),
                         "note": info.get("note") or "",
                     }
                     for type_id, info in meta["types"].items()

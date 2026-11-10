@@ -8,8 +8,18 @@ import time
 import httpx
 
 from app.core.exceptions import ProviderConfigurationError
-from app.integrations.base import ProviderHTTPError, ProviderPublishResult, SocialPlatform, provider_delete, provider_request
-from app.integrations.media_urls import guess_media_kind, local_upload_path, public_media_url
+from app.integrations.base import (
+    ProviderHTTPError,
+    ProviderPublishResult,
+    SocialPlatform,
+    provider_delete,
+    provider_request,
+)
+from app.integrations.media_urls import (
+    guess_media_kind,
+    local_upload_path,
+    public_media_url,
+)
 from app.services.post_formats import POST, REEL
 
 # Media processing poll. Tests patch these; no real sleeping in tests.
@@ -26,7 +36,12 @@ class PinterestPlatform(SocialPlatform):
     supports_remote_delete = True
 
     def publish(
-        self, access_token: str, account_id: str, content: str, media_urls: list[str], format: str | None = None,
+        self,
+        access_token: str,
+        account_id: str,
+        content: str,
+        media_urls: list[str],
+        format: str | None = None,
     ) -> ProviderPublishResult:
         board_id = (account_id or "").strip()
         if not board_id:
@@ -45,9 +60,13 @@ class PinterestPlatform(SocialPlatform):
                 "A Pinterest photo Pin can't include a video. Choose Video Pin and add a cover image. Nothing was pinned."
             )
         if not media_urls:
-            raise ProviderConfigurationError("Pinterest Pins require exactly one image URL.")
+            raise ProviderConfigurationError(
+                "Pinterest Pins require exactly one image URL."
+            )
         if len(media_urls) != 1:
-            raise ProviderConfigurationError("Pinterest publishing currently supports exactly one image per Pin.")
+            raise ProviderConfigurationError(
+                "Pinterest publishing currently supports exactly one image per Pin."
+            )
         image_url = public_media_url(media_urls[0], platform="Pinterest")
         title = (content or "").strip()
         description = title
@@ -62,13 +81,21 @@ class PinterestPlatform(SocialPlatform):
         if title:
             payload["title"] = title
             payload["description"] = description
-        response = provider_request("POST", "https://api.pinterest.com/v5/pins", access_token=access_token, json=payload)
+        response = provider_request(
+            "POST",
+            "https://api.pinterest.com/v5/pins",
+            access_token=access_token,
+            json=payload,
+        )
         body = response.json()
         pin_id = body.get("id")
         if not pin_id:
-            raise RuntimeError("Pinterest accepted the request without returning a Pin identifier")
-        return ProviderPublishResult(post_id=str(pin_id), status_code=response.status_code)
-
+            raise RuntimeError(
+                "Pinterest accepted the request without returning a Pin identifier"
+            )
+        return ProviderPublishResult(
+            post_id=str(pin_id), status_code=response.status_code
+        )
 
     def delete(self, access_token: str, provider_post_id: str) -> None:
         """Delete a Pin."""
@@ -83,7 +110,9 @@ class PinterestPlatform(SocialPlatform):
         )
 
 
-def _publish_video_pin(access_token: str, board_id: str, content: str, media_urls: list[str]) -> ProviderPublishResult:
+def _publish_video_pin(
+    access_token: str, board_id: str, content: str, media_urls: list[str]
+) -> ProviderPublishResult:
     """Register a video, upload it, poll until succeeded, then create the Pin.
 
     https://developers.pinterest.com/docs/api/v5/#operation/media/create
@@ -98,11 +127,18 @@ def _publish_video_pin(access_token: str, board_id: str, content: str, media_url
     cover = public_media_url(images[0], platform="Pinterest")
     video_bytes, content_type = _video_bytes(videos[0])
     registered = provider_request(
-        "POST", "https://api.pinterest.com/v5/media", access_token=access_token, json={"media_type": "video"},
+        "POST",
+        "https://api.pinterest.com/v5/media",
+        access_token=access_token,
+        json={"media_type": "video"},
     ).json()
     media_id = registered.get("media_id")
     upload_url = registered.get("upload_url")
-    parameters = registered.get("upload_parameters") if isinstance(registered.get("upload_parameters"), dict) else {}
+    parameters = (
+        registered.get("upload_parameters")
+        if isinstance(registered.get("upload_parameters"), dict)
+        else {}
+    )
     if not media_id or not upload_url:
         raise RuntimeError("Pinterest did not return a video upload session")
     _upload_to_pinterest(str(upload_url), parameters, video_bytes, content_type)
@@ -115,16 +151,27 @@ def _publish_video_pin(access_token: str, board_id: str, content: str, media_url
         description = description[:800]
     payload = {
         "board_id": board_id,
-        "media_source": {"source_type": "video_id", "media_id": str(media_id), "cover_image_url": cover},
+        "media_source": {
+            "source_type": "video_id",
+            "media_id": str(media_id),
+            "cover_image_url": cover,
+        },
     }
     if title:
         payload["title"] = title
         payload["description"] = description
-    response = provider_request("POST", "https://api.pinterest.com/v5/pins", access_token=access_token, json=payload)
+    response = provider_request(
+        "POST",
+        "https://api.pinterest.com/v5/pins",
+        access_token=access_token,
+        json=payload,
+    )
     body = response.json()
     pin_id = body.get("id")
     if not pin_id:
-        raise RuntimeError("Pinterest accepted the video Pin without returning a Pin identifier")
+        raise RuntimeError(
+            "Pinterest accepted the video Pin without returning a Pin identifier"
+        )
     return ProviderPublishResult(post_id=str(pin_id), status_code=response.status_code)
 
 
@@ -149,13 +196,23 @@ def _video_bytes(url: str) -> tuple[bytes, str]:
             "The Pinterest video URL redirected. Use a direct public file URL so the download stays on that host."
         )
     if response.is_error or not response.content:
-        raise ProviderConfigurationError("Could not download the Pinterest video from the media URL.")
-    content_type = (response.headers.get("content-type") or "video/mp4").split(";", 1)[0].strip()
+        raise ProviderConfigurationError(
+            "Could not download the Pinterest video from the media URL."
+        )
+    content_type = (
+        (response.headers.get("content-type") or "video/mp4").split(";", 1)[0].strip()
+    )
     return response.content, content_type or "video/mp4"
 
 
-def _upload_to_pinterest(upload_url: str, parameters: dict, video_bytes: bytes, content_type: str) -> None:
-    data = {str(key): str(value) for key, value in parameters.items() if str(key).lower() != "content-type"}
+def _upload_to_pinterest(
+    upload_url: str, parameters: dict, video_bytes: bytes, content_type: str
+) -> None:
+    data = {
+        str(key): str(value)
+        for key, value in parameters.items()
+        if str(key).lower() != "content-type"
+    }
     try:
         response = httpx.request(
             "POST",
@@ -176,13 +233,17 @@ def _wait_until_ready(access_token: str, media_id: str) -> None:
     deadline = _clock() + POLL_TIMEOUT_SECONDS
     while True:
         body = provider_request(
-            "GET", f"https://api.pinterest.com/v5/media/{media_id}", access_token=access_token,
+            "GET",
+            f"https://api.pinterest.com/v5/media/{media_id}",
+            access_token=access_token,
         ).json()
         status = str(body.get("status") or "").lower()
         if status == "succeeded":
             return
         if status == "failed":
-            raise ProviderConfigurationError("Pinterest could not process this video. Nothing was pinned.")
+            raise ProviderConfigurationError(
+                "Pinterest could not process this video. Nothing was pinned."
+            )
         if _clock() >= deadline:
             raise ProviderConfigurationError(
                 f"Pinterest is still processing this video after {int(POLL_TIMEOUT_SECONDS)}s. Nothing was pinned."

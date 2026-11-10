@@ -16,12 +16,19 @@ def upgrade() -> None:
     if "full_name" not in user_columns:
         op.add_column(
             "users",
-            sa.Column("full_name", sa.String(length=160), nullable=False, server_default=""),
+            sa.Column(
+                "full_name", sa.String(length=160), nullable=False, server_default=""
+            ),
         )
     if "workspace_name" not in user_columns:
         op.add_column(
             "users",
-            sa.Column("workspace_name", sa.String(length=160), nullable=False, server_default="My Workspace"),
+            sa.Column(
+                "workspace_name",
+                sa.String(length=160),
+                nullable=False,
+                server_default="My Workspace",
+            ),
         )
     if not inspector.has_table("workspaces"):
         op.create_table(
@@ -34,7 +41,9 @@ def upgrade() -> None:
             sa.ForeignKeyConstraint(["owner_id"], ["users.id"], ondelete="CASCADE"),
             sa.PrimaryKeyConstraint("id"),
         )
-        op.create_index(op.f("ix_workspaces_owner_id"), "workspaces", ["owner_id"], unique=False)
+        op.create_index(
+            op.f("ix_workspaces_owner_id"), "workspaces", ["owner_id"], unique=False
+        )
 
 
 def downgrade() -> None:

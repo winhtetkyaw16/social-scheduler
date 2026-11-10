@@ -13,7 +13,11 @@ from app.core import config
 from app.core.security import decrypt_token
 from app.integrations.platform_catalog import default_account_type
 from app.models.connected_account import OAuthPickSession
-from app.services.accounts import delete_pick_session, get_pick_session, upsert_oauth_account
+from app.services.accounts import (
+    delete_pick_session,
+    get_pick_session,
+    upsert_oauth_account,
+)
 
 
 def list_destinations(db: Session, user_id: UUID, session_id: UUID) -> dict:
@@ -34,9 +38,13 @@ def list_destinations(db: Session, user_id: UUID, session_id: UUID) -> dict:
     elif platform == "youtube":
         destinations = _youtube_destinations(access_token)
     elif platform == "pinterest":
-        destinations = _pinterest_destinations(access_token, session.identity_json or {})
+        destinations = _pinterest_destinations(
+            access_token, session.identity_json or {}
+        )
     else:
-        raise HTTPException(status_code=400, detail=f"{platform} does not use destination picking.")
+        raise HTTPException(
+            status_code=400, detail=f"{platform} does not use destination picking."
+        )
     return {
         "platform": platform,
         "pick_session_id": str(session.id),
@@ -46,17 +54,28 @@ def list_destinations(db: Session, user_id: UUID, session_id: UUID) -> dict:
     }
 
 
-def save_destinations(db: Session, user_id: UUID, session_id: UUID, destination_ids: list[str]) -> list:
+def save_destinations(
+    db: Session, user_id: UUID, session_id: UUID, destination_ids: list[str]
+) -> list:
     if not destination_ids:
-        raise HTTPException(status_code=422, detail="Select at least one destination to save.")
+        raise HTTPException(
+            status_code=422, detail="Select at least one destination to save."
+        )
     session = get_pick_session(db, user_id, session_id)
     listed = list_destinations(db, user_id, session_id)
     by_id = {item["id"]: item for item in listed["destinations"]}
     missing = [item for item in destination_ids if item not in by_id]
     if missing:
-        raise HTTPException(status_code=422, detail="One or more selected destinations are no longer available.")
+        raise HTTPException(
+            status_code=422,
+            detail="One or more selected destinations are no longer available.",
+        )
     access_token = decrypt_token(session.access_token_ciphertext)
-    refresh = decrypt_token(session.refresh_token_ciphertext) if session.refresh_token_ciphertext else None
+    refresh = (
+        decrypt_token(session.refresh_token_ciphertext)
+        if session.refresh_token_ciphertext
+        else None
+    )
     saved = []
     parent_id = None
     # For Pinterest, also keep the user parent so boards can reference it.
@@ -89,7 +108,8 @@ def save_destinations(db: Session, user_id: UUID, session_id: UUID, destination_
             platform=dest_platform,
             platform_account_id=item["id"],
             account_name=item["name"],
-            account_type=item.get("account_type") or default_account_type(dest_platform),
+            account_type=item.get("account_type")
+            or default_account_type(dest_platform),
             parent_account_id=parent_id if dest_platform == session.platform else None,
             access_token=token_for_dest,
             refresh_token=refresh,
@@ -110,7 +130,11 @@ def _ig_item(ig: dict, token: str, page_id: str | None = None) -> dict:
     ig_name = str(ig.get("name") or ig.get("username") or "Instagram")[:255]
     item = {
         "id": str(ig["id"]),
-        "name": ig_name if not ig.get("username") else f"{ig_name} (@{ig.get('username')})"[:255],
+        "name": (
+            ig_name
+            if not ig.get("username")
+            else f"{ig_name} (@{ig.get('username')})"[:255]
+        ),
         "account_type": "business",
         "platform": "instagram",
         "access_token": token,
@@ -135,15 +159,26 @@ def _instagram_destinations(access_token: str) -> list[dict]:
     try:
         pages = httpx.get(
             f"{base}/me/accounts",
-            params={"fields": f"id,name,access_token,instagram_business_account{{{ig_fields}}}", "limit": 100},
+            params={
+                "fields": f"id,name,access_token,instagram_business_account{{{ig_fields}}}",
+                "limit": 100,
+            },
             headers=headers,
             timeout=30.0,
         )
         if not pages.is_error:
             for page in pages.json().get("data") or []:
-                ig = page.get("instagram_business_account") if isinstance(page, dict) else None
+                ig = (
+                    page.get("instagram_business_account")
+                    if isinstance(page, dict)
+                    else None
+                )
                 if isinstance(ig, dict) and ig.get("id") and str(ig["id"]) not in found:
-                    found[str(ig["id"])] = _ig_item(ig, page.get("access_token") or access_token, str(page.get("id")))
+                    found[str(ig["id"])] = _ig_item(
+                        ig,
+                        page.get("access_token") or access_token,
+                        str(page.get("id")),
+                    )
     except httpx.HTTPError:
         pass
     if found:
@@ -165,7 +200,11 @@ def _instagram_destinations(access_token: str) -> list[dict]:
                     continue
                 for key in ("owned_instagram_accounts", "instagram_accounts"):
                     for ig in (business.get(key) or {}).get("data") or []:
-                        if isinstance(ig, dict) and ig.get("id") and str(ig["id"]) not in found:
+                        if (
+                            isinstance(ig, dict)
+                            and ig.get("id")
+                            and str(ig["id"]) not in found
+                        ):
                             found[str(ig["id"])] = _ig_item(ig, access_token)
     except httpx.HTTPError:
         pass
@@ -182,7 +221,9 @@ def _notes_for(platform: str) -> str:
     if platform == "youtube":
         return "Choose YouTube Channel / Brand channel destinations."
     if platform == "pinterest":
-        return "Choose Boards to pin to. The Pinterest user is saved as a parent identity."
+        return (
+            "Choose Boards to pin to. The Pinterest user is saved as a parent identity."
+        )
     return ""
 
 
@@ -200,9 +241,13 @@ def _facebook_destinations(access_token: str) -> list[dict]:
             timeout=30.0,
         )
     except httpx.HTTPError as exc:
-        raise HTTPException(status_code=502, detail="Could not reach Facebook to list Pages.") from exc
+        raise HTTPException(
+            status_code=502, detail="Could not reach Facebook to list Pages."
+        ) from exc
     if pages.is_error:
-        raise HTTPException(status_code=502, detail="Facebook refused to list Pages for this login.")
+        raise HTTPException(
+            status_code=502, detail="Facebook refused to list Pages for this login."
+        )
     seen_ig: set[str] = set()
     for page in pages.json().get("data") or []:
         if not isinstance(page, dict) or not page.get("id"):
@@ -217,7 +262,11 @@ def _facebook_destinations(access_token: str) -> list[dict]:
         }
         picture = page.get("picture")
         if isinstance(picture, dict):
-            data = picture.get("data") if isinstance(picture.get("data"), dict) else picture
+            data = (
+                picture.get("data")
+                if isinstance(picture.get("data"), dict)
+                else picture
+            )
             url = data.get("url") if isinstance(data, dict) else None
             if isinstance(url, str) and url.startswith(("http://", "https://")):
                 item["avatar_url"] = url
@@ -231,14 +280,20 @@ def _facebook_destinations(access_token: str) -> list[dict]:
                 ig_name = str(ig.get("name") or ig.get("username") or "Instagram")[:255]
                 ig_item = {
                     "id": ig_id,
-                    "name": ig_name if not ig.get("username") else f"{ig_name} (@{ig.get('username')})"[:255],
+                    "name": (
+                        ig_name
+                        if not ig.get("username")
+                        else f"{ig_name} (@{ig.get('username')})"[:255]
+                    ),
                     "account_type": "business",
                     "platform": "instagram",
                     "access_token": page.get("access_token") or access_token,
                     "linked_facebook_page_id": str(page["id"]),
                 }
                 avatar = ig.get("profile_picture_url")
-                if isinstance(avatar, str) and avatar.startswith(("http://", "https://")):
+                if isinstance(avatar, str) and avatar.startswith(
+                    ("http://", "https://")
+                ):
                     ig_item["avatar_url"] = avatar
                 destinations.append(ig_item)
 
@@ -292,7 +347,12 @@ def _linkedin_destinations(access_token: str, identity: dict) -> list[dict]:
     try:
         response = httpx.get(
             "https://api.linkedin.com/rest/organizationAcls",
-            params={"q": "roleAssignee", "role": "ADMINISTRATOR", "state": "APPROVED", "count": 50},
+            params={
+                "q": "roleAssignee",
+                "role": "ADMINISTRATOR",
+                "state": "APPROVED",
+                "count": 50,
+            },
             headers=headers,
             timeout=30.0,
         )
@@ -303,7 +363,11 @@ def _linkedin_destinations(access_token: str, identity: dict) -> list[dict]:
         try:
             legacy = httpx.get(
                 "https://api.linkedin.com/v2/organizationalEntityAcls",
-                params={"q": "roleAssignee", "role": "ADMINISTRATOR", "state": "APPROVED"},
+                params={
+                    "q": "roleAssignee",
+                    "role": "ADMINISTRATOR",
+                    "state": "APPROVED",
+                },
                 headers={"Authorization": f"Bearer {access_token}"},
                 timeout=30.0,
             )
@@ -320,8 +384,18 @@ def _linkedin_destinations(access_token: str, identity: dict) -> list[dict]:
             continue
         org_id = str(org).split(":")[-1]
         urn = org if str(org).startswith("urn:") else f"urn:li:organization:{org_id}"
-        name = _linkedin_org_name(access_token, urn, headers) or f"LinkedIn organization {org_id}"
-        destinations.append({"id": urn, "name": name[:255], "account_type": "organization", "platform": "linkedin"})
+        name = (
+            _linkedin_org_name(access_token, urn, headers)
+            or f"LinkedIn organization {org_id}"
+        )
+        destinations.append(
+            {
+                "id": urn,
+                "name": name[:255],
+                "account_type": "organization",
+                "platform": "linkedin",
+            }
+        )
     return destinations
 
 
@@ -351,9 +425,14 @@ def _youtube_destinations(access_token: str) -> list[dict]:
             timeout=30.0,
         )
     except httpx.HTTPError as exc:
-        raise HTTPException(status_code=502, detail="Could not reach YouTube to list channels.") from exc
+        raise HTTPException(
+            status_code=502, detail="Could not reach YouTube to list channels."
+        ) from exc
     if response.is_error:
-        raise HTTPException(status_code=502, detail="YouTube refused to list channels for this Google account.")
+        raise HTTPException(
+            status_code=502,
+            detail="YouTube refused to list channels for this Google account.",
+        )
     destinations: list[dict] = []
     for item in response.json().get("items") or []:
         if not isinstance(item, dict) or not item.get("id"):
@@ -368,7 +447,11 @@ def _youtube_destinations(access_token: str) -> list[dict]:
             "platform": "youtube",
             "custom_url": snippet.get("customUrl"),
         }
-        thumbs = snippet.get("thumbnails") if isinstance(snippet.get("thumbnails"), dict) else {}
+        thumbs = (
+            snippet.get("thumbnails")
+            if isinstance(snippet.get("thumbnails"), dict)
+            else {}
+        )
         for size in ("high", "medium", "default"):
             thumb = thumbs.get(size) if isinstance(thumbs.get(size), dict) else None
             url = thumb.get("url") if thumb else None
@@ -377,7 +460,10 @@ def _youtube_destinations(access_token: str) -> list[dict]:
                 break
         destinations.append(entry)
     if not destinations:
-        raise HTTPException(status_code=422, detail="No YouTube channels were returned for this Google account.")
+        raise HTTPException(
+            status_code=422,
+            detail="No YouTube channels were returned for this Google account.",
+        )
     return destinations
 
 
@@ -391,7 +477,9 @@ def _pinterest_destinations(access_token: str, identity: dict) -> list[dict]:
             timeout=30.0,
         )
     except httpx.HTTPError as exc:
-        raise HTTPException(status_code=502, detail="Could not reach Pinterest to list boards.") from exc
+        raise HTTPException(
+            status_code=502, detail="Could not reach Pinterest to list boards."
+        ) from exc
     if response.is_error:
         raise HTTPException(status_code=502, detail="Pinterest refused to list boards.")
     for board in response.json().get("items") or []:
@@ -408,5 +496,8 @@ def _pinterest_destinations(access_token: str, identity: dict) -> list[dict]:
             }
         )
     if not destinations:
-        raise HTTPException(status_code=422, detail="No Pinterest boards were returned. Create a board, then reconnect.")
+        raise HTTPException(
+            status_code=422,
+            detail="No Pinterest boards were returned. Create a board, then reconnect.",
+        )
     return destinations

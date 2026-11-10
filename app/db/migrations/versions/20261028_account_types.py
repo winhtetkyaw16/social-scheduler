@@ -1,9 +1,8 @@
 """Add account_type/parent + oauth destination pick sessions."""
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy import inspect
-
 
 revision = "20261028_account_types"
 down_revision = "20261022_post_internal_comments"
@@ -25,9 +24,20 @@ def _has_table(table: str) -> bool:
 def upgrade() -> None:
     if not _has_column("connected_accounts", "account_type"):
         with op.batch_alter_table("connected_accounts") as batch:
-            batch.add_column(sa.Column("account_type", sa.String(length=40), nullable=False, server_default="user"))
+            batch.add_column(
+                sa.Column(
+                    "account_type",
+                    sa.String(length=40),
+                    nullable=False,
+                    server_default="user",
+                )
+            )
             batch.add_column(sa.Column("parent_account_id", sa.Uuid(), nullable=True))
-            batch.add_column(sa.Column("extra_metadata", sa.JSON(), nullable=False, server_default="{}"))
+            batch.add_column(
+                sa.Column(
+                    "extra_metadata", sa.JSON(), nullable=False, server_default="{}"
+                )
+            )
             batch.create_foreign_key(
                 "fk_connected_accounts_parent_account_id",
                 "connected_accounts",
@@ -35,7 +45,9 @@ def upgrade() -> None:
                 ["id"],
                 ondelete="SET NULL",
             )
-            batch.create_index("ix_connected_accounts_parent_account_id", ["parent_account_id"])
+            batch.create_index(
+                "ix_connected_accounts_parent_account_id", ["parent_account_id"]
+            )
 
     if not _has_table("oauth_pick_sessions"):
         op.create_table(
@@ -54,18 +66,28 @@ def upgrade() -> None:
             sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
             sa.PrimaryKeyConstraint("id"),
         )
-        op.create_index("ix_oauth_pick_sessions_user_platform", "oauth_pick_sessions", ["user_id", "platform"])
-        op.create_index("ix_oauth_pick_sessions_user_id", "oauth_pick_sessions", ["user_id"])
+        op.create_index(
+            "ix_oauth_pick_sessions_user_platform",
+            "oauth_pick_sessions",
+            ["user_id", "platform"],
+        )
+        op.create_index(
+            "ix_oauth_pick_sessions_user_id", "oauth_pick_sessions", ["user_id"]
+        )
 
 
 def downgrade() -> None:
     if _has_table("oauth_pick_sessions"):
         try:
-            op.drop_index("ix_oauth_pick_sessions_user_id", table_name="oauth_pick_sessions")
+            op.drop_index(
+                "ix_oauth_pick_sessions_user_id", table_name="oauth_pick_sessions"
+            )
         except Exception:
             pass
         try:
-            op.drop_index("ix_oauth_pick_sessions_user_platform", table_name="oauth_pick_sessions")
+            op.drop_index(
+                "ix_oauth_pick_sessions_user_platform", table_name="oauth_pick_sessions"
+            )
         except Exception:
             pass
         op.drop_table("oauth_pick_sessions")
@@ -76,7 +98,9 @@ def downgrade() -> None:
             except Exception:
                 pass
             try:
-                batch.drop_constraint("fk_connected_accounts_parent_account_id", type_="foreignkey")
+                batch.drop_constraint(
+                    "fk_connected_accounts_parent_account_id", type_="foreignkey"
+                )
             except Exception:
                 pass
             batch.drop_column("extra_metadata")

@@ -25,12 +25,17 @@ def _connect_x(client, headers, account_name="Brand"):
 
 def test_duplicate_publish_task_calls_provider_once(client, auth_headers, monkeypatch):
     headers, _tokens = auth_headers
-    monkeypatch.setattr("app.tasks.publish_post.publish_post_task.apply_async", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        "app.tasks.publish_post.publish_post_task.apply_async",
+        lambda *args, **kwargs: None,
+    )
     publish_calls = []
 
     def fake_publish(*args, **kwargs):
         publish_calls.append(1)
-        return ProviderPublishResult(post_id=f"prov-{len(publish_calls)}", request_id="req", status_code=200)
+        return ProviderPublishResult(
+            post_id=f"prov-{len(publish_calls)}", request_id="req", status_code=200
+        )
 
     monkeypatch.setattr("app.tasks.publish_post.publish", fake_publish)
     account = _connect_x(client, headers)
@@ -55,7 +60,9 @@ def test_duplicate_publish_task_calls_provider_once(client, auth_headers, monkey
     with ThreadPoolExecutor(max_workers=2) as pool:
         results = list(pool.map(lambda _: publish_post_task.run(post_id), range(2)))
 
-    assert len(publish_calls) == 1, f"provider called {len(publish_calls)} times; results={results}"
+    assert (
+        len(publish_calls) == 1
+    ), f"provider called {len(publish_calls)} times; results={results}"
     statuses = {result["status"] for result in results}
     assert "published" in statuses
     assert statuses <= {"published", "skipped"}
@@ -67,9 +74,14 @@ def test_duplicate_publish_task_calls_provider_once(client, auth_headers, monkey
     assert body["provider_post_id"] == "prov-1"
 
 
-def test_list_posts_reconciles_provider_id_with_scheduled_status(client, auth_headers, monkeypatch):
+def test_list_posts_reconciles_provider_id_with_scheduled_status(
+    client, auth_headers, monkeypatch
+):
     headers, _tokens = auth_headers
-    monkeypatch.setattr("app.tasks.publish_post.publish_post_task.apply_async", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        "app.tasks.publish_post.publish_post_task.apply_async",
+        lambda *args, **kwargs: None,
+    )
     account = _connect_x(client, headers, account_name="Reconcile")
     scheduled_at = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
     created = client.post(
@@ -88,10 +100,12 @@ def test_list_posts_reconciles_provider_id_with_scheduled_status(client, auth_he
     post_id = created.json()["id"]
     assert created.json()["status"] == "scheduled"
 
+    from uuid import UUID
+
+    from sqlalchemy import select
+
     from app.db.session import SessionLocal
     from app.models import ScheduledPost
-    from sqlalchemy import select
-    from uuid import UUID
 
     db = SessionLocal()
     try:

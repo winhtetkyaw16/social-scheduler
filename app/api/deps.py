@@ -1,3 +1,5 @@
+"""FastAPI dependencies shared by versioned API endpoints."""
+
 from collections.abc import Generator
 from uuid import UUID
 
@@ -46,6 +48,3 @@ def get_current_user(
     if user is None or not user.is_active:
         raise credentials_error
     return user
-
-
-"""FastAPI dependencies shared by versioned API endpoints."""

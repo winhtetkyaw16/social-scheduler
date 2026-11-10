@@ -1,6 +1,21 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { choiceOptions, indicesForChoice, choiceOf, pickerFor, togglePick, rowText, buildFixPlan, planResult, identityLine, fmtDuration, SUPPORTED_FORMATS, autoFormat, effectiveFormat, channelErrors } from "./fixPlan.js";
+import {
+  choiceOptions,
+  indicesForChoice,
+  choiceOf,
+  pickerFor,
+  togglePick,
+  rowText,
+  buildFixPlan,
+  planResult,
+  identityLine,
+  fmtDuration,
+  SUPPORTED_FORMATS,
+  autoFormat,
+  effectiveFormat,
+  channelErrors,
+} from "./fixPlan.js";
 import { checkMedia } from "./mediaRules.js";
 
 const P = (n) => ({ kind: "photo", width: 1080, height: 1080, name: `p${n}.jpg` });
@@ -32,7 +47,9 @@ test("picker limits and X choose 4", () => {
   assert.equal(pickerFor("instagram", MIX).limit, 20);
   assert.equal(pickerFor("threads", MIX).limit, 20);
   const x = pickerFor("x", MIX);
-  assert.equal(x.kind, "x4"); assert.equal(x.limit, 4); assert.deepEqual(x.items, [0, 1, 2, 3, 4, 5]);
+  assert.equal(x.kind, "x4");
+  assert.equal(x.limit, 4);
+  assert.deepEqual(x.items, [0, 1, 2, 3, 4, 5]);
   assert.equal(pickerFor("x", [P(1), P(2)]), null);
   assert.deepEqual(togglePick([0, 1, 2, 3], 4, 4), [0, 1, 2, 3]);
   assert.deepEqual(togglePick([0, 1, 2], 5, 4), [0, 1, 2, 5]);
@@ -41,20 +58,36 @@ test("picker limits and X choose 4", () => {
 });
 
 test("row text: summaries and notes, no sizes or formats", () => {
-  assert.deepEqual(rowText("facebook", MIX, [6], { suggested: [0, 1, 2, 3, 4, 5] }), { line2: "Video · 0:42", line3: "Photos won't be posted here" });
-  assert.deepEqual(rowText("facebook", MIX, [0, 1, 2, 3, 4, 5], { suggested: [0, 1, 2, 3, 4, 5] }), { line2: "6 photos", line3: "Facebook can't mix photos and a video" });
-  assert.deepEqual(rowText("x", MIX, [0, 1, 2, 3], { suggested: [0, 1, 2, 3] }), { line2: "4 photos", line3: "X allows up to 4 — we'll use the first 4" });
+  assert.deepEqual(rowText("facebook", MIX, [6], { suggested: [0, 1, 2, 3, 4, 5] }), {
+    line2: "Video · 0:42",
+    line3: "Photos won't be posted here",
+  });
+  assert.deepEqual(
+    rowText("facebook", MIX, [0, 1, 2, 3, 4, 5], { suggested: [0, 1, 2, 3, 4, 5] }),
+    { line2: "6 photos", line3: "Facebook can't mix photos and a video" },
+  );
+  assert.deepEqual(rowText("x", MIX, [0, 1, 2, 3], { suggested: [0, 1, 2, 3] }), {
+    line2: "4 photos",
+    line3: "X allows up to 4 — we'll use the first 4",
+  });
   assert.equal(rowText("instagram", MIX, [0, 1, 2, 3, 4, 5, 6]).line2, "Carousel · 7 items");
   const crop = [{ kind: "photo", width: 1000, height: 3000 }, P(2)];
   assert.equal(rowText("instagram", crop, [0, 1]).line3, ""); // auto-fit is silent
-  assert.equal(fmtDuration(42), "0:42"); assert.equal(fmtDuration(125), "2:05");
+  assert.equal(fmtDuration(42), "0:42");
+  assert.equal(fmtDuration(125), "2:05");
 });
 
 test("nothing-postable states", () => {
   const plan = buildFixPlan([{ account: acc(1, "youtube"), infos: [P(1)], problems: 1 }]);
   assert.equal(plan.entries[0].empty, true);
   assert.equal(plan.entries[0].line2, "Nothing to post here");
-  const skipped = buildFixPlan([{ account: acc(1, "youtube"), infos: [P(1)], problems: 1 }, { account: acc(2, "facebook"), infos: [P(1)], problems: 0 }], { 1: { skip: true } });
+  const skipped = buildFixPlan(
+    [
+      { account: acc(1, "youtube"), infos: [P(1)], problems: 1 },
+      { account: acc(2, "facebook"), infos: [P(1)], problems: 0 },
+    ],
+    { 1: { skip: true } },
+  );
   assert.equal(skipped.entries[0].line3, "This account won't get this post.");
   assert.equal(skipped.counts.total, 1);
   assert.deepEqual(planResult(skipped), { selections: { 2: [0] }, skip: [1], count: 1 });
@@ -69,9 +102,12 @@ test("counts match between panel and sheet; no-changes group", () => {
   ];
   const panel = buildFixPlan(rows);
   const sheet = buildFixPlan(rows, { 1: { indices: [6] } });
-  assert.equal(panel.counts.changing, 2); assert.equal(sheet.counts.changing, 2);
-  assert.equal(sheet.counts.unchanged, 2); assert.equal(sheet.counts.total, 4);
-  assert.equal(sheet.entries[0].changed, true); assert.equal(sheet.entries[0].choice, "Video");
+  assert.equal(panel.counts.changing, 2);
+  assert.equal(sheet.counts.changing, 2);
+  assert.equal(sheet.counts.unchanged, 2);
+  assert.equal(sheet.counts.total, 4);
+  assert.equal(sheet.entries[0].changed, true);
+  assert.equal(sheet.entries[0].choice, "Video");
   assert.equal(panel.entries[0].changed, false);
 });
 
@@ -82,71 +118,176 @@ test("identity: handle only from API, FB pages say Facebook Page", () => {
 });
 
 test("Fix for me count ignores what the app fixes on its own (small, odd-shaped, PNG Instagram photos)", () => {
-  const ig = { id: "ig1", platform: "instagram" }, tt = { id: "tt1", platform: "tiktok" };
-  const infos = [{ kind: "photo", width: 95, height: 400, ext: "png" }, { kind: "photo", width: 3000, height: 800, ext: "webp" }];
-  const rows = [ig, tt].map((account) => ({ account, format: "Post", infos, problems: checkMedia(account.platform, infos).problems.length }));
+  const ig = { id: "ig1", platform: "instagram" },
+    tt = { id: "tt1", platform: "tiktok" };
+  const infos = [
+    { kind: "photo", width: 95, height: 400, ext: "png" },
+    { kind: "photo", width: 3000, height: 800, ext: "webp" },
+  ];
+  const rows = [ig, tt].map((account) => ({
+    account,
+    format: "Post",
+    infos,
+    problems: checkMedia(account.platform, infos).problems.length,
+  }));
   assert.equal(buildFixPlan(rows).counts.changing, 0);
 });
 
 test("publishBlock: errors block posting, auto-fixed issues and warnings don't, and it re-enables once cleared", async () => {
   const { publishBlock } = await import("./fixPlan.js");
-  const ig = { id: "ig", platform: "instagram" }, yt = { id: "yt", platform: "youtube" };
+  const ig = { id: "ig", platform: "instagram" },
+    yt = { id: "yt", platform: "youtube" };
   assert.deepEqual(publishBlock({}), { blocked: false, accounts: 0, hint: "" });
   // Auto-fixed (IG upscale / auto-fit) leave no problems; warnings live in channelNotices, not here.
-  assert.equal(publishBlock({ mediaReport: [{ account: ig, check: { problems: [], notes: ["auto"], hints: [] } }] }).blocked, false);
-  const err = publishBlock({ channelWarnings: [{ account: yt, message: "Please include a video for this Short" }] });
-  assert.equal(err.blocked, true); assert.equal(err.hint, "Fix the errors above to post");
-  const media = publishBlock({ mediaReport: [{ account: ig, check: { problems: ["too many"] } }, { account: yt, check: { problems: [] } }] });
-  assert.equal(media.blocked, true); assert.equal(media.accounts, 1);
+  assert.equal(
+    publishBlock({
+      mediaReport: [{ account: ig, check: { problems: [], notes: ["auto"], hints: [] } }],
+    }).blocked,
+    false,
+  );
+  const err = publishBlock({
+    channelWarnings: [{ account: yt, message: "Please include a video for this Short" }],
+  });
+  assert.equal(err.blocked, true);
+  assert.equal(err.hint, "Fix the errors above to post");
+  const media = publishBlock({
+    mediaReport: [
+      { account: ig, check: { problems: ["too many"] } },
+      { account: yt, check: { problems: [] } },
+    ],
+  });
+  assert.equal(media.blocked, true);
+  assert.equal(media.accounts, 1);
   // After Fix for me / removing media / deselecting the channel the lists are empty again.
-  assert.equal(publishBlock({ channelWarnings: [], mediaReport: [{ account: ig, check: { problems: [] } }] }).blocked, false);
+  assert.equal(
+    publishBlock({ channelWarnings: [], mediaReport: [{ account: ig, check: { problems: [] } }] })
+      .blocked,
+    false,
+  );
 });
 
 test("savedPostBlock: same rules as the composer for a saved post; auto-fixed issues don't block", async () => {
   const { savedPostBlock, channelErrors } = await import("./fixPlan.js");
-  const fb = { id: "fb", platform: "facebook" }, ig = { id: "ig", platform: "instagram" };
-  const post = (format, media, content = "Hi") => ({ content, media_urls: media, post_metadata: { format } });
-  const reel = savedPostBlock({ account: fb, post: post("Reel / Video", ["https://c/x.jpg"]), limit: 500 });
-  assert.equal(reel.blocked, true); assert.equal(reel.hint, "Fix the errors above to post");
+  const fb = { id: "fb", platform: "facebook" },
+    ig = { id: "ig", platform: "instagram" };
+  const post = (format, media, content = "Hi") => ({
+    content,
+    media_urls: media,
+    post_metadata: { format },
+  });
+  const reel = savedPostBlock({
+    account: fb,
+    post: post("Reel / Video", ["https://c/x.jpg"]),
+    limit: 500,
+  });
+  assert.equal(reel.blocked, true);
+  assert.equal(reel.hint, "Fix the errors above to post");
   assert.ok(reel.messages.some((m) => m.includes("include a video")));
-  assert.equal(savedPostBlock({ account: fb, post: post("Reel / Video", ["https://c/x.mp4"]), limit: 500 }).blocked, false);
+  assert.equal(
+    savedPostBlock({ account: fb, post: post("Reel / Video", ["https://c/x.mp4"]), limit: 500 })
+      .blocked,
+    false,
+  );
   // Caption is read live from the panel, so fixing it there clears the block.
-  assert.equal(savedPostBlock({ account: fb, post: post("Post", ["https://c/x.jpg"]), content: "  ", limit: 500 }).blocked, true);
-  assert.equal(savedPostBlock({ account: fb, post: post("Post", ["https://c/x.jpg"]), content: "ok", limit: 500 }).blocked, false);
+  assert.equal(
+    savedPostBlock({
+      account: fb,
+      post: post("Post", ["https://c/x.jpg"]),
+      content: "  ",
+      limit: 500,
+    }).blocked,
+    true,
+  );
+  assert.equal(
+    savedPostBlock({
+      account: fb,
+      post: post("Post", ["https://c/x.jpg"]),
+      content: "ok",
+      limit: 500,
+    }).blocked,
+    false,
+  );
   // Instagram small/odd photos are upscaled/auto-fit at publish: no block (no dims known for a saved post).
-  assert.equal(savedPostBlock({ account: ig, post: post("Post", ["https://c/a.png", "https://c/b.jpg"]), limit: 2200 }).blocked, false);
+  assert.equal(
+    savedPostBlock({
+      account: ig,
+      post: post("Post", ["https://c/a.png", "https://c/b.jpg"]),
+      limit: 2200,
+    }).blocked,
+    false,
+  );
   // Media problems from checkMedia block too (TikTok can't mix a video and a photo).
-  assert.equal(savedPostBlock({ account: { id: "t", platform: "tiktok" }, post: post("Post", ["https://c/v.mp4", "https://c/p.jpg"]), limit: 2200 }).blocked, true);
+  assert.equal(
+    savedPostBlock({
+      account: { id: "t", platform: "tiktok" },
+      post: post("Post", ["https://c/v.mp4", "https://c/p.jpg"]),
+      limit: 2200,
+    }).blocked,
+    true,
+  );
   // Composer and panel share channelErrors.
-  assert.deepEqual(channelErrors({ platform: "threads", format: "Story", text: "x", limit: 500, mediaCount: 1 }), ["Story is not available for threads; choose a supported format."]);
+  assert.deepEqual(
+    channelErrors({ platform: "threads", format: "Story", text: "x", limit: 500, mediaCount: 1 }),
+    ["Story is not available for threads; choose a supported format."],
+  );
 });
 
 // --- 2+ videos on single-video networks (regression: errors vanished, Fix for me knew only one video) ---
 const V1 = { kind: "video", duration: 21, name: "a.mp4" };
 const V2 = { kind: "video", duration: 65, name: "b.mp4" };
 const TWO = [V1, V2, P(1), P(2), P(3)];
-const EIGHT = ["facebook", "linkedin", "tiktok", "x", "youtube", "instagram", "threads", "pinterest"];
+const EIGHT = [
+  "facebook",
+  "linkedin",
+  "tiktok",
+  "x",
+  "youtube",
+  "instagram",
+  "threads",
+  "pinterest",
+];
 
 test("blockingGroups: 2 videos + photos on 8 channels gives the specific grouped 'only 1 video' error, and the hint shows", async () => {
   const { blockingGroups, publishBlock } = await import("./fixPlan.js");
-  const rows = EIGHT.map((p, i) => ({ account: acc(i + 1, p), infos: TWO, check: checkMedia(p, TWO, { format: "Post" }) }));
+  const rows = EIGHT.map((p, i) => ({
+    account: acc(i + 1, p),
+    infos: TWO,
+    check: checkMedia(p, TWO, { format: "Post" }),
+  }));
   const groups = blockingGroups(rows);
   const one = groups.find((g) => g.key === "one_video");
   assert.ok(one, "specific error is returned");
-  assert.equal(one.message, "Facebook, LinkedIn, TikTok, X and YouTube allow only 1 video per post");
-  assert.deepEqual(one.accounts.map((a) => a.platform), ["facebook", "linkedin", "tiktok", "x", "youtube"]);
+  assert.equal(
+    one.message,
+    "Facebook, LinkedIn, TikTok, X and YouTube allow only 1 video per post",
+  );
+  assert.deepEqual(
+    one.accounts.map((a) => a.platform),
+    ["facebook", "linkedin", "tiktok", "x", "youtube"],
+  );
   assert.ok(!groups.some((g) => /instagram|threads/i.test(g.message) && /1 video/.test(g.message)));
   const block = publishBlock({ mediaReport: rows });
   assert.equal(block.blocked, true);
   assert.equal(block.hint, "Fix the errors above to post");
-  assert.deepEqual(blockingGroups([{ account: acc(9, "youtube"), infos: [V1, V2], check: checkMedia("youtube", [V1, V2]) }])[0].message, "YouTube allows only 1 video per post");
+  assert.deepEqual(
+    blockingGroups([
+      { account: acc(9, "youtube"), infos: [V1, V2], check: checkMedia("youtube", [V1, V2]) },
+    ])[0].message,
+    "YouTube allows only 1 video per post",
+  );
 });
 
 test("buildFixPlan with 2 videos: single-video networks get a video picker with every video; IG/Threads keep both", () => {
-  const rows = ["facebook", "youtube", "instagram", "threads"].map((p, i) => ({ account: acc(i + 1, p), infos: TWO, check: checkMedia(p, TWO, { format: "Post" }) }));
+  const rows = ["facebook", "youtube", "instagram", "threads"].map((p, i) => ({
+    account: acc(i + 1, p),
+    infos: TWO,
+    check: checkMedia(p, TWO, { format: "Post" }),
+  }));
   const plan = buildFixPlan(rows, { 1: { choice: "Video" } });
   const fb = plan.entries.find((e) => e.platform === "facebook");
-  const fbv = buildFixPlan(rows, { 1: { indices: [0] } }).entries.find((e) => e.platform === "facebook");
+  const fbv = buildFixPlan(rows, { 1: { indices: [0] } }).entries.find(
+    (e) => e.platform === "facebook",
+  );
   assert.equal(fbv.picker.kind, "video");
   assert.deepEqual(fbv.picker.items, [0, 1]);
   assert.equal(fbv.picker.chosen, 0);
@@ -166,14 +307,21 @@ test("per-account video choice is honoured and the publish payload sends only th
   assert.deepEqual(indicesForChoice("facebook", TWO, "Video"), [0]);
   assert.deepEqual(indicesForChoice("facebook", TWO, "Video", { video: 1 }), [1]);
   assert.deepEqual(videoChoice(TWO, 3), [0], "a photo index is not a valid video pick");
-  const rows = [{ account: acc(1, "facebook"), infos: TWO, check: checkMedia("facebook", TWO, { format: "Post" }) },
-    { account: acc(2, "x"), infos: TWO, check: checkMedia("x", TWO, { format: "Post" }) }];
+  const rows = [
+    {
+      account: acc(1, "facebook"),
+      infos: TWO,
+      check: checkMedia("facebook", TWO, { format: "Post" }),
+    },
+    { account: acc(2, "x"), infos: TWO, check: checkMedia("x", TWO, { format: "Post" }) },
+  ];
   const plan = buildFixPlan(rows, { 1: { indices: [1], video: 1 }, 2: { indices: [0], video: 0 } });
   const fb = plan.entries.find((e) => e.account.id === 1);
   assert.deepEqual(fb.indices, [1]);
   assert.equal(fb.picker.chosen, 1);
   const sel = planResult(plan).selections;
-  assert.deepEqual(sel[1], [1]); assert.deepEqual(sel[2], [0]);
+  assert.deepEqual(sel[1], [1]);
+  assert.deepEqual(sel[2], [0]);
   const urls = ["/m/a.mp4", "/m/b.mp4", "/m/p1.jpg", "/m/p2.jpg", "/m/p3.jpg"];
   assert.deepEqual(urlsForSelection(urls, sel[1]), ["/m/b.mp4"]);
   assert.deepEqual(urlsForSelection(urls, sel[2]), ["/m/a.mp4"]);
@@ -191,17 +339,30 @@ test("media panel spacing: pulled up with even top/bottom gaps (no overlap: stay
   const css = readFileSync(new URL("./sc/composer-v2.css", import.meta.url), "utf8");
   const m = css.match(/^\.scd \.c2 \.mp\{margin:(-?\d+)px 16px (\d+)px;/m);
   assert.ok(m);
-  const above = 18 + Number(m[1]), below = Number(m[2]);
+  const above = 18 + Number(m[1]),
+    below = Number(m[2]);
   assert.ok(above >= 8 && Math.abs(above - below) <= 4, `gap above ${above}px vs below ${below}px`);
 });
 
 test("schedule popover: Date/Time/Time zone read as inputs (border, radius, padding, dark border, no overflow)", async () => {
   const { readFileSync } = await import("node:fs");
   const css = readFileSync(new URL("./sc/composer-v2.css", import.meta.url), "utf8");
-  const rule = css.match(/^\.scd \.c2 \.c2-whenpop input,\.scd \.c2 \.c2-whenpop select\{([^}]*)\}/m);
+  const rule = css.match(
+    /^\.scd \.c2 \.c2-whenpop input,\.scd \.c2 \.c2-whenpop select\{([^}]*)\}/m,
+  );
   assert.ok(rule, "light rule exists");
-  for (const d of ["border:1px solid #111", "border-radius:8px", "padding:6px 10px", "box-sizing:border-box", "width:100%"]) assert.ok(rule[1].includes(d), d);
-  assert.match(css, /\.scd\.dark \.c2 \.c2-whenpop input[^{]*\{border-color:rgba\(255,255,255,\.6\)/);
+  for (const d of [
+    "border:1px solid #111",
+    "border-radius:8px",
+    "padding:6px 10px",
+    "box-sizing:border-box",
+    "width:100%",
+  ])
+    assert.ok(rule[1].includes(d), d);
+  assert.match(
+    css,
+    /\.scd\.dark \.c2 \.c2-whenpop input[^{]*\{border-color:rgba\(255,255,255,\.6\)/,
+  );
   assert.match(css, /\.c2-whenpop input:focus-visible/);
   assert.ok(!/\.c2-whenpop[^{]*\.btn[^{]*\{/.test(css), "Done button untouched");
 });
@@ -211,15 +372,44 @@ test("auto format never offers YouTube Community, TikTok Story, or Story", () =>
   assert.deepEqual(SUPPORTED_FORMATS.tiktok, ["Post", "Reel / Video"]);
   assert.equal(autoFormat("youtube", []), "Reel / Video");
   assert.equal(autoFormat("youtube", [{ kind: "video", width: 1080, height: 1920 }]), "Short");
-  assert.equal(autoFormat("youtube", [{ kind: "video", width: 1920, height: 1080 }]), "Reel / Video");
+  assert.equal(
+    autoFormat("youtube", [{ kind: "video", width: 1920, height: 1080 }]),
+    "Reel / Video",
+  );
   assert.equal(autoFormat("instagram", [{ kind: "video", width: 1920, height: 1080 }]), "Post");
-  assert.equal(autoFormat("tiktok", [{ kind: "video", width: 1080, height: 1920 }]), "Reel / Video");
+  assert.equal(
+    autoFormat("tiktok", [{ kind: "video", width: 1080, height: 1920 }]),
+    "Reel / Video",
+  );
   assert.equal(autoFormat("tiktok", [{ kind: "photo" }]), "Post");
   for (const platform of Object.keys(SUPPORTED_FORMATS)) {
     assert.notEqual(autoFormat(platform, [{ kind: "video", width: 1080, height: 1920 }]), "Story");
   }
-  assert.equal(effectiveFormat({ platform: "youtube", stored: "Reel / Video", overridden: true, infos: [{ kind: "video", width: 1080, height: 1920 }] }), "Reel / Video");
-  assert.equal(channelErrors({ platform: "youtube", format: "Post", text: "hi", hasVideo: true, mediaCount: 1 })[0], "Post is not available for youtube; choose a supported format.");
-  assert.equal(channelErrors({ platform: "tiktok", format: "Story", text: "hi", mediaCount: 1 })[0], "Story is not available for tiktok; choose a supported format.");
-  assert.match(channelErrors({ platform: "facebook", format: "", text: "hi", mediaCount: 1 })[0], /no saved format/);
+  assert.equal(
+    effectiveFormat({
+      platform: "youtube",
+      stored: "Reel / Video",
+      overridden: true,
+      infos: [{ kind: "video", width: 1080, height: 1920 }],
+    }),
+    "Reel / Video",
+  );
+  assert.equal(
+    channelErrors({
+      platform: "youtube",
+      format: "Post",
+      text: "hi",
+      hasVideo: true,
+      mediaCount: 1,
+    })[0],
+    "Post is not available for youtube; choose a supported format.",
+  );
+  assert.equal(
+    channelErrors({ platform: "tiktok", format: "Story", text: "hi", mediaCount: 1 })[0],
+    "Story is not available for tiktok; choose a supported format.",
+  );
+  assert.match(
+    channelErrors({ platform: "facebook", format: "", text: "hi", mediaCount: 1 })[0],
+    /no saved format/,
+  );
 });

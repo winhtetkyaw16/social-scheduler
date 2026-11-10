@@ -4,7 +4,14 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    HttpUrl,
+    field_validator,
+    model_validator,
+)
 
 
 class PostCreate(BaseModel):
@@ -56,7 +63,11 @@ class PostRead(BaseModel):
     @classmethod
     def default_missing_execution_outcome(cls, value, handler):
         """ORM rows created before a log summary was attached still serialize."""
-        if value is not None and not isinstance(value, dict) and not hasattr(value, "latest_execution_outcome"):
+        if (
+            value is not None
+            and not isinstance(value, dict)
+            and not hasattr(value, "latest_execution_outcome")
+        ):
             try:
                 setattr(value, "latest_execution_outcome", None)
             except Exception:
@@ -66,12 +77,16 @@ class PostRead(BaseModel):
                 from app.services.error_messages import friendly_error
 
                 account = getattr(value, "connected_account", None)
-                setattr(value, "friendly_error", friendly_error(
-                    getattr(value, "last_error_code", None),
-                    getattr(value, "last_error_message", None),
-                    getattr(account, "platform", None),
-                    getattr(value, "media_urls", None),
-                ))
+                setattr(
+                    value,
+                    "friendly_error",
+                    friendly_error(
+                        getattr(value, "last_error_code", None),
+                        getattr(value, "last_error_message", None),
+                        getattr(account, "platform", None),
+                        getattr(value, "media_urls", None),
+                    ),
+                )
             except Exception:
                 pass
         return handler(value)

@@ -7,28 +7,48 @@ import mimetypes
 import httpx
 
 from app.core.exceptions import ProviderConfigurationError
-from app.integrations.base import ProviderHTTPError, ProviderPublishResult, SocialPlatform, provider_delete
-from app.integrations.media_urls import guess_media_kind, local_upload_path, public_media_url
+from app.integrations.base import (
+    ProviderHTTPError,
+    ProviderPublishResult,
+    SocialPlatform,
+    provider_delete,
+)
+from app.integrations.media_urls import (
+    guess_media_kind,
+    local_upload_path,
+    public_media_url,
+)
 from app.services.media_probe import measure_bytes
 from app.services.post_formats import POST, REEL, SHORT, short_problem
 
-
-
 # Composer "Platform settings" -> YouTube Data API v3 videos.insert (snippet.categoryId, status.*).
 YOUTUBE_CATEGORY_IDS = {
-    "Film & Animation": "1", "Autos & Vehicles": "2", "Music": "10", "Pets & Animals": "15", "Sports": "17",
-    "Travel & Events": "19", "Gaming": "20", "People & Blogs": "22", "Comedy": "23", "Entertainment": "24",
-    "News & Politics": "25", "Howto & Style": "26", "Education": "27", "Science & Technology": "28",
+    "Film & Animation": "1",
+    "Autos & Vehicles": "2",
+    "Music": "10",
+    "Pets & Animals": "15",
+    "Sports": "17",
+    "Travel & Events": "19",
+    "Gaming": "20",
+    "People & Blogs": "22",
+    "Comedy": "23",
+    "Entertainment": "24",
+    "News & Politics": "25",
+    "Howto & Style": "26",
+    "Education": "27",
+    "Science & Technology": "28",
 }
 _YOUTUBE_PRIVACY = {"public": "public", "unlisted": "unlisted", "private": "private"}
 
 
 def youtube_privacy(settings: dict | None) -> str:
+    """Map privacy_status onto public, unlisted, or private. Unknown values become public."""
     raw = str((settings or {}).get("privacy_status") or "public").strip().lower()
     return _YOUTUBE_PRIVACY.get(raw, "public")
 
 
 def youtube_category_id(settings: dict | None) -> str:
+    """Map a category name or numeric id onto a YouTube categoryId. Default is 22."""
     raw = str((settings or {}).get("category") or "").strip()
     if raw.isdigit():
         return raw
@@ -36,10 +56,12 @@ def youtube_category_id(settings: dict | None) -> str:
 
 
 def youtube_made_for_kids(settings: dict | None) -> bool:
-    s = settings or {}
-    if "made_for_kids" in s:
-        return bool(s.get("made_for_kids"))
-    return s.get("audience_classification") == "Made for kids"
+    """True when the composer marked the video made for kids."""
+    prefs = settings or {}
+    if "made_for_kids" in prefs:
+        return bool(prefs.get("made_for_kids"))
+    return prefs.get("audience_classification") == "Made for kids"
+
 
 class YouTubePlatform(SocialPlatform):
     """Upload one video to the authenticated channel via resumable upload."""
@@ -48,8 +70,13 @@ class YouTubePlatform(SocialPlatform):
     supports_remote_delete = True
 
     def publish(
-        self, access_token: str, account_id: str, content: str, media_urls: list[str],
-        settings: dict | None = None, format: str | None = None,
+        self,
+        access_token: str,
+        account_id: str,
+        content: str,
+        media_urls: list[str],
+        settings: dict | None = None,
+        format: str | None = None,
     ) -> ProviderPublishResult:
         fmt = (format or "").strip()
         if fmt == POST:
@@ -62,15 +89,21 @@ class YouTubePlatform(SocialPlatform):
                 f"{fmt} is not available for YouTube. Choose Video or Short. Nothing was uploaded."
             )
         if not account_id or not str(account_id).strip():
-            raise ProviderConfigurationError("YouTube publishing needs a Channel id from OAuth connect.")
+            raise ProviderConfigurationError(
+                "YouTube publishing needs a Channel id from OAuth connect."
+            )
         if not media_urls:
             raise ProviderConfigurationError(
                 "YouTube publishing requires exactly one video file or public video URL. Text-only posts are not supported."
             )
         if len(media_urls) != 1:
-            raise ProviderConfigurationError("YouTube publishing currently supports exactly one video per upload.")
+            raise ProviderConfigurationError(
+                "YouTube publishing currently supports exactly one video per upload."
+            )
         if guess_media_kind(media_urls[0]) == "image":
-            raise ProviderConfigurationError("YouTube publishing requires a video, not an image.")
+            raise ProviderConfigurationError(
+                "YouTube publishing requires a video, not an image."
+            )
 
         video_bytes, content_type = _load_video_bytes(media_urls[0])
         if fmt == SHORT:
@@ -139,9 +172,12 @@ class YouTubePlatform(SocialPlatform):
         body = uploaded.json()
         video_id = body.get("id")
         if not video_id:
-            raise RuntimeError("YouTube accepted the upload without returning a video id")
-        return ProviderPublishResult(post_id=str(video_id), status_code=uploaded.status_code)
-
+            raise RuntimeError(
+                "YouTube accepted the upload without returning a video id"
+            )
+        return ProviderPublishResult(
+            post_id=str(video_id), status_code=uploaded.status_code
+        )
 
     def delete(self, access_token: str, provider_post_id: str) -> None:
         """Delete a YouTube video by id."""
@@ -157,6 +193,7 @@ class YouTubePlatform(SocialPlatform):
 
 
 def _title_and_description(content: str) -> tuple[str, str]:
+    """First line (max 100 chars) is the title; the rest is the description."""
     text = (content or "").strip()
     if not text:
         return "Untitled upload", ""
@@ -168,6 +205,7 @@ def _title_and_description(content: str) -> tuple[str, str]:
 
 
 def _load_video_bytes(url: str) -> tuple[bytes, str]:
+    """Video bytes and a MIME type from a local upload or a public URL."""
     local = local_upload_path(url)
     if local is not None:
         data = local.read_bytes()
@@ -185,8 +223,14 @@ def _load_video_bytes(url: str) -> tuple[bytes, str]:
             "Could not download the YouTube video from the media URL. Use a /static/uploads file or a public https URL."
         ) from exc
     if response.is_error or not response.content:
-        raise ProviderConfigurationError("Could not download the YouTube video from the media URL.")
-    content_type = response.headers.get("content-type") or mimetypes.guess_type(remote)[0] or "video/mp4"
+        raise ProviderConfigurationError(
+            "Could not download the YouTube video from the media URL."
+        )
+    content_type = (
+        response.headers.get("content-type")
+        or mimetypes.guess_type(remote)[0]
+        or "video/mp4"
+    )
     if ";" in content_type:
         content_type = content_type.split(";", 1)[0].strip()
     return response.content, content_type

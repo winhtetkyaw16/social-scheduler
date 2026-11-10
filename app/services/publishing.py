@@ -9,7 +9,12 @@ class PublishingError(Exception):
     """Provider failure with a stable code and retry policy."""
 
     def __init__(
-        self, message: str, *, code: str = "provider_error", retryable: bool = True, status_code: int | None = None
+        self,
+        message: str,
+        *,
+        code: str = "provider_error",
+        retryable: bool = True,
+        status_code: int | None = None,
     ):
         super().__init__(message)
         self.code, self.retryable, self.status_code = code, retryable, status_code
@@ -34,8 +39,15 @@ def _accepts_settings(fn) -> bool:
 
 
 def publish(
-    platform: str, access_token: str, account_id: str, content: str, media_urls: list[str], *, ig_crop: dict | None = None,
-    settings: dict | None = None, format: str | None = None,
+    platform: str,
+    access_token: str,
+    account_id: str,
+    content: str,
+    media_urls: list[str],
+    *,
+    ig_crop: dict | None = None,
+    settings: dict | None = None,
+    format: str | None = None,
 ) -> PublishResult:
     """Publish through the registered platform adapter with normalized errors.
 
@@ -52,7 +64,9 @@ def publish(
     problem = publish_problem(platform, media_urls, content, format)
     if problem:
         raise PublishingError(problem, code="format_invalid", retryable=False)
-    media_urls = prepare_media(platform, media_urls, ig_crop=ig_crop if platform == "instagram" else None)
+    media_urls = prepare_media(
+        platform, media_urls, ig_crop=ig_crop if platform == "instagram" else None
+    )
     try:
         adapter = get_platform(platform)
         kwargs: dict = {}
@@ -64,21 +78,34 @@ def publish(
     except ProviderHTTPError as exc:
         retryable = exc.status_code == 429 or exc.status_code >= 500
         raise PublishingError(
-            str(exc), code="provider_http_error", retryable=retryable, status_code=exc.status_code
+            str(exc),
+            code="provider_http_error",
+            retryable=retryable,
+            status_code=exc.status_code,
         ) from exc
     except RuntimeError as exc:
-        raise PublishingError(str(exc), code="provider_request_error", retryable=True) from exc
+        raise PublishingError(
+            str(exc), code="provider_request_error", retryable=True
+        ) from exc
     except ProviderConfigurationError as exc:
-        raise PublishingError(str(exc), code="provider_not_configured", retryable=False) from exc
+        raise PublishingError(
+            str(exc), code="provider_not_configured", retryable=False
+        ) from exc
     except Exception as exc:
-        raise PublishingError("Provider publishing failed", code="provider_error", retryable=False) from exc
+        raise PublishingError(
+            "Provider publishing failed", code="provider_error", retryable=False
+        ) from exc
 
 
 def delete_remote(platform: str, access_token: str, provider_post_id: str) -> None:
     """Delete a provider-confirmed post. Fail closed on errors or unsupported platforms."""
     post_id = (provider_post_id or "").strip()
     if not post_id:
-        raise PublishingError("Missing provider post id for remote delete", code="remote_delete_missing_id", retryable=False)
+        raise PublishingError(
+            "Missing provider post id for remote delete",
+            code="remote_delete_missing_id",
+            retryable=False,
+        )
     if post_id.startswith("inbox:"):
         # TikTok inbox drafts are not live network posts.
         return
@@ -105,11 +132,12 @@ def delete_remote(platform: str, access_token: str, provider_post_id: str) -> No
             retryable=True,
         ) from exc
     except ProviderConfigurationError as exc:
-        raise PublishingError(str(exc), code="remote_delete_unsupported", retryable=False) from exc
+        raise PublishingError(
+            str(exc), code="remote_delete_unsupported", retryable=False
+        ) from exc
     except Exception as exc:
         raise PublishingError(
             "Remote delete failed. The post was kept in SocialStudio.",
             code="remote_delete_error",
             retryable=False,
         ) from exc
-

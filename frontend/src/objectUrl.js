@@ -34,8 +34,14 @@ export function releaseObjectUrl(file) {
 export function useObjectUrl(file) {
   const [url, setUrl] = useState(() => (typeof file === "string" ? file : ""));
   useEffect(() => {
-    if (!file) { setUrl(""); return undefined; }
-    if (typeof file === "string") { setUrl(file); return undefined; }
+    if (!file) {
+      setUrl("");
+      return undefined;
+    }
+    if (typeof file === "string") {
+      setUrl(file);
+      return undefined;
+    }
     const next = acquireObjectUrl(file);
     setUrl(next);
     return () => releaseObjectUrl(file);
@@ -48,7 +54,11 @@ export function useObjectUrls(files) {
   const list = Array.isArray(files) ? files : [];
   const [urls, setUrls] = useState(() => list.map((f) => (typeof f === "string" ? f : "")));
   // Stable signature of the File/string identities currently in the list.
-  const sig = list.map((f) => (typeof f === "string" ? `s:${f}` : f ? `f:${f.name}:${f.size}:${f.lastModified}` : "")).join("|");
+  const sig = list
+    .map((f) =>
+      typeof f === "string" ? `s:${f}` : f ? `f:${f.name}:${f.size}:${f.lastModified}` : "",
+    )
+    .join("|");
   useEffect(() => {
     const acquired = [];
     const next = list.map((f) => {
@@ -58,7 +68,9 @@ export function useObjectUrls(files) {
       return acquireObjectUrl(f);
     });
     setUrls(next);
-    return () => { acquired.forEach(releaseObjectUrl); };
+    return () => {
+      acquired.forEach(releaseObjectUrl);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- identity via sig
   }, [sig]);
   return urls;

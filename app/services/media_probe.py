@@ -56,7 +56,9 @@ def inspect_path(path: Path) -> MediaFacts:
     duration = mp4_duration_seconds(data)
     dims = mp4_video_dimensions(data) or image_size(data)
     width, height = dims if dims else (None, None)
-    return MediaFacts(duration=duration, width=width, height=height, fps=None, size_bytes=size)
+    return MediaFacts(
+        duration=duration, width=width, height=height, fps=None, size_bytes=size
+    )
 
 
 def measure_bytes(data: bytes) -> MediaFacts:
@@ -64,7 +66,9 @@ def measure_bytes(data: bytes) -> MediaFacts:
     duration = mp4_duration_seconds(data)
     dims = mp4_video_dimensions(data) or image_size(data)
     width, height = dims if dims else (None, None)
-    facts = MediaFacts(duration=duration, width=width, height=height, fps=None, size_bytes=len(data))
+    facts = MediaFacts(
+        duration=duration, width=width, height=height, fps=None, size_bytes=len(data)
+    )
     if facts.duration is not None and facts.width and facts.height:
         return facts
     # Short clips only. A huge buffer is not written to disk just to probe it.
@@ -98,13 +102,14 @@ def mp4_video_dimensions(data: bytes) -> tuple[int, int] | None:
 
 
 def _tkhd_size(payload: bytes) -> tuple[int, int] | None:
+    """Decode a tkhd box payload into pixel width and height, or None."""
     if not payload:
         return None
     version = payload[0]
     offset = 88 if version == 1 else 76
     if len(payload) < offset + 8:
         return None
-    raw_w, raw_h = struct.unpack(">II", payload[offset:offset + 8])
+    raw_w, raw_h = struct.unpack(">II", payload[offset : offset + 8])
     width, height = raw_w >> 16, raw_h >> 16
     if width <= 0 or height <= 0:
         return None
@@ -112,6 +117,8 @@ def _tkhd_size(payload: bytes) -> tuple[int, int] | None:
 
 
 def _tkhd_payloads(data: bytes):
+    """Yield tkhd payloads under moov, walking only container boxes."""
+
     def walk(start: int, end: int, depth: int):
         if depth > 8:
             return
@@ -124,20 +131,21 @@ def _tkhd_payloads(data: bytes):
     yield from walk(0, len(data), 0)
 
 
-def _boxes(buf: bytes, start: int, end: int):
-    i = start
-    while i + 8 <= end:
-        size, kind = struct.unpack(">I4s", buf[i:i + 8])
+def _boxes(data: bytes, start: int, end: int):
+    """Yield (type, payload_start, payload_end) for ISO BMFF boxes in data[start:end]."""
+    offset = start
+    while offset + 8 <= end:
+        size, kind = struct.unpack(">I4s", data[offset : offset + 8])
         header = 8
-        if size == 1 and i + 16 <= end:
-            size = struct.unpack(">Q", buf[i + 8:i + 16])[0]
+        if size == 1 and offset + 16 <= end:
+            size = struct.unpack(">Q", data[offset + 8 : offset + 16])[0]
             header = 16
         elif size == 0:
-            size = end - i
-        if size < header or i + size > end + 8:
+            size = end - offset
+        if size < header or offset + size > end + 8:
             return
-        yield kind, i + header, min(i + size, end)
-        i += size
+        yield kind, offset + header, min(offset + size, end)
+        offset += size
 
 
 def _read_headers(path: Path, size: int) -> bytes:
@@ -156,11 +164,18 @@ def _read_headers(path: Path, size: int) -> bytes:
 
 
 def _ffprobe(path: Path) -> dict | None:
+    """Run ffprobe on a file and return its JSON object, or None."""
     try:
         proc = subprocess.run(
             [
-                "ffprobe", "-v", "error", "-print_format", "json",
-                "-show_streams", "-show_format", str(path),
+                "ffprobe",
+                "-v",
+                "error",
+                "-print_format",
+                "json",
+                "-show_streams",
+                "-show_format",
+                str(path),
             ],
             capture_output=True,
             timeout=20,
@@ -174,11 +189,19 @@ def _ffprobe(path: Path) -> dict | None:
 
 
 def _ffprobe_bytes(data: bytes) -> dict | None:
+    """Run ffprobe on in-memory bytes. None if ffprobe is missing or fails."""
     try:
         proc = subprocess.run(
             [
-                "ffprobe", "-v", "error", "-print_format", "json",
-                "-show_streams", "-show_format", "-i", "pipe:0",
+                "ffprobe",
+                "-v",
+                "error",
+                "-print_format",
+                "json",
+                "-show_streams",
+                "-show_format",
+                "-i",
+                "pipe:0",
             ],
             input=data,
             capture_output=True,
@@ -193,6 +216,7 @@ def _ffprobe_bytes(data: bytes) -> dict | None:
 
 
 def _parse_ffprobe(proc: subprocess.CompletedProcess) -> dict | None:
+    """Decode ffprobe JSON stdout. None on a non-zero exit or invalid JSON."""
     if proc.returncode != 0 or not proc.stdout:
         return None
     try:
@@ -203,8 +227,16 @@ def _parse_ffprobe(proc: subprocess.CompletedProcess) -> dict | None:
 
 
 def _facts_from_ffprobe(body: dict, size: int) -> MediaFacts:
+    """Map the first video stream, and format duration, onto MediaFacts."""
     streams = body.get("streams") if isinstance(body.get("streams"), list) else []
-    video = next((item for item in streams if isinstance(item, dict) and item.get("codec_type") == "video"), None)
+    video = next(
+        (
+            item
+            for item in streams
+            if isinstance(item, dict) and item.get("codec_type") == "video"
+        ),
+        None,
+    )
     width = height = None
     fps = None
     duration = None
@@ -216,10 +248,13 @@ def _facts_from_ffprobe(body: dict, size: int) -> MediaFacts:
     fmt = body.get("format") if isinstance(body.get("format"), dict) else {}
     if duration is None:
         duration = _positive_float(fmt.get("duration"))
-    return MediaFacts(duration=duration, width=width, height=height, fps=fps, size_bytes=size)
+    return MediaFacts(
+        duration=duration, width=width, height=height, fps=fps, size_bytes=size
+    )
 
 
 def _positive_int(value) -> int | None:
+    """The value as a positive int, or None."""
     try:
         number = int(value)
     except (TypeError, ValueError):
@@ -228,6 +263,7 @@ def _positive_int(value) -> int | None:
 
 
 def _positive_float(value) -> float | None:
+    """The value as a positive float, or None."""
     try:
         number = float(value)
     except (TypeError, ValueError):
@@ -236,6 +272,7 @@ def _positive_float(value) -> float | None:
 
 
 def _fps(value) -> float | None:
+    """Parse an ffprobe frame-rate ('num/den' or a float) into frames per second."""
     if not isinstance(value, str) or not value or value in {"0/0", "N/A"}:
         return None
     if "/" in value:

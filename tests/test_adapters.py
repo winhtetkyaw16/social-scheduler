@@ -48,7 +48,11 @@ def test_linkedin_adapter_publishes_text(monkeypatch):
         seen["url"] = url
         seen["headers"] = kwargs.get("headers")
         seen["json"] = kwargs.get("json")
-        return _Response({}, status_code=201, headers={"x-restli-id": "urn:li:share:1", "x-li-uuid": "uuid-1"})
+        return _Response(
+            {},
+            status_code=201,
+            headers={"x-restli-id": "urn:li:share:1", "x-li-uuid": "uuid-1"},
+        )
 
     monkeypatch.setattr(httpx, "request", fake_request)
     monkeypatch.setenv("LINKEDIN_VERSION", "202610")
@@ -73,7 +77,9 @@ def test_instagram_adapter_publishes_one_public_image(monkeypatch):
     monkeypatch.setattr(httpx, "request", fake_request)
     monkeypatch.setenv("INSTAGRAM_GRAPH_API_VERSION", "v24.0")
     monkeypatch.setenv("PUBLIC_BASE_URL", "http://localhost:8000")
-    result = InstagramPlatform().publish("token", "1789", "Caption", ["https://cdn.example.com/photo.jpg"])
+    result = InstagramPlatform().publish(
+        "token", "1789", "Caption", ["https://cdn.example.com/photo.jpg"]
+    )
     assert result.post_id == "ig-post-1"
     assert calls[0][0] == "https://graph.facebook.com/v24.0/1789/media"
     assert calls[0][1]["image_url"] == "https://cdn.example.com/photo.jpg"
@@ -82,7 +88,9 @@ def test_instagram_adapter_publishes_one_public_image(monkeypatch):
 
     calls.clear()
     with pytest.raises(ProviderConfigurationError):
-        InstagramPlatform().publish("token", "1789", "Caption", ["http://localhost:8000/static/uploads/a.jpg"])
+        InstagramPlatform().publish(
+            "token", "1789", "Caption", ["http://localhost:8000/static/uploads/a.jpg"]
+        )
     assert calls == []
 
     monkeypatch.setenv("PUBLIC_BASE_URL", "https://studio.example.com")
@@ -99,9 +107,11 @@ def test_facebook_adapter_deletes_post(monkeypatch):
         seen["method"] = method
         seen["url"] = url
         seen["headers"] = kwargs.get("headers")
+
         class R:
             status_code = 200
             is_error = False
+
         return R()
 
     monkeypatch.setattr(httpx, "request", fake_request)
@@ -119,6 +129,7 @@ def test_facebook_delete_treats_404_as_success(monkeypatch):
         class R:
             status_code = 404
             is_error = True
+
         return R()
 
     monkeypatch.setattr(httpx, "request", fake_request)
@@ -138,9 +149,11 @@ def test_x_adapter_deletes_post(monkeypatch):
     def fake_request(method, url, **kwargs):
         seen["method"] = method
         seen["url"] = url
+
         class R:
             status_code = 200
             is_error = False
+
         return R()
 
     monkeypatch.setattr(httpx, "request", fake_request)

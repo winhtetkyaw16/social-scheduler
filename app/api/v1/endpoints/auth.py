@@ -1,3 +1,5 @@
+"""Register, login, and refresh routes for the studio session."""
+
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status

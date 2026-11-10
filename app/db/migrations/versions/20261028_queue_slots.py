@@ -1,7 +1,7 @@
 """Add Buffer-style queue_slots table."""
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy import inspect
 
 revision = "20261028_queue_slots"
@@ -21,8 +21,18 @@ def upgrade() -> None:
     op.create_table(
         "queue_slots",
         sa.Column("id", sa.Uuid(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("CURRENT_TIMESTAMP"), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("CURRENT_TIMESTAMP"), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+            nullable=False,
+        ),
         sa.Column("user_id", sa.Uuid(), nullable=False),
         sa.Column("platform", sa.String(length=40), nullable=False),
         sa.Column("weekday", sa.Integer(), nullable=False),
@@ -30,9 +40,17 @@ def upgrade() -> None:
         sa.Column("timezone", sa.String(length=64), nullable=False),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("user_id", "platform", "weekday", "time_local", name="uq_queue_slot_user_platform_weekday_time"),
+        sa.UniqueConstraint(
+            "user_id",
+            "platform",
+            "weekday",
+            "time_local",
+            name="uq_queue_slot_user_platform_weekday_time",
+        ),
     )
-    op.create_index("ix_queue_slots_user_platform", "queue_slots", ["user_id", "platform"])
+    op.create_index(
+        "ix_queue_slots_user_platform", "queue_slots", ["user_id", "platform"]
+    )
     op.create_index(op.f("ix_queue_slots_user_id"), "queue_slots", ["user_id"])
 
 

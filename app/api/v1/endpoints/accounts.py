@@ -1,3 +1,5 @@
+"""Connected-account, OAuth callback, and destination-pick routes."""
+
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Response, status
@@ -9,7 +11,13 @@ from app.integrations.platform_catalog import catalog_public
 from app.models import User
 from app.schemas import AccountCreate, AccountRead
 from app.schemas.account import DestinationList, DestinationSave, OAuthStart
-from app.services.accounts import activate_account, create_account, deactivate_account, delete_account, list_accounts
+from app.services.accounts import (
+    activate_account,
+    create_account,
+    deactivate_account,
+    delete_account,
+    list_accounts,
+)
 from app.services.destinations import list_destinations, save_destinations
 from app.services.oauth import finish_oauth, start_oauth
 
@@ -17,9 +25,11 @@ router = APIRouter()
 
 
 @router.get("/catalog")
-def get_platform_catalog(user: User = Depends(get_current_user)) -> list[dict]:
-    """Return connectable networks, account types, and publish readiness."""
-    _ = user
+def get_platform_catalog(_user: User = Depends(get_current_user)) -> list[dict]:
+    """Return connectable networks, account types, and publish readiness.
+
+    ``_user`` is unused. The dependency is what requires a signed-in caller.
+    """
     return catalog_public()
 
 
@@ -33,14 +43,18 @@ def get_oauth_destinations(
     return list_destinations(db, user.id, session_id)
 
 
-@router.post("/oauth/pick", response_model=list[AccountRead], status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/oauth/pick", response_model=list[AccountRead], status_code=status.HTTP_201_CREATED
+)
 def save_oauth_destinations(
     payload: DestinationSave,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> list[AccountRead]:
     """Persist the destinations the user selected after OAuth discovery."""
-    accounts = save_destinations(db, user.id, payload.pick_session_id, payload.destination_ids)
+    accounts = save_destinations(
+        db, user.id, payload.pick_session_id, payload.destination_ids
+    )
     return [AccountRead.from_account(account) for account in accounts]
 
 
@@ -97,7 +111,9 @@ def restore_account(
 
 @router.patch("/{account_id}/deactivate", status_code=status.HTTP_204_NO_CONTENT)
 def disconnect_account(
-    account_id: UUID, db: Session = Depends(get_db), user: User = Depends(get_current_user)
+    account_id: UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> Response:
     """Mark a connected account inactive without deleting its stored tokens."""
     deactivate_account(db, user.id, account_id)

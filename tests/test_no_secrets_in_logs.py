@@ -22,7 +22,9 @@ def _capture(monkeypatch):
 
     def handler(request):
         seen.append(request)
-        return httpx.Response(200, json={"access_token": "long-lived", "expires_in": 100})
+        return httpx.Response(
+            200, json={"access_token": "long-lived", "expires_in": 100}
+        )
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
 
@@ -53,7 +55,10 @@ def _provider(platform):
     )
 
 
-@pytest.mark.parametrize("fn,platform", [(oauth._instagram_token, "instagram"), (oauth._facebook_long_lived, "facebook")])
+@pytest.mark.parametrize(
+    "fn,platform",
+    [(oauth._instagram_token, "instagram"), (oauth._facebook_long_lived, "facebook")],
+)
 def test_meta_long_lived_exchange_uses_post_body(monkeypatch, fn, platform):
     seen = _capture(monkeypatch)
     out = fn(_provider(platform), {"access_token": "short-user-token"})

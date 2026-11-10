@@ -39,7 +39,9 @@ def _ig_crop_kwargs(platform: str, metadata) -> dict:
     if (platform or "").lower() != "instagram":
         return {}
     meta = metadata if isinstance(metadata, dict) else {}
-    crop = dict(meta.get("ig_crop") or {}) if isinstance(meta.get("ig_crop"), dict) else {}
+    crop = (
+        dict(meta.get("ig_crop") or {}) if isinstance(meta.get("ig_crop"), dict) else {}
+    )
     crop.setdefault("format", meta.get("format"))
     return {"ig_crop": crop}
 
@@ -48,7 +50,9 @@ def _settings_kwargs(metadata) -> dict:
     """Per-network settings saved by the composer's Platform settings popover."""
     meta = metadata if isinstance(metadata, dict) else {}
     settings = meta.get("settings")
-    return {"settings": dict(settings)} if isinstance(settings, dict) and settings else {}
+    return (
+        {"settings": dict(settings)} if isinstance(settings, dict) and settings else {}
+    )
 
 
 def stored_format(post_id: str) -> str | None:
@@ -114,20 +118,28 @@ def publish_post_task(post_id: str, post_format: str | None = None) -> dict[str,
 
         # Publish-time re-check (same rule as the 422 backstop) on the row's own per-account media, so rows
         # scheduled before the composer checks existed never reach the network with media it would reject.
-        from app.services.posts import publish_problem
-
         from app.services.post_formats import row_format
+        from app.services.posts import publish_problem
 
         meta = post.post_metadata if isinstance(post.post_metadata, dict) else {}
         # The row is the source of truth. A queue payload must not fill in a missing format
         # or override an edit that landed after dispatch.
         chosen = row_format(meta)
-        if isinstance(post_format, str) and post_format.strip() and chosen and post_format.strip() != chosen:
+        if (
+            isinstance(post_format, str)
+            and post_format.strip()
+            and chosen
+            and post_format.strip() != chosen
+        ):
             logger.info(
                 "Dispatch format %s differs from saved format %s for post %s; using the saved format",
-                post_format, chosen, post.id,
+                post_format,
+                chosen,
+                post.id,
             )
-        problem = publish_problem(account.platform, list(post.media_urls or []), post.content, chosen)
+        problem = publish_problem(
+            account.platform, list(post.media_urls or []), post.content, chosen
+        )
         if problem:
             now = datetime.now(timezone.utc)
             post.status = "failed"
@@ -195,8 +207,14 @@ def publish_post_task(post_id: str, post_format: str | None = None) -> dict[str,
 
                 if refresh_account_token(db, account):
                     db.refresh(account)
-            except Exception as exc:  # fall through; publish will surface the auth error
-                logger.warning("Token refresh failed for account %s: %s", account.id, getattr(exc, "detail", type(exc).__name__))
+            except (
+                Exception
+            ) as exc:  # fall through; publish will surface the auth error
+                logger.warning(
+                    "Token refresh failed for account %s: %s",
+                    account.id,
+                    getattr(exc, "detail", type(exc).__name__),
+                )
             result = publish(
                 account.platform,
                 decrypt_token(account.access_token_ciphertext),
@@ -214,14 +232,19 @@ def publish_post_task(post_id: str, post_format: str | None = None) -> dict[str,
             post.published_at = datetime.now(timezone.utc)
             post.last_error_code = post.last_error_message = None
             log.outcome, log.finished_at = "succeeded", post.published_at
-            log.provider_request_id, log.provider_status_code = result.request_id, result.status_code
+            log.provider_request_id, log.provider_status_code = (
+                result.request_id,
+                result.status_code,
+            )
             db.commit()
             return {"status": "published", "provider_post_id": result.post_id}
         except Exception as exc:
             retryable = not isinstance(exc, PublishingError) or exc.retryable
             code = exc.code if isinstance(exc, PublishingError) else "publish_error"
             message = str(exc)[:4000]
-            will_retry = retryable and attempt < min(post.max_attempts, POST_MAX_ATTEMPTS)
+            will_retry = retryable and attempt < min(
+                post.max_attempts, POST_MAX_ATTEMPTS
+            )
             db.refresh(post)
             # Never downgrade a row that already got a provider id from a twin race.
             if (post.provider_post_id or "").strip():
@@ -231,16 +254,25 @@ def publish_post_task(post_id: str, post_format: str | None = None) -> dict[str,
                 log.outcome = "succeeded"
                 log.finished_at = datetime.now(timezone.utc)
                 db.commit()
-                return {"status": "published", "provider_post_id": post.provider_post_id}
+                return {
+                    "status": "published",
+                    "provider_post_id": post.provider_post_id,
+                }
             post.status = "queued" if will_retry else "failed"
             post.last_error_code, post.last_error_message = code, message
             log.outcome = "retrying" if will_retry else "failed"
-            log.finished_at, log.error_code, log.error_message = datetime.now(timezone.utc), code, message
+            log.finished_at, log.error_code, log.error_message = (
+                datetime.now(timezone.utc),
+                code,
+                message,
+            )
             db.commit()
             if will_retry:
                 try:
                     publish_post_task.apply_async(
-                        args=[post_id], kwargs={"post_format": chosen}, countdown=min(300, 2**attempt * 5)
+                        args=[post_id],
+                        kwargs={"post_format": chosen},
+                        countdown=min(300, 2**attempt * 5),
                     )
                 except Exception as queue_error:
                     # Leave it queued; the periodic dispatcher reclaims stale

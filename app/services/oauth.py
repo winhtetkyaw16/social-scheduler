@@ -2,26 +2,25 @@
 
 from __future__ import annotations
 
-import os
-
 import base64
-import logging
 import json
+import logging
+import os
 import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
+from pathlib import Path
 from urllib.parse import urlencode
 from uuid import UUID
 
 import httpx
+from dotenv import load_dotenv
 from fastapi import HTTPException, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.core import config
-from dotenv import load_dotenv
-from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -30,9 +29,12 @@ _ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
 
 def _reload_dotenv() -> None:
     # Tests set OAuth env vars to empty before import; do not clobber them from .env.
+    """Reload .env outside tests. Tests pin empty OAuth variables and must not be overwritten."""
     if os.getenv("APP_ENV", "").lower() == "test":
         return
     load_dotenv(_ENV_FILE, override=True)
+
+
 from app.core.security import decrypt_token, encrypt_token
 from app.integrations.platform_catalog import (
     connectable_platform_names,
@@ -45,11 +47,14 @@ _STATE_TTL = timedelta(minutes=15)
 
 
 def _meta_graph(version: str) -> str:
+    """Base URL for a Facebook Graph API version, such as v21.0."""
     return f"https://graph.facebook.com/{version}"
 
 
 @dataclass(frozen=True)
 class _ProviderOAuth:
+    """Static OAuth client settings for one network."""
+
     platform: str
     authorize_url: str
     token_url: str
@@ -63,6 +68,7 @@ class _ProviderOAuth:
 
 
 def _providers() -> dict[str, _ProviderOAuth]:
+    """Build the provider table from the current environment."""
     _reload_dotenv()
     x_id = os.getenv("X_CLIENT_ID", "") or ""
     x_secret = os.getenv("X_CLIENT_SECRET", "") or ""
@@ -89,11 +95,20 @@ def _providers() -> dict[str, _ProviderOAuth]:
             client_id=x_id,
             client_secret=x_secret,
             redirect_uri=config.X_REDIRECT_URI,
-            scopes=("tweet.read", "tweet.write", "users.read", "media.write", "offline.access"),
+            scopes=(
+                "tweet.read",
+                "tweet.write",
+                "users.read",
+                "media.write",
+                "offline.access",
+            ),
             use_pkce=True,
             missing_env=tuple(
                 name
-                for name, value in (("X_CLIENT_ID", x_id), ("X_CLIENT_SECRET", x_secret))
+                for name, value in (
+                    ("X_CLIENT_ID", x_id),
+                    ("X_CLIENT_SECRET", x_secret),
+                )
                 if not value
             ),
             auth_style="basic",
@@ -199,7 +214,12 @@ def _providers() -> dict[str, _ProviderOAuth]:
             client_id=tiktok_key,
             client_secret=tiktok_secret,
             redirect_uri=tiktok_redirect,
-            scopes=("user.info.basic", "user.info.profile", "video.publish", "video.upload"),
+            scopes=(
+                "user.info.basic",
+                "user.info.profile",
+                "video.publish",
+                "video.upload",
+            ),
             # Hex SHA-256 PKCE is applied in start_oauth; RFC 7636 base64url would be rejected.
             use_pkce=False,
             missing_env=tuple(
@@ -219,7 +239,13 @@ def _providers() -> dict[str, _ProviderOAuth]:
             client_id=pinterest_id,
             client_secret=pinterest_secret,
             redirect_uri=config.PINTEREST_REDIRECT_URI,
-            scopes=("boards:read", "boards:write", "pins:read", "pins:write", "user_accounts:read"),
+            scopes=(
+                "boards:read",
+                "boards:write",
+                "pins:read",
+                "pins:write",
+                "user_accounts:read",
+            ),
             use_pkce=False,
             missing_env=tuple(
                 name
@@ -238,7 +264,11 @@ def _providers() -> dict[str, _ProviderOAuth]:
             client_id=threads_id,
             client_secret=threads_secret,
             redirect_uri=config.THREADS_REDIRECT_URI,
-            scopes=("threads_basic", "threads_content_publish", "threads_manage_replies"),
+            scopes=(
+                "threads_basic",
+                "threads_content_publish",
+                "threads_manage_replies",
+            ),
             use_pkce=False,
             missing_env=tuple(
                 name
@@ -253,9 +283,13 @@ def _providers() -> dict[str, _ProviderOAuth]:
 
 
 def _require_provider(platform: str) -> _ProviderOAuth:
+    """The provider, or HTTP 404/503 when the network or its env vars are missing."""
     normalized = platform.strip().lower()
     if normalized not in connectable_platform_names():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="OAuth is not available for this platform")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="OAuth is not available for this platform",
+        )
     provider = _providers()[normalized]
     if provider.missing_env:
         names = " and ".join(provider.missing_env)
@@ -268,7 +302,9 @@ def _require_provider(platform: str) -> _ProviderOAuth:
 
 # TikTok Login Kit: unreserved characters, length 43–128.
 # https://developers.tiktok.com/doc/login-kit-desktop
-_TIKTOK_PKCE_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
+_TIKTOK_PKCE_ALPHABET = (
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
+)
 _TIKTOK_CODE_VERIFIER_LENGTH = 64
 
 
@@ -282,7 +318,10 @@ def _pkce_pair() -> tuple[str, str]:
 
 def _tiktok_pkce_pair() -> tuple[str, str]:
     """TikTok S256 pair. Challenge is lowercase hex SHA-256, not base64url."""
-    verifier = "".join(secrets.choice(_TIKTOK_PKCE_ALPHABET) for _ in range(_TIKTOK_CODE_VERIFIER_LENGTH))
+    verifier = "".join(
+        secrets.choice(_TIKTOK_PKCE_ALPHABET)
+        for _ in range(_TIKTOK_CODE_VERIFIER_LENGTH)
+    )
     challenge = sha256(verifier.encode("ascii")).hexdigest()
     return verifier, challenge
 
@@ -324,6 +363,7 @@ def _write_state(
     verifier: str | None,
     return_to: str | None = None,
 ) -> str:
+    """Encrypt the OAuth state (user, platform, PKCE verifier, return origin, expiry)."""
     payload = json.dumps(
         {
             "sub": str(user_id),
@@ -338,13 +378,20 @@ def _write_state(
 
 
 def _read_state(state: str, platform: str) -> tuple[UUID, str | None, str | None]:
+    """Decrypt state into user id, PKCE verifier, and return origin. HTTP 400 when it is stale."""
     try:
         payload = json.loads(decrypt_token(state))
         expires = int(payload["exp"])
-        if payload.get("platform") != platform or expires < int(datetime.now(timezone.utc).timestamp()):
+        if payload.get("platform") != platform or expires < int(
+            datetime.now(timezone.utc).timestamp()
+        ):
             raise ValueError("expired")
         return_to = payload.get("return_to")
-        return UUID(str(payload["sub"])), payload.get("verifier"), return_to if isinstance(return_to, str) else None
+        return (
+            UUID(str(payload["sub"])),
+            payload.get("verifier"),
+            return_to if isinstance(return_to, str) else None,
+        )
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -353,6 +400,7 @@ def _read_state(state: str, platform: str) -> tuple[UUID, str | None, str | None
 
 
 def _peek_return_base(state: str | None) -> str:
+    """Best-effort return origin from state, used when a callback fails early."""
     if not state:
         return config.FRONTEND_URL
     try:
@@ -363,7 +411,10 @@ def _peek_return_base(state: str | None) -> str:
         return config.FRONTEND_URL
 
 
-def _studio_redirect(return_base: str | None = None, **query: str | None) -> RedirectResponse:
+def _studio_redirect(
+    return_base: str | None = None, **query: str | None
+) -> RedirectResponse:
+    """302 back to the studio. Empty query fields are dropped and connect_error is truncated."""
     clean = {key: value for key, value in query.items() if value}
     if "connect_error" in clean:
         clean["connect_error"] = clean["connect_error"][:180]
@@ -372,7 +423,9 @@ def _studio_redirect(return_base: str | None = None, **query: str | None) -> Red
     return RedirectResponse(url=f"{base}/{suffix}", status_code=status.HTTP_302_FOUND)
 
 
-def start_oauth(platform: str, user_id: UUID, return_to: str | None = None) -> dict[str, str]:
+def start_oauth(
+    platform: str, user_id: UUID, return_to: str | None = None
+) -> dict[str, str]:
     """Build the provider authorization URL for the signed-in user."""
     provider = _require_provider(platform)
     verifier = None
@@ -380,7 +433,11 @@ def start_oauth(platform: str, user_id: UUID, return_to: str | None = None) -> d
     params: dict[str, str] = {
         "response_type": "code",
         "redirect_uri": provider.redirect_uri,
-        "scope": " ".join(provider.scopes) if provider.platform != "tiktok" else ",".join(provider.scopes),
+        "scope": (
+            " ".join(provider.scopes)
+            if provider.platform != "tiktok"
+            else ",".join(provider.scopes)
+        ),
         "state": "",
     }
     if provider.platform == "tiktok":
@@ -388,9 +445,13 @@ def start_oauth(platform: str, user_id: UUID, return_to: str | None = None) -> d
     else:
         params["client_id"] = provider.client_id
     if provider.platform == "instagram":
-        config_id = (os.getenv("INSTAGRAM_CONFIG_ID") or config.INSTAGRAM_CONFIG_ID or "").strip()
+        config_id = (
+            os.getenv("INSTAGRAM_CONFIG_ID") or config.INSTAGRAM_CONFIG_ID or ""
+        ).strip()
         if config_id:
-            params.pop("scope", None)  # the Login for Business configuration defines permissions
+            params.pop(
+                "scope", None
+            )  # the Login for Business configuration defines permissions
             params["config_id"] = config_id
         else:
             params["scope"] = ",".join(provider.scopes)
@@ -406,8 +467,13 @@ def start_oauth(platform: str, user_id: UUID, return_to: str | None = None) -> d
         verifier, challenge = _pkce_pair()
         params["code_challenge"] = challenge
         params["code_challenge_method"] = "S256"
-    params["state"] = _write_state(user_id, provider.platform, verifier, return_to=safe_return)
-    return {"platform": provider.platform, "authorization_url": f"{provider.authorize_url}?{urlencode(params)}"}
+    params["state"] = _write_state(
+        user_id, provider.platform, verifier, return_to=safe_return
+    )
+    return {
+        "platform": provider.platform,
+        "authorization_url": f"{provider.authorize_url}?{urlencode(params)}",
+    }
 
 
 def finish_oauth(
@@ -422,15 +488,24 @@ def finish_oauth(
     return_base = _peek_return_base(state)
     normalized = platform.strip().lower()
     if normalized not in connectable_platform_names():
-        return _studio_redirect(return_base, connect_error="That platform cannot be connected.")
+        return _studio_redirect(
+            return_base, connect_error="That platform cannot be connected."
+        )
     if provider_error:
-        return _studio_redirect(return_base, connect_error="Authorization was cancelled or denied.")
+        return _studio_redirect(
+            return_base, connect_error="Authorization was cancelled or denied."
+        )
     if not code or not state:
-        return _studio_redirect(return_base, connect_error="The provider did not return an authorization code.")
+        return _studio_redirect(
+            return_base,
+            connect_error="The provider did not return an authorization code.",
+        )
     try:
         provider = _require_provider(normalized)
     except HTTPException as exc:
-        detail = exc.detail if isinstance(exc.detail, str) else "OAuth is not configured."
+        detail = (
+            exc.detail if isinstance(exc.detail, str) else "OAuth is not configured."
+        )
         return _studio_redirect(return_base, connect_error=detail)
     try:
         user_id, verifier, state_return = _read_state(state, provider.platform)
@@ -456,8 +531,12 @@ def finish_oauth(
                 scopes=token_payload.get("scopes") or list(provider.scopes),
                 identity_json=identity,
             )
-            return _studio_redirect(return_base, oauth_pick=provider.platform, pick_session=str(session.id))
-        account_type = identity.get("account_type") or default_account_type(provider.platform)
+            return _studio_redirect(
+                return_base, oauth_pick=provider.platform, pick_session=str(session.id)
+            )
+        account_type = identity.get("account_type") or default_account_type(
+            provider.platform
+        )
         upsert_oauth_account(
             db,
             user_id,
@@ -469,13 +548,24 @@ def finish_oauth(
             refresh_token=token_payload.get("refresh_token"),
             token_expires_at=token_payload.get("expires_at"),
             scopes=token_payload.get("scopes") or list(provider.scopes),
-            extra_metadata={key: value for key, value in identity.items() if key not in {"id", "name", "account_type"}},
+            extra_metadata={
+                key: value
+                for key, value in identity.items()
+                if key not in {"id", "name", "account_type"}
+            },
         )
     except HTTPException as exc:
-        detail = exc.detail if isinstance(exc.detail, str) else "Could not connect the account."
+        detail = (
+            exc.detail
+            if isinstance(exc.detail, str)
+            else "Could not connect the account."
+        )
         return _studio_redirect(return_base, connect_error=detail)
     except Exception:
-        return _studio_redirect(return_base, connect_error="Could not finish connecting the account. Try again.")
+        return _studio_redirect(
+            return_base,
+            connect_error="Could not finish connecting the account. Try again.",
+        )
     return _studio_redirect(return_base, connected=provider.platform)
 
 
@@ -500,7 +590,10 @@ def _exchange_code(provider: _ProviderOAuth, code: str, verifier: str | None) ->
         data["client_id"] = provider.client_id
         if provider.platform == "x":
             if not verifier:
-                raise HTTPException(status_code=400, detail="The X authorization session is missing its verifier.")
+                raise HTTPException(
+                    status_code=400,
+                    detail="The X authorization session is missing its verifier.",
+                )
             data["code_verifier"] = verifier
             auth = (provider.client_id, provider.client_secret)
         elif provider.platform == "pinterest":
@@ -514,11 +607,23 @@ def _exchange_code(provider: _ProviderOAuth, code: str, verifier: str | None) ->
         if provider.use_pkce and verifier:
             data["code_verifier"] = verifier
     try:
-        response = httpx.post(provider.token_url, data=data, auth=auth, headers=headers or None, timeout=30.0)
+        response = httpx.post(
+            provider.token_url,
+            data=data,
+            auth=auth,
+            headers=headers or None,
+            timeout=30.0,
+        )
     except httpx.HTTPError as exc:
-        raise HTTPException(status_code=502, detail=f"Could not reach {provider.platform} to exchange the code.") from exc
+        raise HTTPException(
+            status_code=502,
+            detail=f"Could not reach {provider.platform} to exchange the code.",
+        ) from exc
     if response.is_error:
-        raise HTTPException(status_code=502, detail=f"{provider.platform} rejected the authorization code.")
+        raise HTTPException(
+            status_code=502,
+            detail=f"{provider.platform} rejected the authorization code.",
+        )
     payload = response.json()
     if provider.platform == "instagram":
         payload = _instagram_token(provider, payload)
@@ -530,7 +635,10 @@ def _exchange_code(provider: _ProviderOAuth, code: str, verifier: str | None) ->
         payload = _threads_long_lived(provider, payload)
     access_token = payload.get("access_token")
     if not isinstance(access_token, str) or not access_token:
-        raise HTTPException(status_code=502, detail=f"{provider.platform} did not return an access token.")
+        raise HTTPException(
+            status_code=502,
+            detail=f"{provider.platform} did not return an access token.",
+        )
     expires_at = None
     expires_in = payload.get("expires_in")
     if expires_in:
@@ -545,7 +653,9 @@ def _exchange_code(provider: _ProviderOAuth, code: str, verifier: str | None) ->
     refresh_token = payload.get("refresh_token")
     return {
         "access_token": access_token,
-        "refresh_token": refresh_token if isinstance(refresh_token, str) and refresh_token else None,
+        "refresh_token": (
+            refresh_token if isinstance(refresh_token, str) and refresh_token else None
+        ),
         "expires_at": expires_at,
         "scopes": scopes,
     }
@@ -555,7 +665,10 @@ def _instagram_token(provider: _ProviderOAuth, payload: dict) -> dict:
     """Facebook Login for Business token; try a long-lived exchange but tolerate system-user tokens."""
     access_token = payload.get("access_token")
     if not isinstance(access_token, str) or not access_token:
-        raise HTTPException(status_code=502, detail="Instagram (Facebook Login) did not return an access token.")
+        raise HTTPException(
+            status_code=502,
+            detail="Instagram (Facebook Login) did not return an access token.",
+        )
     try:
         long_lived = httpx.post(
             f"{_meta_graph(config.INSTAGRAM_GRAPH_API_VERSION or 'v24.0')}/oauth/access_token",
@@ -570,9 +683,13 @@ def _instagram_token(provider: _ProviderOAuth, payload: dict) -> dict:
     except httpx.HTTPError:
         return payload
     if long_lived.is_error:
-        return payload  # system-user / already long-lived tokens do not need the exchange
+        return (
+            payload  # system-user / already long-lived tokens do not need the exchange
+        )
     extended = long_lived.json()
-    if not isinstance(extended.get("access_token"), str) or not extended.get("access_token"):
+    if not isinstance(extended.get("access_token"), str) or not extended.get(
+        "access_token"
+    ):
         return payload
     return extended
 
@@ -580,7 +697,9 @@ def _instagram_token(provider: _ProviderOAuth, payload: dict) -> dict:
 def _facebook_long_lived(provider: _ProviderOAuth, payload: dict) -> dict:
     access_token = payload.get("access_token")
     if not isinstance(access_token, str) or not access_token:
-        raise HTTPException(status_code=502, detail="Facebook did not return an access token.")
+        raise HTTPException(
+            status_code=502, detail="Facebook did not return an access token."
+        )
     try:
         response = httpx.post(
             f"{_meta_graph(config.FACEBOOK_GRAPH_API_VERSION)}/oauth/access_token",
@@ -593,7 +712,10 @@ def _facebook_long_lived(provider: _ProviderOAuth, payload: dict) -> dict:
             timeout=30.0,
         )
     except httpx.HTTPError as exc:
-        raise HTTPException(status_code=502, detail="Could not reach Facebook to extend the access token.") from exc
+        raise HTTPException(
+            status_code=502,
+            detail="Could not reach Facebook to extend the access token.",
+        ) from exc
     if response.is_error:
         return payload
     body = response.json()
@@ -605,7 +727,9 @@ def _facebook_long_lived(provider: _ProviderOAuth, payload: dict) -> dict:
 def _threads_long_lived(provider: _ProviderOAuth, payload: dict) -> dict:
     access_token = payload.get("access_token")
     if not isinstance(access_token, str) or not access_token:
-        raise HTTPException(status_code=502, detail="Threads did not return an access token.")
+        raise HTTPException(
+            status_code=502, detail="Threads did not return an access token."
+        )
     try:
         # Threads requires GET; httpx/httpcore are set to WARNING in configure_logging so URLs are not logged.
         response = httpx.get(
@@ -618,7 +742,10 @@ def _threads_long_lived(provider: _ProviderOAuth, payload: dict) -> dict:
             timeout=30.0,
         )
     except httpx.HTTPError as exc:
-        raise HTTPException(status_code=502, detail="Could not reach Threads to extend the access token.") from exc
+        raise HTTPException(
+            status_code=502,
+            detail="Could not reach Threads to extend the access token.",
+        ) from exc
     if response.is_error:
         return payload
     body = response.json()
@@ -626,7 +753,6 @@ def _threads_long_lived(provider: _ProviderOAuth, payload: dict) -> dict:
         body.setdefault("user_id", payload.get("user_id"))
         return body
     return payload
-
 
 
 def _normalize_avatar_url(value) -> str | None:
@@ -659,12 +785,21 @@ def _identity(provider: _ProviderOAuth, access_token: str) -> dict:
     return _threads_identity(access_token)
 
 
-def _authorized_get(url: str, access_token: str, *, params: dict | None = None, headers: dict | None = None) -> dict:
+def _authorized_get(
+    url: str,
+    access_token: str,
+    *,
+    params: dict | None = None,
+    headers: dict | None = None,
+) -> dict:
     request_headers = {"Authorization": f"Bearer {access_token}", **(headers or {})}
     try:
         response = httpx.get(url, params=params, headers=request_headers, timeout=30.0)
     except httpx.HTTPError as exc:
-        raise HTTPException(status_code=502, detail="Could not reach the provider to read the account profile.") from exc
+        raise HTTPException(
+            status_code=502,
+            detail="Could not reach the provider to read the account profile.",
+        ) from exc
     if response.is_error:
         logger.warning(
             "Provider profile request failed: url=%s status=%s body=%s",
@@ -672,10 +807,15 @@ def _authorized_get(url: str, access_token: str, *, params: dict | None = None, 
             response.status_code,
             (response.text or "")[:300],
         )
-        raise HTTPException(status_code=502, detail="The provider refused the account profile request.")
+        raise HTTPException(
+            status_code=502, detail="The provider refused the account profile request."
+        )
     body = response.json()
     if not isinstance(body, dict):
-        raise HTTPException(status_code=502, detail="The provider returned an unexpected profile response.")
+        raise HTTPException(
+            status_code=502,
+            detail="The provider returned an unexpected profile response.",
+        )
     return body
 
 
@@ -690,7 +830,12 @@ def _x_identity(access_token: str) -> dict:
     if not account_id:
         raise HTTPException(status_code=502, detail="X did not return an account id.")
     name = data.get("name") or data.get("username") or "X account"
-    identity = {"id": str(account_id), "name": str(name)[:255], "account_type": "user", "username": data.get("username")}
+    identity = {
+        "id": str(account_id),
+        "name": str(name)[:255],
+        "account_type": "user",
+        "username": data.get("username"),
+    }
     avatar = _normalize_avatar_url(data.get("profile_image_url"))
     if avatar:
         # Prefer larger X avatar when the API returns the _normal size.
@@ -702,7 +847,9 @@ def _linkedin_identity(access_token: str) -> dict:
     body = _authorized_get("https://api.linkedin.com/v2/userinfo", access_token)
     subject = body.get("sub")
     if not subject:
-        raise HTTPException(status_code=502, detail="LinkedIn did not return a member id.")
+        raise HTTPException(
+            status_code=502, detail="LinkedIn did not return a member id."
+        )
     name = body.get("name") or body.get("email") or "LinkedIn member"
     identity = {
         "id": f"urn:li:person:{subject}",
@@ -725,7 +872,10 @@ def _instagram_identity(access_token: str) -> dict:
     )
     account_id = body.get("id")
     if not account_id:
-        raise HTTPException(status_code=502, detail="Facebook did not return a user id for Instagram connect.")
+        raise HTTPException(
+            status_code=502,
+            detail="Facebook did not return a user id for Instagram connect.",
+        )
     return {
         "id": str(account_id),
         "name": str(body.get("name") or "Facebook login")[:255],
@@ -742,7 +892,9 @@ def _facebook_identity(access_token: str) -> dict:
     )
     account_id = body.get("id")
     if not account_id:
-        raise HTTPException(status_code=502, detail="Facebook did not return a user id.")
+        raise HTTPException(
+            status_code=502, detail="Facebook did not return a user id."
+        )
     identity = {
         "id": str(account_id),
         "name": str(body.get("name") or "Facebook login")[:255],
@@ -755,9 +907,7 @@ def _facebook_identity(access_token: str) -> dict:
     return identity
 
 
-YOUTUBE_NO_CHANNEL_DETAIL = (
-    "This Google account has no YouTube channel. Create a channel at youtube.com, then connect again."
-)
+YOUTUBE_NO_CHANNEL_DETAIL = "This Google account has no YouTube channel. Create a channel at youtube.com, then connect again."
 
 
 def _youtube_identity(access_token: str) -> dict:
@@ -767,7 +917,11 @@ def _youtube_identity(access_token: str) -> dict:
         access_token,
         params={"part": "snippet", "mine": "true"},
     )
-    items = [item for item in (body.get("items") or []) if isinstance(item, dict) and item.get("id")]
+    items = [
+        item
+        for item in (body.get("items") or [])
+        if isinstance(item, dict) and item.get("id")
+    ]
     if not items:
         raise HTTPException(status_code=422, detail=YOUTUBE_NO_CHANNEL_DETAIL)
     channel = items[0]
@@ -781,7 +935,9 @@ def _youtube_identity(access_token: str) -> dict:
     if handle:
         identity["username"] = str(handle)
         identity["custom_url"] = str(handle)
-    thumbs = snippet.get("thumbnails") if isinstance(snippet.get("thumbnails"), dict) else {}
+    thumbs = (
+        snippet.get("thumbnails") if isinstance(snippet.get("thumbnails"), dict) else {}
+    )
     for size in ("high", "medium", "default"):
         thumb = thumbs.get(size) if isinstance(thumbs.get(size), dict) else None
         avatar = _normalize_avatar_url(thumb.get("url")) if thumb else None
@@ -800,15 +956,22 @@ def _tiktok_identity(access_token: str) -> dict:
             timeout=30.0,
         )
     except httpx.HTTPError as exc:
-        raise HTTPException(status_code=502, detail="Could not reach TikTok to read the account profile.") from exc
+        raise HTTPException(
+            status_code=502,
+            detail="Could not reach TikTok to read the account profile.",
+        ) from exc
     if response.is_error:
-        raise HTTPException(status_code=502, detail="TikTok refused the account profile request.")
+        raise HTTPException(
+            status_code=502, detail="TikTok refused the account profile request."
+        )
     body = response.json()
     data = body.get("data") if isinstance(body.get("data"), dict) else {}
     user = data.get("user") if isinstance(data.get("user"), dict) else data
     account_id = user.get("open_id") or user.get("union_id")
     if not account_id:
-        raise HTTPException(status_code=502, detail="TikTok did not return an account id.")
+        raise HTTPException(
+            status_code=502, detail="TikTok did not return an account id."
+        )
     name = user.get("display_name") or user.get("username") or "TikTok account"
     identity = {
         "id": str(account_id),
@@ -826,7 +989,9 @@ def _pinterest_identity(access_token: str) -> dict:
     body = _authorized_get("https://api.pinterest.com/v5/user_account", access_token)
     account_id = body.get("username") or body.get("id")
     if not account_id:
-        raise HTTPException(status_code=502, detail="Pinterest did not return a user account.")
+        raise HTTPException(
+            status_code=502, detail="Pinterest did not return a user account."
+        )
     name = body.get("business_name") or body.get("username") or "Pinterest user"
     identity = {
         "id": str(account_id),
@@ -848,7 +1013,9 @@ def _threads_identity(access_token: str) -> dict:
     )
     account_id = body.get("id")
     if not account_id:
-        raise HTTPException(status_code=502, detail="Threads did not return a profile id.")
+        raise HTTPException(
+            status_code=502, detail="Threads did not return a profile id."
+        )
     name = body.get("username") or body.get("name") or "Threads profile"
     identity = {
         "id": str(account_id),
@@ -869,14 +1036,22 @@ REFRESH_LEEWAY_SECONDS = 5 * 60
 
 
 def _utc(value: datetime | None) -> datetime | None:
+    """Tag a naive datetime as UTC, or convert an aware one to UTC."""
     if value is None:
         return None
-    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+    return (
+        value.replace(tzinfo=timezone.utc)
+        if value.tzinfo is None
+        else value.astimezone(timezone.utc)
+    )
 
 
 def token_needs_refresh(account, leeway_seconds: int = REFRESH_LEEWAY_SECONDS) -> bool:
+    """True when the access token expires within leeway_seconds."""
     exp = _utc(getattr(account, "token_expires_at", None))
-    return exp is not None and exp - datetime.now(timezone.utc) <= timedelta(seconds=leeway_seconds)
+    return exp is not None and exp - datetime.now(timezone.utc) <= timedelta(
+        seconds=leeway_seconds
+    )
 
 
 def refresh_account_token(db: Session, account, *, force: bool = False) -> bool:
@@ -892,7 +1067,10 @@ def refresh_account_token(db: Session, account, *, force: bool = False) -> bool:
     if provider is None or provider.missing_env:
         return False
     refresh_token = decrypt_token(account.refresh_token_ciphertext)
-    data: dict[str, str] = {"grant_type": "refresh_token", "refresh_token": refresh_token}
+    data: dict[str, str] = {
+        "grant_type": "refresh_token",
+        "refresh_token": refresh_token,
+    }
     auth = None
     if provider.auth_style == "tiktok":
         data["client_key"] = provider.client_id
@@ -912,7 +1090,10 @@ def refresh_account_token(db: Session, account, *, force: bool = False) -> bool:
             timeout=30.0,
         )
     except httpx.HTTPError as exc:
-        raise HTTPException(status_code=502, detail=f"Could not reach {account.platform} to refresh the token.") from exc
+        raise HTTPException(
+            status_code=502,
+            detail=f"Could not reach {account.platform} to refresh the token.",
+        ) from exc
     if response.is_error:
         raise HTTPException(
             status_code=401,
@@ -923,14 +1104,21 @@ def refresh_account_token(db: Session, account, *, force: bool = False) -> bool:
         payload = payload["data"]
     access_token = payload.get("access_token")
     if not isinstance(access_token, str) or not access_token:
-        raise HTTPException(status_code=502, detail=f"{account.platform} did not return a refreshed access token.")
+        raise HTTPException(
+            status_code=502,
+            detail=f"{account.platform} did not return a refreshed access token.",
+        )
     account.access_token_ciphertext = encrypt_token(access_token)
     new_refresh = payload.get("refresh_token")
     if isinstance(new_refresh, str) and new_refresh:
-        account.refresh_token_ciphertext = encrypt_token(new_refresh)  # X rotates refresh tokens
+        account.refresh_token_ciphertext = encrypt_token(
+            new_refresh
+        )  # X rotates refresh tokens
     expires_in = payload.get("expires_in")
     account.token_expires_at = (
-        datetime.now(timezone.utc) + timedelta(seconds=int(expires_in)) if expires_in else None
+        datetime.now(timezone.utc) + timedelta(seconds=int(expires_in))
+        if expires_in
+        else None
     )
     db.commit()
     return True

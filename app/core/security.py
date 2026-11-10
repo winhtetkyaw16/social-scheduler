@@ -39,8 +39,14 @@ def create_access_token(subject: str) -> str:
     """Create a short-lived signed JWT with a string subject identifier."""
     if not subject:
         raise ValueError("Token subject cannot be empty")
-    expires = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    return jwt.encode({"sub": subject, "exp": expires, "typ": "access"}, SECRET_KEY, algorithm=ALGORITHM)
+    expires = datetime.now(timezone.utc) + timedelta(
+        minutes=ACCESS_TOKEN_EXPIRE_MINUTES
+    )
+    return jwt.encode(
+        {"sub": subject, "exp": expires, "typ": "access"},
+        SECRET_KEY,
+        algorithm=ALGORITHM,
+    )
 
 
 def create_refresh_token(subject: str) -> str:
@@ -48,7 +54,11 @@ def create_refresh_token(subject: str) -> str:
     if not subject:
         raise ValueError("Token subject cannot be empty")
     expires = datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
-    return jwt.encode({"sub": subject, "exp": expires, "typ": "refresh"}, SECRET_KEY, algorithm=ALGORITHM)
+    return jwt.encode(
+        {"sub": subject, "exp": expires, "typ": "refresh"},
+        SECRET_KEY,
+        algorithm=ALGORITHM,
+    )
 
 
 def refresh_token_subject(token: str) -> str:
@@ -73,8 +83,14 @@ def _fernet() -> Fernet:
         except (TypeError, ValueError):
             # Accept a strong raw secret too, deriving the fixed-size Fernet key.
             if len(configured_key) < 32:
-                raise RuntimeError("TOKEN_ENCRYPTION_KEY must be a Fernet key or at least 32 bytes")
-            key = base64.urlsafe_b64encode(sha256(b"social-scheduler:token-encryption:v1:" + configured_key).digest())
+                raise RuntimeError(
+                    "TOKEN_ENCRYPTION_KEY must be a Fernet key or at least 32 bytes"
+                )
+            key = base64.urlsafe_b64encode(
+                sha256(
+                    b"social-scheduler:token-encryption:v1:" + configured_key
+                ).digest()
+            )
             return Fernet(key)
     else:
         # Development fallback remains deterministic; production config rejects a missing key.

@@ -185,6 +185,7 @@ def create_pick_session(
     scopes: list[str],
     identity_json: dict,
 ) -> OAuthPickSession:
+    """Store a short-lived OAuth token so the user can choose a Page, org, channel, or board."""
     session = OAuthPickSession(
         user_id=user_id,
         platform=platform,
@@ -204,6 +205,7 @@ def create_pick_session(
 
 
 def get_pick_session(db: Session, user_id: UUID, session_id: UUID) -> OAuthPickSession:
+    """Load the user's pick session. Deletes it and raises 410 once it has expired."""
     session = db.scalar(
         select(OAuthPickSession).where(
             OAuthPickSession.id == session_id, OAuthPickSession.user_id == user_id

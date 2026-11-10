@@ -99,11 +99,13 @@ def sanitize_raw(message: str | None, limit: int = 200) -> str:
 
 
 def _status(text: str) -> int | None:
+    """HTTP status mentioned in a provider message, or None."""
     match = _HTTP_STATUS.search(text)
     return int(match.group(1)) if match else None
 
 
 def _has(text: str, needles: Iterable[str]) -> bool:
+    """True when any needle occurs in text. text is expected to be lowercase."""
     return any(n in text for n in needles)
 
 
@@ -391,7 +393,8 @@ def classify_error(
     return FALLBACK
 
 
-def code_l_is_http(code: str | None) -> bool:
+def is_http_provider_code(code: str | None) -> bool:
+    """True when the stored code is an HTTP response from the provider."""
     return (code or "").lower() in {"provider_http_error", "provider_error_response"}
 
 
@@ -402,8 +405,15 @@ _RETRY = [
 _EDIT = [{"id": "edit", "label": "Edit post"}]
 
 
-def _reconnect(net: str) -> list[dict[str, str]]:
-    return [{"id": "reconnect", "label": f"Reconnect {net}", "target": "accounts"}]
+def _reconnect(network_label: str) -> list[dict[str, str]]:
+    """The single reconnect action for a friendly error, aimed at the accounts screen."""
+    return [
+        {
+            "id": "reconnect",
+            "label": f"Reconnect {network_label}",
+            "target": "accounts",
+        }
+    ]
 
 
 def friendly_error(
@@ -603,7 +613,7 @@ def friendly_error(
         banner, what_happened, what_to_do, actions = copy[category]
         # When the platform itself answered with an error, show its (sanitised) reason too.
         if raw and (
-            (code_l_is_http(code) and category == PLATFORM_DOWN)
+            (is_http_provider_code(code) and category == PLATFORM_DOWN)
             or category in _LI_REASON
         ):
             what_happened = f'{what_happened} {net} said: "{raw}"'
@@ -624,7 +634,7 @@ def friendly_error(
         "category": category,
         "network": net,
         # The platform's own (sanitised) reason, when it answered with an error.
-        "platform_reason": raw if raw and code_l_is_http(code) else None,
+        "platform_reason": raw if raw and is_http_provider_code(code) else None,
         "banner": banner,
         "what_happened": what_happened,
         "what_to_do": what_to_do,

@@ -1,3 +1,4 @@
+// Connect, reconnect, and remove social accounts, and pick a destination after OAuth.
 import React, { useEffect, useMemo, useState } from "react";
 import { ChannelTile, PLATFORM_GLYPHS } from "./sc/ui.jsx";
 import { Check, Link2, LoaderCircle, Plus, RefreshCw, Unplug, X as XIcon } from "lucide-react";

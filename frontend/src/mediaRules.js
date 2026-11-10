@@ -91,7 +91,7 @@ export function mediaInfo(item, dims = null) {
   };
 }
 
-const net = (p) => (p === "twitter" ? "x" : String(p || "").toLowerCase());
+const net = (platform) => (platform === "twitter" ? "x" : String(platform || "").toLowerCase());
 const idx = (infos, pred) => infos.map((m, i) => (pred(m) ? i : -1)).filter((i) => i >= 0);
 const photosOf = (infos) => idx(infos, (m) => m.kind === "photo");
 const videosOf = (infos) => idx(infos, (m) => m.kind === "video");
@@ -105,13 +105,13 @@ const near916 = (m) => {
 
 /** Which indices of the shared media this network should use by default ("Fix for me"). Keeps the user's order. */
 export function autoSplit(platform, infos, { format = "Post" } = {}) {
-  const p = net(platform);
+  const platformKey = net(platform);
   const all = infos.map((_, i) => i);
   const vids = videosOf(infos),
     pics = photosOf(infos),
     gifs = gifsOf(infos),
     still = stills(infos);
-  if (p === "instagram") {
+  if (platformKey === "instagram") {
     if (format === "Story") {
       const okVid = vids.find(
         (i) => infos[i].duration == null || infos[i].duration <= LIMITS.instagram.storyMax,
@@ -123,21 +123,21 @@ export function autoSplit(platform, infos, { format = "Post" } = {}) {
       return vids.length ? vids.slice(0, 1) : all.slice(0, LIMITS.instagram.carousel);
     return all.slice(0, LIMITS.instagram.carousel);
   }
-  if (p === "threads") return all.slice(0, LIMITS.threads.carousel);
-  if (p === "youtube") return vids.slice(0, 1);
-  if (p === "tiktok") return vids.length ? vids.slice(0, 1) : pics.slice(0, LIMITS.tiktok.photos);
-  if (p === "facebook") {
+  if (platformKey === "threads") return all.slice(0, LIMITS.threads.carousel);
+  if (platformKey === "youtube") return vids.slice(0, 1);
+  if (platformKey === "tiktok") return vids.length ? vids.slice(0, 1) : pics.slice(0, LIMITS.tiktok.photos);
+  if (platformKey === "facebook") {
     if (format === "Story") return (still.length ? still : vids).slice(0, 1);
     if (format === "Reel / Video") return vids.slice(0, 1);
     return still.length ? still : vids.slice(0, 1);
   }
-  if (p === "pinterest")
+  if (platformKey === "pinterest")
     return format === "Reel / Video"
       ? [...vids.slice(0, 1), ...pics.slice(0, 1)]
       : pics.slice(0, 1);
-  if (p === "linkedin")
+  if (platformKey === "linkedin")
     return still.length ? still.slice(0, LIMITS.linkedin.photos) : vids.slice(0, 1);
-  if (p === "x") {
+  if (platformKey === "x") {
     if (pics.length) return pics.slice(0, LIMITS.x.photos);
     if (vids.length) return vids.slice(0, 1);
     return gifs.slice(0, 1);
@@ -158,7 +158,7 @@ export function selectionFor(account, { byAccount = {}, byNetwork = {} } = {}) {
   return Array.isArray(n) ? n : null;
 }
 
-const P = (code, title, detail, action, extra = {}) => ({ code, title, detail, action, ...extra });
+const mediaProblem = (code, title, detail, action, extra = {}) => ({ code, title, detail, action, ...extra });
 
 /**
  * Check one channel's media. Returns
@@ -168,11 +168,11 @@ const P = (code, title, detail, action, extra = {}) => ({ code, title, detail, a
  * `igRatio` is the Instagram frame the user picked (4:5 / 1:1 / 1.91:1); otherwise the first photo decides.
  */
 export function checkMedia(platform, infos, { format = "Post", igRatio = null } = {}) {
-  const p = net(platform);
+  const platformKey = net(platform);
   const problems = [],
     notes = [],
     hints = [];
-  const n = infos.length;
+  const infoCount = infos.length;
   const vids = videosOf(infos),
     pics = photosOf(infos),
     gifs = gifsOf(infos),
@@ -180,18 +180,18 @@ export function checkMedia(platform, infos, { format = "Post", igRatio = null } 
   const mixed = vids.length > 0 && still.length > 0;
   const num = (i) => i + 1; // "Photo 3" counts the item's place in the post
 
-  if (p === "instagram") {
+  if (platformKey === "instagram") {
     if (format === "Story") {
-      if (!n)
+      if (!infoCount)
         problems.push(
-          P("no_media", "Add a photo or video", "A Story needs one photo or one video.", {
+          mediaProblem("no_media", "Add a photo or video", "A Story needs one photo or one video.", {
             id: "add_media",
             label: "Add media",
           }),
         );
-      else if (n > 1)
+      else if (infoCount > 1)
         problems.push(
-          P(
+          mediaProblem(
             "too_many",
             "Too many items",
             "A Story takes one photo or one video.",
@@ -200,10 +200,10 @@ export function checkMedia(platform, infos, { format = "Post", igRatio = null } 
               : { id: "use_photo", label: "Use a photo" },
           ),
         );
-      const v = n === 1 && vids.length ? infos[vids[0]] : null;
+      const v = infoCount === 1 && vids.length ? infos[vids[0]] : null;
       if (v && v.duration != null && v.duration < LIMITS.instagram.storyMin)
         problems.push(
-          P(
+          mediaProblem(
             "story_short",
             "This video is too short for a Story",
             "Story videos need at least 3 seconds.",
@@ -214,7 +214,7 @@ export function checkMedia(platform, infos, { format = "Post", igRatio = null } 
         );
       if (v && v.duration != null && v.duration > LIMITS.instagram.storyMax)
         problems.push(
-          P(
+          mediaProblem(
             "story_long",
             "This video is too long for a Story",
             "Story videos can be up to 60 seconds.",
@@ -230,7 +230,7 @@ export function checkMedia(platform, infos, { format = "Post", igRatio = null } 
           storyRatio > LIMITS.instagram.storyAspectMax)
       )
         problems.push(
-          P(
+          mediaProblem(
             "story_ratio",
             "This video's shape doesn't fit a Story",
             "Story videos can be between 0.1:1 and 10:1.",
@@ -238,9 +238,9 @@ export function checkMedia(platform, infos, { format = "Post", igRatio = null } 
           ),
         );
     } else if (format === "Reel / Video") {
-      if (n !== 1 || vids.length !== 1)
+      if (infoCount !== 1 || vids.length !== 1)
         problems.push(
-          P(
+          mediaProblem(
             "reel_count",
             "A Reel needs exactly one video",
             "It will not be published as a carousel.",
@@ -249,17 +249,17 @@ export function checkMedia(platform, infos, { format = "Post", igRatio = null } 
               : { id: "add_video", label: "Add a video" },
           ),
         );
-      const v = n === 1 && vids.length === 1 ? infos[vids[0]] : null;
+      const v = infoCount === 1 && vids.length === 1 ? infos[vids[0]] : null;
       if (v && v.duration != null && v.duration < LIMITS.instagram.reelMin)
         problems.push(
-          P("video_short", "This video is too short", "Reels need at least 3 seconds.", {
+          mediaProblem("video_short", "This video is too short", "Reels need at least 3 seconds.", {
             id: "replace",
             label: "Pick another",
           }),
         );
       if (v && v.duration != null && v.duration > LIMITS.instagram.reelMax)
         problems.push(
-          P("video_long", "This video is too long", "Reels can be up to 15 minutes.", {
+          mediaProblem("video_long", "This video is too long", "Reels can be up to 15 minutes.", {
             id: "shorten",
             label: "Shorten video",
           }),
@@ -270,7 +270,7 @@ export function checkMedia(platform, infos, { format = "Post", igRatio = null } 
         (reelRatio < LIMITS.instagram.reelAspectMin || reelRatio > LIMITS.instagram.reelAspectMax)
       )
         problems.push(
-          P(
+          mediaProblem(
             "reel_ratio",
             "This video's shape doesn't fit a Reel",
             "Reels can be between 0.01:1 and 10:1.",
@@ -278,34 +278,34 @@ export function checkMedia(platform, infos, { format = "Post", igRatio = null } 
           ),
         );
     } else {
-      if (!n)
+      if (!infoCount)
         problems.push(
-          P(
+          mediaProblem(
             "no_media",
             "Add a photo or video",
             "Instagram posts need at least one photo or video.",
             { id: "add_media", label: "Add media" },
           ),
         );
-      if (n > LIMITS.instagram.carousel)
+      if (infoCount > LIMITS.instagram.carousel)
         problems.push(
-          P("too_many", "Too many items", "Carousels take up to 20 photos and videos.", {
+          mediaProblem("too_many", "Too many items", "Carousels take up to 20 photos and videos.", {
             id: "keep_first",
             label: "Keep first 20",
           }),
         );
-      if (n === 1 && vids.length) {
+      if (infoCount === 1 && vids.length) {
         const d = infos[vids[0]].duration;
         if (d != null && d < LIMITS.instagram.reelMin)
           problems.push(
-            P("video_short", "This video is too short", "Reels need at least 3 seconds.", {
+            mediaProblem("video_short", "This video is too short", "Reels need at least 3 seconds.", {
               id: "replace",
               label: "Pick another",
             }),
           );
         if (d != null && d > LIMITS.instagram.reelMax)
           problems.push(
-            P("video_long", "This video is too long", "Reels can be up to 15 minutes.", {
+            mediaProblem("video_long", "This video is too long", "Reels can be up to 15 minutes.", {
               id: "shorten",
               label: "Shorten video",
             }),
@@ -313,10 +313,10 @@ export function checkMedia(platform, infos, { format = "Post", igRatio = null } 
       }
     }
     // Feed photos are auto-fitted to one frame and saved as JPG at publish (Instagram only), silently.
-  } else if (p === "facebook") {
+  } else if (platformKey === "facebook") {
     if (mixed)
       problems.push(
-        P(
+        mediaProblem(
           "mixed",
           "Use photos or the video, not both",
           "Facebook can't mix photos and a video in one post.",
@@ -325,7 +325,7 @@ export function checkMedia(platform, infos, { format = "Post", igRatio = null } 
       );
     else if (vids.length > 1)
       problems.push(
-        P(
+        mediaProblem(
           "too_many",
           "Too many videos",
           "Facebook Page posts carry 1 video. Use Fix for me to pick which one.",
@@ -333,9 +333,9 @@ export function checkMedia(platform, infos, { format = "Post", igRatio = null } 
         ),
       );
     if (format === "Story") {
-      if (n !== 1)
+      if (infoCount !== 1)
         problems.push(
-          P(
+          mediaProblem(
             "story_count",
             "A Story needs one photo or one video",
             "It will not be published to the feed.",
@@ -344,7 +344,7 @@ export function checkMedia(platform, infos, { format = "Post", igRatio = null } 
               : { id: "use_photo", label: "Use a photo" },
           ),
         );
-      const v = n === 1 && vids.length === 1 ? infos[0] : null;
+      const v = infoCount === 1 && vids.length === 1 ? infos[0] : null;
       if (
         v &&
         v.kind === "video" &&
@@ -352,7 +352,7 @@ export function checkMedia(platform, infos, { format = "Post", igRatio = null } 
         (v.duration < LIMITS.facebook.storyMin || v.duration > LIMITS.facebook.storyMax)
       )
         problems.push(
-          P(
+          mediaProblem(
             "story_long",
             "This video doesn't fit a Facebook Story",
             "Video Stories are 3 to 60 seconds and vertical 9:16.",
@@ -369,7 +369,7 @@ export function checkMedia(platform, infos, { format = "Post", igRatio = null } 
           v.height < LIMITS.facebook.reelMinHeight)
       )
         problems.push(
-          P(
+          mediaProblem(
             "story_ratio",
             "This video's shape doesn't fit a Facebook Story",
             "Video Stories are vertical 9:16 and at least 540×960.",
@@ -384,7 +384,7 @@ export function checkMedia(platform, infos, { format = "Post", igRatio = null } 
         (v.duration < LIMITS.facebook.reelMin || v.duration > LIMITS.facebook.reelMax)
       )
         problems.push(
-          P(
+          mediaProblem(
             "reel_long",
             "This video doesn't fit a Facebook Reel",
             "Reels are 3 to 90 seconds, vertical 9:16.",
@@ -399,7 +399,7 @@ export function checkMedia(platform, infos, { format = "Post", igRatio = null } 
           v.height < LIMITS.facebook.reelMinHeight)
       )
         problems.push(
-          P(
+          mediaProblem(
             "reel_ratio",
             "This video's shape doesn't fit a Facebook Reel",
             "Reels are vertical 9:16 and at least 540×960. It will not be published as a Page video.",
@@ -407,29 +407,29 @@ export function checkMedia(platform, infos, { format = "Post", igRatio = null } 
           ),
         );
     }
-  } else if (p === "linkedin") {
+  } else if (platformKey === "linkedin") {
     if (mixed)
       problems.push(
-        P("mixed", "Use photos or the video, not both", "One video, or up to 20 photos.", {
+        mediaProblem("mixed", "Use photos or the video, not both", "One video, or up to 20 photos.", {
           id: "pick_photos",
           label: "Pick photos",
         }),
       );
     else if (vids.length > 1)
       problems.push(
-        P("too_many", "Too many videos", "One video, or up to 20 photos.", {
+        mediaProblem("too_many", "Too many videos", "One video, or up to 20 photos.", {
           id: "use_video",
           label: "Use the first video",
         }),
       );
     else if (still.length > LIMITS.linkedin.photos)
       problems.push(
-        P("too_many", "Too many items", "LinkedIn takes up to 20 photos.", {
+        mediaProblem("too_many", "Too many items", "LinkedIn takes up to 20 photos.", {
           id: "keep_first",
           label: "Keep first 20",
         }),
       );
-  } else if (p === "x") {
+  } else if (platformKey === "x") {
     const tooMany =
       (vids.length && still.length) ||
       vids.length > 1 ||
@@ -438,7 +438,7 @@ export function checkMedia(platform, infos, { format = "Post", igRatio = null } 
       pics.length > LIMITS.x.photos;
     if (tooMany)
       problems.push(
-        P(
+        mediaProblem(
           "too_many",
           "Too many items",
           "Up to 4 photos, 1 video, or 1 GIF.",
@@ -456,7 +456,7 @@ export function checkMedia(platform, infos, { format = "Post", igRatio = null } 
       const r = ratio(infos[i]);
       if (r != null && (r < LIMITS.x.minVideoRatio || r > LIMITS.x.maxVideoRatio))
         problems.push(
-          P(
+          mediaProblem(
             "x_ratio",
             "This video's shape doesn't fit X",
             "X takes videos from tall 1:3 to wide 3:1.",
@@ -466,26 +466,26 @@ export function checkMedia(platform, infos, { format = "Post", igRatio = null } 
           ),
         );
     });
-  } else if (p === "tiktok") {
+  } else if (platformKey === "tiktok") {
     if (format === "Story")
       problems.push(
-        P(
+        mediaProblem(
           "unsupported",
           "TikTok Story isn't available",
           "TikTok's posting API has photo posts and videos only. Choose one of those.",
           { id: "use_video", label: "Use the video" },
         ),
       );
-    if (!n)
+    if (!infoCount)
       problems.push(
-        P("no_media", "Add a video or photos", "TikTok posts one video, or up to 35 photos.", {
+        mediaProblem("no_media", "Add a video or photos", "TikTok posts one video, or up to 35 photos.", {
           id: "add_video",
           label: "Add a video",
         }),
       );
     else if (mixed || gifs.length)
       problems.push(
-        P(
+        mediaProblem(
           "mixed",
           "Use photos or the video, not both",
           "TikTok posts one video, or up to 35 photos.",
@@ -496,22 +496,22 @@ export function checkMedia(platform, infos, { format = "Post", igRatio = null } 
       );
     else if (vids.length > 1)
       problems.push(
-        P("too_many", "Too many videos", "TikTok posts one video, or up to 35 photos.", {
+        mediaProblem("too_many", "Too many videos", "TikTok posts one video, or up to 35 photos.", {
           id: "use_video",
           label: "Use the video",
         }),
       );
     else if (pics.length > LIMITS.tiktok.photos)
       problems.push(
-        P("too_many", "Too many items", "TikTok takes up to 35 photos.", {
+        mediaProblem("too_many", "Too many items", "TikTok takes up to 35 photos.", {
           id: "keep_first",
           label: "Keep first 35",
         }),
       );
-  } else if (p === "youtube") {
+  } else if (platformKey === "youtube") {
     if (!vids.length)
       problems.push(
-        P("no_video", "Add a video", "YouTube posts need a video.", {
+        mediaProblem("no_video", "Add a video", "YouTube posts need a video.", {
           id: "add_video",
           label: "Add a video",
         }),
@@ -521,7 +521,7 @@ export function checkMedia(platform, infos, { format = "Post", igRatio = null } 
     if (format === "Short") {
       if (v && v.duration != null && v.duration > LIMITS.youtube.shortMax)
         problems.push(
-          P(
+          mediaProblem(
             "short_long",
             "This video is too long for a Short",
             "Shorts are square or vertical and at most 3 minutes. YouTube has no setting that forces a Short.",
@@ -530,7 +530,7 @@ export function checkMedia(platform, infos, { format = "Post", igRatio = null } 
         );
       if (r != null && r > 1)
         problems.push(
-          P(
+          mediaProblem(
             "short_landscape",
             "This video is too wide for a Short",
             "Shorts must be square or vertical. YouTube has no setting that forces a Short, so choose Video to post it as a regular video.",
@@ -542,11 +542,11 @@ export function checkMedia(platform, infos, { format = "Post", igRatio = null } 
       );
     } else if (r != null && Math.abs(r - 16 / 9) > 0.05 && Math.abs(r - 9 / 16) > 0.05)
       hints.push("16:9 or 9:16 looks best on YouTube.");
-  } else if (p === "pinterest") {
+  } else if (platformKey === "pinterest") {
     if (format === "Reel / Video") {
       if (vids.length !== 1 || pics.length !== 1)
         problems.push(
-          P(
+          mediaProblem(
             "pin_cover",
             "A Video Pin needs a video and a cover image",
             "Pinterest requires a cover image. Nothing is pinned without both.",
@@ -562,7 +562,7 @@ export function checkMedia(platform, infos, { format = "Post", igRatio = null } 
         (v.duration < LIMITS.pinterest.videoMin || v.duration > LIMITS.pinterest.videoMax)
       )
         problems.push(
-          P(
+          mediaProblem(
             "pin_long",
             "This video doesn't fit a Video Pin",
             "Video Pins are 4 seconds to 5 minutes.",
@@ -571,15 +571,15 @@ export function checkMedia(platform, infos, { format = "Post", igRatio = null } 
         );
     } else if (vids.length)
       problems.push(
-        P("pin_video", "Choose Video Pin for a video", "A photo Pin was not created.", {
+        mediaProblem("pin_video", "Choose Video Pin for a video", "A photo Pin was not created.", {
           id: "use_photo",
           label: "Use a photo",
         }),
       );
-  } else if (p === "threads") {
-    if (n > LIMITS.threads.carousel)
+  } else if (platformKey === "threads") {
+    if (infoCount > LIMITS.threads.carousel)
       problems.push(
-        P("too_many", "Too many items", "Threads carousels take up to 20 items.", {
+        mediaProblem("too_many", "Too many items", "Threads carousels take up to 20 items.", {
           id: "keep_first",
           label: "Keep first 20",
         }),
@@ -594,10 +594,10 @@ export function actionIndices(actionId, platform, infos, opts = {}) {
     pics = photosOf(infos),
     gifs = gifsOf(infos),
     still = stills(infos);
-  const p = net(platform);
+  const platformKey = net(platform);
   switch (actionId) {
     case "pick_photos":
-      return still.slice(0, p === "linkedin" ? LIMITS.linkedin.photos : still.length);
+      return still.slice(0, platformKey === "linkedin" ? LIMITS.linkedin.photos : still.length);
     case "keep_photos":
       return pics.slice(0, LIMITS.x.photos);
     case "use_photos":
@@ -609,7 +609,7 @@ export function actionIndices(actionId, platform, infos, opts = {}) {
     case "use_gif":
       return gifs.slice(0, 1);
     case "keep_first":
-      return infos.map((_, i) => i).slice(0, { tiktok: 35 }[p] || 20);
+      return infos.map((_, i) => i).slice(0, { tiktok: 35 }[platformKey] || 20);
     default:
       return null;
   }
@@ -617,18 +617,18 @@ export function actionIndices(actionId, platform, infos, opts = {}) {
 
 /** Short description of what a channel will get, for the confirm sheet. */
 export function splitLabel(platform, infos, indices, { format = "Post", cropped = [] } = {}) {
-  const p = net(platform);
+  const platformKey = net(platform);
   const picked = indices.map((i) => infos[i]).filter(Boolean);
   const v = picked.filter((m) => m.kind === "video").length;
   const s = picked.length - v;
   const crop = ""; // auto-fit happens silently at publish
-  if (!picked.length) return p === "youtube" || p === "tiktok" ? "Needs a video" : "Text only";
-  if ((p === "instagram" && format !== "Story") || p === "threads") {
+  if (!picked.length) return platformKey === "youtube" || platformKey === "tiktok" ? "Needs a video" : "Text only";
+  if ((platformKey === "instagram" && format !== "Story") || platformKey === "threads") {
     if (picked.length === 1) return (v ? "The video" : "1 photo") + crop;
     return `Carousel · ${picked.length === infos.length ? `all ${picked.length}` : `${picked.length} items`}${crop}`;
   }
   if (v && !s) return "The video";
-  if (p === "x" && s && infos.filter((m) => m.kind === "photo").length > s)
+  if (platformKey === "x" && s && infos.filter((m) => m.kind === "photo").length > s)
     return `First ${s} photo${s === 1 ? "" : "s"}`;
   if (picked.length === 1 && picked[0].kind === "gif") return "The GIF";
   return `${s} photo${s === 1 ? "" : "s"}`;

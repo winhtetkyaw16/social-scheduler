@@ -9,6 +9,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class QueueSlotRead(BaseModel):
+    """One saved weekly posting slot."""
+
     model_config = ConfigDict(from_attributes=True)
     id: UUID
     platform: str
@@ -18,12 +20,15 @@ class QueueSlotRead(BaseModel):
 
 
 class QueueSlotInput(BaseModel):
+    """Weekday (Monday=0) and local HH:MM time to store."""
+
     weekday: int = Field(ge=0, le=6)
     time_local: str
 
     @field_validator("time_local")
     @classmethod
     def validate_time(cls, value: str) -> str:
+        """Require HH:MM and return it zero-padded."""
         text = str(value or "").strip()
         parts = text.split(":")
         if len(parts) != 2:
@@ -35,16 +40,22 @@ class QueueSlotInput(BaseModel):
 
 
 class QueueSlotsReplace(BaseModel):
+    """Replacement set of slots for one platform and timezone."""
+
     platform: str = Field(min_length=1, max_length=40)
     timezone: str = Field(default="UTC", min_length=1, max_length=64)
     slots: list[QueueSlotInput] = Field(default_factory=list, max_length=70)
 
 
 class QueueNextRequest(BaseModel):
+    """Account whose next free queue slot is being requested."""
+
     connected_account_id: UUID
 
 
 class QueueNextRead(BaseModel):
+    """The next free slot, and whether the default plan was used."""
+
     connected_account_id: UUID
     platform: str
     scheduled_at: datetime
@@ -55,14 +66,20 @@ class QueueNextRead(BaseModel):
 
 
 class QueueAllocateRequest(BaseModel):
+    """Accounts that should each receive a next-slot reservation."""
+
     connected_account_ids: list[UUID] = Field(min_length=1, max_length=40)
 
 
 class QueueAllocateResponse(BaseModel):
+    """One next-slot result per requested account, in request order."""
+
     allocations: list[QueueNextRead]
 
 
 class QueueUpcomingItem(BaseModel):
+    """A slot in the upcoming timeline, filled when a post occupies that minute."""
+
     scheduled_at: datetime
     platform: str
     weekday: int

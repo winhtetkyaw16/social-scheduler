@@ -1,3 +1,4 @@
+// Catches a render error and shows a recovery message instead of a blank screen.
 import React from "react";
 import { AlertTriangle, RotateCcw } from "lucide-react";
 

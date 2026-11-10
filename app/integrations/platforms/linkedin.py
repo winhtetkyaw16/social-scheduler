@@ -102,32 +102,38 @@ def _name(url: str) -> str:
 def mp4_duration_seconds(data: bytes) -> float | None:
     """Read the movie duration from an MP4/MOV 'moov/mvhd' box; None if not found."""
 
-    def boxes(buf: bytes, start: int, end: int):
-        i = start
-        while i + 8 <= end:
-            size, kind = struct.unpack(">I4s", buf[i : i + 8])
+    def boxes(mp4: bytes, start: int, end: int):
+        offset = start
+        while offset + 8 <= end:
+            size, kind = struct.unpack(">I4s", mp4[offset : offset + 8])
             header = 8
-            if size == 1 and i + 16 <= end:
-                size = struct.unpack(">Q", buf[i + 8 : i + 16])[0]
+            if size == 1 and offset + 16 <= end:
+                size = struct.unpack(">Q", mp4[offset + 8 : offset + 16])[0]
                 header = 16
             elif size == 0:
-                size = end - i
+                size = end - offset
             if size < header:
                 return
-            yield kind, i + header, min(i + size, end)
-            i += size
+            yield kind, offset + header, min(offset + size, end)
+            offset += size
 
-    for kind, s, e in boxes(data, 0, len(data)):
+    for kind, payload_start, payload_end in boxes(data, 0, len(data)):
         if kind != b"moov":
             continue
-        for k2, s2, _e2 in boxes(data, s, e):
-            if k2 != b"mvhd":
+        for child_kind, child_start, _child_end in boxes(
+            data, payload_start, payload_end
+        ):
+            if child_kind != b"mvhd":
                 continue
-            version = data[s2]
+            version = data[child_start]
             if version == 1:
-                timescale, duration = struct.unpack(">IQ", data[s2 + 20 : s2 + 32])
+                timescale, duration = struct.unpack(
+                    ">IQ", data[child_start + 20 : child_start + 32]
+                )
             else:
-                timescale, duration = struct.unpack(">II", data[s2 + 12 : s2 + 20])
+                timescale, duration = struct.unpack(
+                    ">II", data[child_start + 12 : child_start + 20]
+                )
             return duration / timescale if timescale else None
     return None
 

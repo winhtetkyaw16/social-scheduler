@@ -1,3 +1,8 @@
+"""ORM models re-exported for ``from app.models import ...``.
+
+Importing this package registers every mapped class on the shared metadata.
+"""
+
 from app.models.base import Base
 from app.models.connected_account import ConnectedAccount, OAuthPickSession
 from app.models.execution_log import ExecutionLog

@@ -1,3 +1,9 @@
+"""Process environment for the API, OAuth apps, and the scheduler.
+
+Values are read once at import. load_dotenv does not override variables
+already set in the process, so tests and Docker win over .env.
+"""
+
 import os
 from pathlib import Path
 

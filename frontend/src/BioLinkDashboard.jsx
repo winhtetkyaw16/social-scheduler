@@ -1,3 +1,4 @@
+// Bio-link page editor opened from the studio navigation.
 import { useEffect, useMemo, useState } from "react";
 import {
   ArrowUpRight,

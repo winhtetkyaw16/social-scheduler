@@ -3,13 +3,13 @@
 // Spec: design/screens/media-rules-spec.html (States) and composer-fix-for-me*.html.
 import { LIMITS, NETWORK, autoSplit, checkMedia, cropIndices, mediaInfo } from "./mediaRules.js";
 
-const net = (p) => (p === "twitter" ? "x" : String(p || "").toLowerCase());
+const net = (platform) => (platform === "twitter" ? "x" : String(platform || "").toLowerCase());
 const idx = (infos, pred) => infos.map((m, i) => (pred(m) ? i : -1)).filter((i) => i >= 0);
 const photos = (infos) => idx(infos, (m) => m.kind === "photo");
 const videos = (infos) => idx(infos, (m) => m.kind === "video");
 const gifs = (infos) => idx(infos, (m) => m.kind === "gif");
 const stills = (infos) => idx(infos, (m) => m.kind !== "video");
-const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
+const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
 const same = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
 
 /** Networks that can't mix photos and a video get a segmented toggle; mixed-friendly ones get an item picker. */
@@ -17,32 +17,33 @@ export const TOGGLE_NETWORKS = ["facebook", "linkedin", "x", "tiktok"];
 export const PICK_NETWORKS = ["instagram", "threads"];
 
 /** Photos-side indices for a can't-mix network (TikTok/X take real photos; FB/LI also accept GIFs as images). */
-function photoSide(p, infos) {
-  if (p === "x") return photos(infos).slice(0, LIMITS.x.photos);
-  if (p === "tiktok") return photos(infos).slice(0, LIMITS.tiktok.photos);
-  if (p === "linkedin") return stills(infos).slice(0, LIMITS.linkedin.photos);
+function photoSide(platform, infos) {
+  if (platform === "x") return photos(infos).slice(0, LIMITS.x.photos);
+  if (platform === "tiktok") return photos(infos).slice(0, LIMITS.tiktok.photos);
+  if (platform === "linkedin") return stills(infos).slice(0, LIMITS.linkedin.photos);
   return stills(infos);
 }
 
 /** Segmented options, only when there's a real choice: ["Photos","Video"] (+ "GIF" on X when one is uploaded). */
 export function choiceOptions(platform, infos) {
-  const p = net(platform);
-  if (!TOGGLE_NETWORKS.includes(p)) return [];
+  const platformKey = net(platform);
+  if (!TOGGLE_NETWORKS.includes(platformKey)) return [];
   const opts = [];
-  if (photoSide(p, infos).length && (p !== "x" || photos(infos).length)) opts.push("Photos");
+  if (photoSide(platformKey, infos).length && (platformKey !== "x" || photos(infos).length))
+    opts.push("Photos");
   if (videos(infos).length) opts.push("Video");
-  if (p === "x" && gifs(infos).length) opts.push("GIF");
+  if (platformKey === "x" && gifs(infos).length) opts.push("GIF");
   return opts.length > 1 ? opts : [];
 }
 
 /** Indices a choice sends. X Photos uses `xPhotos` (from "Choose which 4") when given. */
 export function indicesForChoice(platform, infos, choice, { xPhotos = null, video = null } = {}) {
-  const p = net(platform);
+  const platformKey = net(platform);
   if (choice === "Video") return videoChoice(infos, video);
   if (choice === "GIF") return gifs(infos).slice(0, 1);
-  if (p === "x" && Array.isArray(xPhotos) && xPhotos.length)
+  if (platformKey === "x" && Array.isArray(xPhotos) && xPhotos.length)
     return xPhotos.filter((i) => infos[i]?.kind === "photo").slice(0, LIMITS.x.photos);
-  return photoSide(p, infos);
+  return photoSide(platformKey, infos);
 }
 
 /** Networks that post only one video per post (Fix for me shows a "which video" picker when 2+ exist). */
@@ -50,8 +51,10 @@ export const SINGLE_VIDEO_NETWORKS = ["facebook", "linkedin", "tiktok", "x", "yo
 
 /** The one video a single-video network sends: the user's pick when it is a video, else the first. */
 export function videoChoice(infos, video = null) {
-  const v = videos(infos);
-  return Number.isInteger(video) && v.includes(video) ? [video] : v.slice(0, 1);
+  const videoIndices = videos(infos);
+  return Number.isInteger(video) && videoIndices.includes(video)
+    ? [video]
+    : videoIndices.slice(0, 1);
 }
 
 /** Shared media URLs one account publishes, in order (what the publish payload sends). */
@@ -73,26 +76,31 @@ export function blockingGroups(rows = []) {
   const groups = new Map();
   const add = (key, account, text) => {
     if (!groups.has(key)) groups.set(key, { key, accounts: [], text });
-    const g = groups.get(key);
-    if (!g.accounts.some((a) => a.id === account.id)) g.accounts.push(account);
+    const group = groups.get(key);
+    if (!group.accounts.some((existing) => existing.id === account.id))
+      group.accounts.push(account);
   };
-  for (const r of rows) {
-    const p = net(r.account?.platform);
-    const infos = r.infos || [];
-    const many = videos(infos).length > 1 && SINGLE_VIDEO_NETWORKS.includes(p);
-    if (many) add("one_video", r.account, null);
-    for (const pr of r.check?.problems || []) {
+  for (const row of rows) {
+    const platformKey = net(row.account?.platform);
+    const infos = row.infos || [];
+    const many = videos(infos).length > 1 && SINGLE_VIDEO_NETWORKS.includes(platformKey);
+    if (many) add("one_video", row.account, null);
+    for (const pr of row.check?.problems || []) {
       if (many && pr.code === "too_many") continue; // said once, as "allow only 1 video per post"
-      add(`${pr.code}:${pr.title}`, r.account, pr.title + (pr.detail ? ` — ${pr.detail}` : ""));
+      add(`${pr.code}:${pr.title}`, row.account, pr.title + (pr.detail ? ` — ${pr.detail}` : ""));
     }
   }
-  return [...groups.values()].map((g) => {
-    const names = [...new Set(g.accounts.map((a) => NETWORK[net(a.platform)] || a.platform))];
+  return [...groups.values()].map((group) => {
+    const names = [
+      ...new Set(
+        group.accounts.map((account) => NETWORK[net(account.platform)] || account.platform),
+      ),
+    ];
     const message =
-      g.key === "one_video"
+      group.key === "one_video"
         ? `${joinNames(names)} allow${names.length === 1 ? "s" : ""} only 1 video per post`
-        : `${joinNames(names)}: ${g.text}`;
-    return { key: g.key, accounts: g.accounts, message };
+        : `${joinNames(names)}: ${group.text}`;
+    return { key: group.key, accounts: group.accounts, message };
   });
 }
 
@@ -106,39 +114,45 @@ export function choiceOf(infos, indices) {
 
 /** Item picker for a row: { label, items (pickable indices), limit } or null. */
 export function pickerFor(platform, infos, { format = "Post" } = {}) {
-  const p = net(platform);
-  if (p === "instagram" && format !== "Story" && format !== "Reel / Video" && infos.length > 1)
+  const platformKey = net(platform);
+  if (
+    platformKey === "instagram" &&
+    format !== "Story" &&
+    format !== "Reel / Video" &&
+    infos.length > 1
+  )
     return {
       kind: "items",
       label: "Change",
       items: infos.map((_, i) => i),
       limit: LIMITS.instagram.carousel,
     };
-  if (p === "threads" && infos.length > 1)
+  if (platformKey === "threads" && infos.length > 1)
     return {
       kind: "items",
       label: "Change",
       items: infos.map((_, i) => i),
       limit: LIMITS.threads.carousel,
     };
-  if (p === "x" && photos(infos).length > LIMITS.x.photos)
+  if (platformKey === "x" && photos(infos).length > LIMITS.x.photos)
     return { kind: "x4", label: "Choose which 4", items: photos(infos), limit: LIMITS.x.photos };
   return null;
 }
 
 /** Single-video networks with 2+ videos sending a video: pick which one (thumbnails with durations, one choice). */
 export function videoPicker(platform, infos, indices, skipped = false) {
-  const p = net(platform);
-  const v = videos(infos);
-  if (skipped || !SINGLE_VIDEO_NETWORKS.includes(p) || v.length < 2) return null;
+  const platformKey = net(platform);
+  const videoIndices = videos(infos);
+  if (skipped || !SINGLE_VIDEO_NETWORKS.includes(platformKey) || videoIndices.length < 2)
+    return null;
   const picked = indices.map((i) => infos[i]).filter(Boolean);
   if (!picked.length || !picked.every((m) => m.kind === "video")) return null;
   return {
     kind: "video",
     label: "Choose video",
-    items: v,
+    items: videoIndices,
     limit: 1,
-    chosen: indices.find((i) => v.includes(i)),
+    chosen: indices.find((i) => videoIndices.includes(i)),
   };
 }
 
@@ -158,11 +172,11 @@ export function fmtDuration(sec) {
 
 /** Networks that can't post without media. */
 export function needsMedia(platform, format = "Post") {
-  const p = net(platform);
+  const platformKey = net(platform);
   return (
-    p === "youtube" ||
-    p === "tiktok" ||
-    p === "instagram" ||
+    platformKey === "youtube" ||
+    platformKey === "tiktok" ||
+    platformKey === "instagram" ||
     format === "Reel / Video" ||
     format === "Short"
   );
@@ -170,9 +184,9 @@ export function needsMedia(platform, format = "Post") {
 
 /** Handle only when the API gave one; Facebook Pages read "Facebook Page". */
 export function identityLine(account) {
-  const p = net(account?.platform);
-  const network = NETWORK[p] || account?.platform || "";
-  if (p === "facebook")
+  const platformKey = net(account?.platform);
+  const network = NETWORK[platformKey] || account?.platform || "";
+  if (platformKey === "facebook")
     return account?.account_type === "group" ? "Facebook Group" : "Facebook Page";
   const meta = account?.extra_metadata || {};
   const raw =
@@ -193,15 +207,15 @@ export function rowText(
   indices,
   { format = "Post", suggested = [], skipped = false } = {},
 ) {
-  const p = net(platform);
+  const platformKey = net(platform);
   if (skipped) return { line2: "Skipped", line3: "This account won't get this post." };
   const picked = indices.map((i) => infos[i]).filter(Boolean);
   if (!picked.length) {
-    if (needsMedia(p, format))
+    if (needsMedia(platformKey, format))
       return {
         line2: "Nothing to post here",
         line3:
-          p === "youtube" || format === "Reel / Video" || format === "Short"
+          platformKey === "youtube" || format === "Reel / Video" || format === "Short"
             ? "Add a video, or skip this account."
             : "Add media, or skip this account.",
       };
@@ -210,7 +224,7 @@ export function rowText(
   const v = picked.filter((m) => m.kind === "video");
   const s = picked.length - v.length;
   let line2;
-  if ((p === "instagram" && format !== "Story") || p === "threads")
+  if ((platformKey === "instagram" && format !== "Story") || platformKey === "threads")
     line2 =
       picked.length > 1
         ? `Carousel · ${plural(picked.length, "item")}`
@@ -223,30 +237,33 @@ export function rowText(
   else line2 = plural(s, "photo");
 
   let line3 = "";
-  const cropped = cropIndices(p, infos, indices, { format });
+  const cropped = cropIndices(platformKey, infos, indices, { format });
   const left = infos.length - picked.length;
   const choice = choiceOf(infos, indices);
   const changed = !same(indices, suggested);
   const otherVids =
-    SINGLE_VIDEO_NETWORKS.includes(p) && choice === "Video" ? videos(infos).length - v.length : 0;
+    SINGLE_VIDEO_NETWORKS.includes(platformKey) && choice === "Video"
+      ? videos(infos).length - v.length
+      : 0;
   const otherV =
     otherVids > 0
       ? `${otherVids === 1 ? "The other video" : `${otherVids} other videos`} won't be posted here`
       : "";
   if (otherV && stills(infos).length)
-    line3 = `${otherV}, nor the ${p === "x" ? "photos and GIFs" : "photos"}`;
+    line3 = `${otherV}, nor the ${platformKey === "x" ? "photos and GIFs" : "photos"}`;
   else if (otherV) line3 = otherV;
-  else if (TOGGLE_NETWORKS.includes(p) && choice === "Video" && stills(infos).length)
-    line3 = p === "x" ? "Photos and GIFs won't be posted here" : "Photos won't be posted here";
-  else if (TOGGLE_NETWORKS.includes(p) && choice === "GIF")
+  else if (TOGGLE_NETWORKS.includes(platformKey) && choice === "Video" && stills(infos).length)
+    line3 =
+      platformKey === "x" ? "Photos and GIFs won't be posted here" : "Photos won't be posted here";
+  else if (TOGGLE_NETWORKS.includes(platformKey) && choice === "GIF")
     line3 = "Other items won't be posted here";
-  else if (p === "x" && choice === "Photos" && photos(infos).length > LIMITS.x.photos)
+  else if (platformKey === "x" && choice === "Photos" && photos(infos).length > LIMITS.x.photos)
     line3 = changed
       ? `${plural(photos(infos).length - s, "photo")} won't be posted here`
       : "X allows up to 4 — we'll use the first 4";
-  else if (TOGGLE_NETWORKS.includes(p) && choice === "Photos" && videos(infos).length)
-    line3 = `${NETWORK[p]} can't mix photos and a video`;
-  else if (p === "youtube" && left > 0) line3 = "Photos won't be posted here";
+  else if (TOGGLE_NETWORKS.includes(platformKey) && choice === "Photos" && videos(infos).length)
+    line3 = `${NETWORK[platformKey]} can't mix photos and a video`;
+  else if (platformKey === "youtube" && left > 0) line3 = "Photos won't be posted here";
   else if (left > 0 && changed) line3 = `${plural(left, "item")} won't be posted here`;
   return { line2, line3 };
 }
@@ -258,18 +275,19 @@ export function rowText(
  */
 export function buildFixPlan(rows, overrides = {}) {
   const entries = rows.map((r) => {
-    const p = net(r.account?.platform);
+    const platformKey = net(r.account?.platform);
     const format = r.format || "Post";
     const ov = overrides[r.account.id] || {};
-    const suggested = autoSplit(p, r.infos, { format });
+    const suggested = autoSplit(platformKey, r.infos, { format });
     const indices = Array.isArray(ov.indices) ? ov.indices : suggested;
     const skipped = !!ov.skip;
-    const options = choiceOptions(p, r.infos);
-    const empty = !skipped && !indices.length && needsMedia(p, format);
-    const needsChange = (r.problems || 0) > 0 || (!indices.length && needsMedia(p, format));
+    const options = choiceOptions(platformKey, r.infos);
+    const empty = !skipped && !indices.length && needsMedia(platformKey, format);
+    const needsChange =
+      (r.problems || 0) > 0 || (!indices.length && needsMedia(platformKey, format));
     return {
       account: r.account,
-      platform: p,
+      platform: platformKey,
       format,
       suggested,
       indices,
@@ -279,9 +297,11 @@ export function buildFixPlan(rows, overrides = {}) {
       changed: !same(indices, suggested),
       options,
       choice: options.length ? choiceOf(r.infos, indices) : null,
-      picker: videoPicker(p, r.infos, indices, skipped) || pickerFor(p, r.infos, { format }),
+      picker:
+        videoPicker(platformKey, r.infos, indices, skipped) ||
+        pickerFor(platformKey, r.infos, { format }),
       identity: identityLine(r.account),
-      ...rowText(p, r.infos, indices, { format, suggested, skipped }),
+      ...rowText(platformKey, r.infos, indices, { format, suggested, skipped }),
     };
   });
   const changing = entries.filter((e) => e.needsChange);

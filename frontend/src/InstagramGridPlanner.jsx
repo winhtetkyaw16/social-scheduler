@@ -1,3 +1,4 @@
+// Instagram profile-grid planner.
 import { Image, Play } from "lucide-react";
 
 function GridTile({ src, caption, video, current = false, index = 0 }) {

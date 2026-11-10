@@ -1,3 +1,5 @@
+"""Failed posts expose a friendly message instead of the raw provider error."""
+
 from app.services.posts import publish_problem, video_format_message
 
 ACTION = "tick a video for this account, or switch the post type to Post"

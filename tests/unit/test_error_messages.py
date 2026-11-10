@@ -1,3 +1,5 @@
+"""Friendly failure copy stays specific and free of provider jargon."""
+
 import re
 
 import pytest
@@ -10,63 +12,75 @@ from app.services.error_messages import (
     sanitize_raw,
 )
 
-H = "provider_http_error"
-N = "provider_not_configured"
+HTTP_ERROR = "provider_http_error"
+NOT_CONFIGURED = "provider_not_configured"
 CASES = [
     # (code, message, platform, media_urls, expected)
     (
-        H,
+        HTTP_ERROR,
         "Provider returned HTTP 402: Payment Required | credits depleted | type=credits-depleted",
         "x",
         [],
         "x_credits_depleted",
     ),
     (
-        H,
+        HTTP_ERROR,
         "Provider returned HTTP 400: (#200) Cannot call API for app 12345 on behalf of user",
         "facebook",
         None,
         "app_not_authorized",
     ),
     (
-        H,
+        HTTP_ERROR,
         "Provider returned HTTP 400: (#200) The user hasn't authorized the application to perform this action",
         "facebook",
         None,
         "permission_missing",
     ),
     (
-        H,
+        HTTP_ERROR,
         "Provider returned HTTP 403: Forbidden",
         "linkedin",
         None,
         "linkedin_permission_missing",
     ),
-    (H, "Provider returned HTTP 429: Too Many Requests", "x", None, "rate_limited"),
     (
-        H,
+        HTTP_ERROR,
+        "Provider returned HTTP 429: Too Many Requests",
+        "x",
+        None,
+        "rate_limited",
+    ),
+    (
+        HTTP_ERROR,
         "Provider returned HTTP 503: Service Unavailable",
         "linkedin",
         None,
         "platform_unavailable",
     ),
     (
-        H,
+        HTTP_ERROR,
         "Provider returned HTTP 400: Timeout",
         "instagram",
         ["https://x.test/a.mp4"],
         "timeout",
     ),
     ("provider_request_error", "TikTok request timed out", "tiktok", None, "timeout"),
-    (H, "Provider returned HTTP 401: Unauthorized", "x", None, "connection_expired"),
     (
-        H,
+        HTTP_ERROR,
+        "Provider returned HTTP 401: Unauthorized",
+        "x",
+        None,
+        "connection_expired",
+    ),
+    (
+        HTTP_ERROR,
         "Provider returned HTTP 400: Error validating access token: Session has expired",
         "facebook",
         None,
         "connection_expired",
     ),
-    (H, "Provider returned HTTP 401", "linkedin", None, "connection_expired"),
+    (HTTP_ERROR, "Provider returned HTTP 401", "linkedin", None, "connection_expired"),
     (
         "account_inactive",
         "Connected account is inactive",
@@ -75,77 +89,77 @@ CASES = [
         "connection_expired",
     ),
     (
-        H,
+        HTTP_ERROR,
         "Provider returned HTTP 422: Content is a duplicate of urn:li:share:1",
         "linkedin",
         None,
         "duplicate_content",
     ),
     (
-        N,
+        NOT_CONFIGURED,
         "Threads text posts are limited to 500 characters.",
         "threads",
         None,
         "text_too_long",
     ),
     (
-        N,
+        NOT_CONFIGURED,
         "Threads media container failed (ERROR). Check the media URL.",
         "threads",
         None,
         "media_fetch_failed",
     ),
     (
-        N,
+        NOT_CONFIGURED,
         "YouTube publishing requires a video, not an image.",
         "youtube",
         None,
         "youtube_video_required",
     ),
     (
-        N,
+        NOT_CONFIGURED,
         "YouTube publishing requires exactly one video file or public video URL. Text-only posts are not supported.",
         "youtube",
         [],
         "youtube_video_required",
     ),
     (
-        N,
+        NOT_CONFIGURED,
         "TikTok publishing currently supports exactly one video per post.",
         "tiktok",
         None,
         "tiktok_one_video",
     ),
     (
-        H,
+        HTTP_ERROR,
         "Provider returned HTTP 400: The aspect ratio is not supported.",
         "instagram",
         ["https://x.test/a.png"],
         "instagram_aspect_ratio",
     ),
     (
-        N,
+        NOT_CONFIGURED,
         "Instagram publishing currently requires exactly one public image URL",
         "instagram",
         [],
         "instagram_no_media",
     ),
     (
-        N,
+        NOT_CONFIGURED,
         "Instagram publishing currently requires exactly one public image URL",
         "instagram",
         ["a", "b"],
         "instagram_one_image",
     ),
     (
-        N,
+        NOT_CONFIGURED,
         "Instagram requires a publicly fetchable image URL. Set PUBLIC_BASE_URL to a public https origin.",
         "instagram",
         ["x"],
         "media_not_public",
     ),
     (
-        N,
+        NOT_CONFIGURED,
         "X media upload is not implemented; schedule text-only posts",
         "x",
         None,
@@ -191,48 +205,56 @@ def test_specific_copy_has_no_jargon_or_raw_text(
 
 
 def test_instagram_caption_only_copy():
-    r = friendly_error(
-        N,
+    result = friendly_error(
+        NOT_CONFIGURED,
         "Instagram publishing currently requires exactly one public image URL",
         "instagram",
         [],
     )
     assert (
-        r["banner"]
+        result["banner"]
         == "Instagram needs at least one image or video; caption-only posts aren't allowed."
     )
-    assert [a["id"] for a in r["actions"]] == ["edit"]
+    assert [a["id"] for a in result["actions"]] == ["edit"]
 
 
 def test_instagram_ratio_mentions_range():
-    r = friendly_error(
-        H, "Provider returned HTTP 400: The aspect ratio is not supported.", "instagram"
+    result = friendly_error(
+        HTTP_ERROR,
+        "Provider returned HTTP 400: The aspect ratio is not supported.",
+        "instagram",
     )
-    assert "4:5" in r["what_happened"] and "1.91:1" in r["what_happened"]
-    assert r["actions"][0]["label"] == "Crop"
+    assert "4:5" in result["what_happened"] and "1.91:1" in result["what_happened"]
+    assert result["actions"][0]["label"] == "Crop"
 
 
 def test_timeout_copy():
-    r = friendly_error(H, "Provider returned HTTP 400: Timeout", "instagram")
-    assert r["banner"] == "Instagram took too long to fetch your media and gave up."
-    assert "smaller file" in r["what_to_do"]
+    result = friendly_error(
+        HTTP_ERROR, "Provider returned HTTP 400: Timeout", "instagram"
+    )
+    assert (
+        result["banner"] == "Instagram took too long to fetch your media and gave up."
+    )
+    assert "smaller file" in result["what_to_do"]
 
 
 def test_x_credits_copy_is_specific():
-    r = friendly_error(H, "Provider returned HTTP 402: credits depleted", "x")
+    result = friendly_error(
+        HTTP_ERROR, "Provider returned HTTP 402: credits depleted", "x"
+    )
     assert (
-        r["banner"]
+        result["banner"]
         == "X API has no credits: add credits in the X developer console to post."
     )
-    assert "credits" in r["what_happened"]
-    assert [a["id"] for a in r["actions"]] == ["retry", "reschedule"]
-    assert all("href" not in a for a in r["actions"])
+    assert "credits" in result["what_happened"]
+    assert [a["id"] for a in result["actions"]] == ["retry", "reschedule"]
+    assert all("href" not in a for a in result["actions"])
 
 
 def test_connection_copy_has_reconnect():
-    r = friendly_error(H, "Provider returned HTTP 401", "facebook")
-    assert r["banner"] == "Your Facebook connection has expired or was revoked."
-    assert r["actions"][0] == {
+    result = friendly_error(HTTP_ERROR, "Provider returned HTTP 401", "facebook")
+    assert result["banner"] == "Your Facebook connection has expired or was revoked."
+    assert result["actions"][0] == {
         "id": "reconnect",
         "label": "Reconnect Facebook",
         "target": "accounts",
@@ -240,13 +262,13 @@ def test_connection_copy_has_reconnect():
 
 
 def test_permission_copy_has_reconnect():
-    r = friendly_error(
-        H,
+    result = friendly_error(
+        HTTP_ERROR,
         "Provider returned HTTP 400: (#200) Requires pages_manage_posts permission",
         "facebook",
     )
-    assert r["category"] == "permission_missing"
-    assert r["actions"][0]["id"] == "reconnect"
+    assert result["category"] == "permission_missing"
+    assert result["actions"][0]["id"] == "reconnect"
 
 
 def test_fallback_quotes_sanitized_raw_message():
@@ -255,9 +277,11 @@ def test_fallback_quotes_sanitized_raw_message():
         "Provider returned HTTP 400: Weird thing happened https://graph.facebook.com/v1/me?access_token=SECRETVALUE "
         "Bearer abc.def access_token=SECRET2 " + long_tail
     )
-    r = friendly_error("publish_error", msg, "pinterest")
-    assert r["category"] == "unknown"
-    assert r["what_happened"].startswith('The platform said: "Weird thing happened')
+    result = friendly_error("publish_error", msg, "pinterest")
+    assert result["category"] == "unknown"
+    assert result["what_happened"].startswith(
+        'The platform said: "Weird thing happened'
+    )
     for bad in (
         "SECRET",
         "access_token=",
@@ -265,14 +289,14 @@ def test_fallback_quotes_sanitized_raw_message():
         "Bearer abc",
         "Provider returned",
     ):
-        assert bad not in r["what_happened"] and bad not in r["banner"]
+        assert bad not in result["what_happened"] and bad not in result["banner"]
     assert len(sanitize_raw(msg)) <= 200
 
 
 def test_fallback_short_banner_and_none():
-    r = friendly_error("weird", "boom", "pinterest")
-    assert r["banner"] == "Pinterest rejected this post: boom"
-    assert r["what_happened"] == 'The platform said: "boom"'
+    result = friendly_error("weird", "boom", "pinterest")
+    assert result["banner"] == "Pinterest rejected this post: boom"
+    assert result["what_happened"] == 'The platform said: "boom"'
     assert friendly_error(None, None, "x") is None
 
 

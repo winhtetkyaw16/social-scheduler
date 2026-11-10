@@ -110,10 +110,10 @@ export const LI_HERO = [0.6, 0.66];
 const fr = (xs) => xs.map((x) => `${x}fr`).join(" ");
 export function liLayout(ratios, { video = false, max = LINKEDIN_MAX_VISIBLE } = {}) {
   const all = ratios || [];
-  const n = all.length;
-  if (!n) return { kind: "none", cells: [], more: 0 };
+  const itemCount = all.length;
+  if (!itemCount) return { kind: "none", cells: [], more: 0 };
   const r = all.map((x) => clampRatio(x || 1, ...LI_SINGLE));
-  if (n === 1) {
+  if (itemCount === 1) {
     const own = video ? clampRatio(all[0] || 16 / 9, 1 / 2.4, 2.4) : r[0];
     return {
       kind: "single",
@@ -128,7 +128,7 @@ export function liLayout(ratios, { video = false, max = LINKEDIN_MAX_VISIBLE } =
       more: 0,
     };
   }
-  if (n === 2) {
+  if (itemCount === 2) {
     const nat = r[0] + r[1];
     const ratio = clampRatio(nat, LI_CAP, 2);
     return {
@@ -147,9 +147,9 @@ export function liLayout(ratios, { video = false, max = LINKEDIN_MAX_VISIBLE } =
       more: 0,
     };
   }
-  const shown = Math.min(n, Math.max(2, max));
+  const shown = Math.min(itemCount, Math.max(2, max));
   const k = shown - 1;
-  const more = n - shown;
+  const more = itemCount - shown;
   const rest = r.slice(1, shown);
   if (r[0] > 4 / 3) {
     const heroH = 1 / r[0];

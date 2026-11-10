@@ -1,3 +1,9 @@
+"""Alembic migration environment.
+
+The database URL is read from DATABASE_URL at migration time so Compose
+and tests can override the value cached in app.core.config.
+"""
+
 import os
 from logging.config import fileConfig
 

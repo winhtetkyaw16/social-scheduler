@@ -98,8 +98,13 @@ def _name(url: str) -> str:
     return Path(path).name or "this file"
 
 
-def _mb(n: int) -> str:
-    return f"{n / 1048576:.1f} MB" if n >= 1048576 else f"{n / 1024:.0f} KB"
+def _mb(byte_count: int) -> str:
+    """Format a byte count as MB or KB for a validation message."""
+    return (
+        f"{byte_count / 1048576:.1f} MB"
+        if byte_count >= 1048576
+        else f"{byte_count / 1024:.0f} KB"
+    )
 
 
 def _mmss(seconds: float) -> str:
@@ -110,32 +115,34 @@ def mp4_video_size(data: bytes) -> tuple[int, int] | None:
     """(width, height) of the first video track from moov/trak/tkhd; None if not found."""
 
     def boxes(start: int, end: int):
-        i = start
-        while i + 8 <= end:
-            size, kind = struct.unpack(">I4s", data[i : i + 8])
+        offset = start
+        while offset + 8 <= end:
+            size, kind = struct.unpack(">I4s", data[offset : offset + 8])
             header = 8
-            if size == 1 and i + 16 <= end:
-                size = struct.unpack(">Q", data[i + 8 : i + 16])[0]
+            if size == 1 and offset + 16 <= end:
+                size = struct.unpack(">Q", data[offset + 8 : offset + 16])[0]
                 header = 16
             elif size == 0:
-                size = end - i
+                size = end - offset
             if size < header:
                 return
-            yield kind, i + header, min(i + size, end)
-            i += size
+            yield kind, offset + header, min(offset + size, end)
+            offset += size
 
-    for kind, s, e in boxes(0, len(data)):
+    for kind, payload_start, payload_end in boxes(0, len(data)):
         if kind != b"moov":
             continue
-        for k2, s2, e2 in boxes(s, e):
-            if k2 != b"trak":
+        for child_kind, child_start, child_end in boxes(payload_start, payload_end):
+            if child_kind != b"trak":
                 continue
-            for k3, s3, e3 in boxes(s2, e2):
-                if k3 == b"tkhd" and e3 - s3 >= 84:
-                    w, h = struct.unpack(">II", data[e3 - 8 : e3])
-                    w, h = w >> 16, h >> 16
-                    if w and h:
-                        return w, h
+            for box_kind, box_start, box_end in boxes(child_start, child_end):
+                if box_kind == b"tkhd" and box_end - box_start >= 84:
+                    raw_width, raw_height = struct.unpack(
+                        ">II", data[box_end - 8 : box_end]
+                    )
+                    width, height = raw_width >> 16, raw_height >> 16
+                    if width and height:
+                        return width, height
     return None
 
 

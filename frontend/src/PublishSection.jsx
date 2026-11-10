@@ -1,3 +1,4 @@
+// Calendar, queue, and post detail for scheduled, queued, and published posts.
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Ch,
@@ -602,9 +603,9 @@ function MonthCalendar({
       hi = 18;
     dates.forEach((d) =>
       sortedFor(dateKey(d)).forEach((p) => {
-        const h = new Date(postPlacementAt(p)).getHours();
-        lo = Math.min(lo, h);
-        hi = Math.max(hi, h);
+        const hour = new Date(postPlacementAt(p)).getHours();
+        lo = Math.min(lo, hour);
+        hi = Math.max(hi, hour);
       }),
     );
     return Array.from({ length: hi - lo + 1 }, (_, i) => lo + i);
@@ -717,7 +718,7 @@ function MonthCalendar({
                 <span className="n">{date.getDate()}</span>
                 {dayPosts.slice(0, postLimit).map((post) => {
                   const account = accountById.get(post.connected_account_id);
-                  const m = meta(account?.platform);
+                  const platformMeta = meta(account?.platform);
                   return (
                     <div
                       key={post.id}
@@ -732,12 +733,12 @@ function MonthCalendar({
                         }
                       }}
                       aria-label={`Open post: ${post.content || "Untitled post"}`}
-                      className={`chip ${m.chip} ${post.status === "failed" ? "failed" : ""}`}
+                      className={`chip ${platformMeta.chip} ${post.status === "failed" ? "failed" : ""}`}
                       style={{
                         cursor: canDragPost(post) ? "grab" : "pointer",
                         opacity:
                           draggingId === String(post.id) || busyId === String(post.id) ? 0.5 : 1,
-                        ...(m.chip ? null : { borderColor: chColor(account?.platform) }),
+                        ...(platformMeta.chip ? null : { borderColor: chColor(account?.platform) }),
                       }}
                       title={`${account?.account_name || ""} · ${post.status}`}
                     >
@@ -820,17 +821,17 @@ function MonthCalendar({
                   >
                     {inHour.slice(0, 1).map((post) => {
                       const account = accountById.get(post.connected_account_id);
-                      const m = meta(account?.platform);
+                      const platformMeta = meta(account?.platform);
                       return (
                         <div
                           key={post.id}
                           role="button"
                           tabIndex={0}
                           {...dragProps(post)}
-                          className={`ev ${m.ev} ${post.status === "failed" ? "failed" : ""}`}
+                          className={`ev ${platformMeta.ev} ${post.status === "failed" ? "failed" : ""}`}
                           style={{
                             cursor: canDragPost(post) ? "grab" : "pointer",
-                            ...(m.ev ? null : { borderColor: chColor(account?.platform) }),
+                            ...(platformMeta.ev ? null : { borderColor: chColor(account?.platform) }),
                           }}
                         >
                           <div className="row" style={{ gap: 6 }}>
@@ -1879,7 +1880,7 @@ function QueueView({
     failed: ["failed"],
   };
   const chanPosts = safePostsQ.filter(
-    (p) => chanFilter === "all" || accById.get(p.connected_account_id)?.platform === chanFilter,
+    (post) => chanFilter === "all" || accById.get(post.connected_account_id)?.platform === chanFilter,
   );
   const countFor = (t) => chanPosts.filter((p) => tabStatus[t].includes(p.status)).length;
   const tabPosts = chanPosts.filter((p) => tabStatus[qTab].includes(p.status));
@@ -1893,8 +1894,8 @@ function QueueView({
     `${k === todayK ? "Today · " : k === tomK ? "Tomorrow · " : ""}${d.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" })}`;
   const openSlotsByDay = upcoming.reduce((acc, it) => {
     if (!it.filled) {
-      const k = dateKey(it.scheduled_at);
-      acc[k] = (acc[k] || 0) + 1;
+      const dayKey = dateKey(it.scheduled_at);
+      acc[dayKey] = (acc[dayKey] || 0) + 1;
     }
     return acc;
   }, {});
@@ -1979,12 +1980,12 @@ function QueueView({
               {items.map((p) => {
                 const acc = accById.get(p.connected_account_id);
                 const when = postPlacementAt(p);
-                const t = when ? fmtTime(when) : "";
+                const timeLabel = when ? fmtTime(when) : "";
                 return (
                   <div key={p.id} className="post">
                     <div className="time">
-                      {t.replace(/\s?(AM|PM)/i, "")}
-                      <span>{(t.match(/AM|PM/i) || [""])[0]}</span>
+                      {timeLabel.replace(/\s?(AM|PM)/i, "")}
+                      <span>{(timeLabel.match(/AM|PM/i) || [""])[0]}</span>
                     </div>
                     <ScAccountAvatar account={acc} size={36} />
                     <div className="body">
@@ -2694,41 +2695,41 @@ function PostPopover({
     function place() {
       const el = popRef.current;
       if (!el) return;
-      const h = el.offsetHeight;
+      const elementHeight = el.offsetHeight;
       const vw = window.innerWidth;
       const vh = window.innerHeight;
       if (!anchor || !anchor.isConnected) {
         setPos({
           left: Math.max(8, (vw - POPOVER_W) / 2),
-          top: Math.max(8, (vh - h) / 2),
+          top: Math.max(8, (vh - elementHeight) / 2),
           side: "none",
         });
         return;
       }
-      const r = anchor.getBoundingClientRect();
+      const rect = anchor.getBoundingClientRect();
       let side =
-        r.right + POPOVER_GAP + POPOVER_W <= vw - 8
+        rect.right + POPOVER_GAP + POPOVER_W <= vw - 8
           ? "right"
-          : r.left - POPOVER_GAP - POPOVER_W >= 8
+          : rect.left - POPOVER_GAP - POPOVER_W >= 8
             ? "left"
             : "below";
       let left;
       let top;
       let arrow;
       if (side === "below") {
-        left = Math.min(Math.max(8, r.left + r.width / 2 - POPOVER_W / 2), vw - POPOVER_W - 8);
-        top = r.bottom + POPOVER_GAP;
-        if (top + h > vh - 8) {
+        left = Math.min(Math.max(8, rect.left + rect.width / 2 - POPOVER_W / 2), vw - POPOVER_W - 8);
+        top = rect.bottom + POPOVER_GAP;
+        if (top + elementHeight > vh - 8) {
           side = "above";
-          top = Math.max(8, r.top - POPOVER_GAP - h);
+          top = Math.max(8, rect.top - POPOVER_GAP - elementHeight);
         }
-        arrow = Math.min(Math.max(16, r.left + r.width / 2 - left), POPOVER_W - 16);
+        arrow = Math.min(Math.max(16, rect.left + rect.width / 2 - left), POPOVER_W - 16);
       } else {
-        left = side === "right" ? r.right + POPOVER_GAP : r.left - POPOVER_GAP - POPOVER_W;
-        top = r.top + r.height / 2 - 28;
-        if (top + h > vh - 8) top = Math.max(8, vh - 8 - h);
+        left = side === "right" ? rect.right + POPOVER_GAP : rect.left - POPOVER_GAP - POPOVER_W;
+        top = rect.top + rect.height / 2 - 28;
+        if (top + elementHeight > vh - 8) top = Math.max(8, vh - 8 - elementHeight);
         if (top < 8) top = 8;
-        arrow = Math.min(Math.max(14, r.top + r.height / 2 - top), h - 14);
+        arrow = Math.min(Math.max(14, rect.top + rect.height / 2 - top), elementHeight - 14);
       }
       setPos({ left, top, side, arrow });
     }
@@ -2743,11 +2744,11 @@ function PostPopover({
 
   // Focus in, Esc and outside click close.
   useEffect(() => {
-    const t = setTimeout(
+    const timer = setTimeout(
       () => popRef.current?.querySelector("[data-autofocus]")?.focus?.() || popRef.current?.focus(),
       0,
     );
-    return () => clearTimeout(t);
+    return () => clearTimeout(timer);
   }, [post?.id]);
   useEffect(() => {
     function onKey(e) {
@@ -3181,9 +3182,9 @@ function PostEditModal({ post, accounts, request, onRefresh, onClose, onNavigate
       })
       .catch(() => {
         if (alive) {
-          const d = new Date(Date.now() + 60 * 60 * 1000);
-          d.setMinutes(0, 0, 0);
-          setScheduledAt(toLocalInputValue(d.toISOString()));
+          const date = new Date(Date.now() + 60 * 60 * 1000);
+          date.setMinutes(0, 0, 0);
+          setScheduledAt(toLocalInputValue(date.toISOString()));
         }
       });
     return () => {
@@ -3279,8 +3280,8 @@ function PostEditModal({ post, accounts, request, onRefresh, onClose, onNavigate
   }
   const fmtWhen = (v) => {
     try {
-      const d = new Date(v);
-      return `${d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })} · ${d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
+      const date = new Date(v);
+      return `${date.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })} · ${date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
     } catch {
       return "";
     }
@@ -3660,10 +3661,10 @@ function dayDotKey(post) {
   return "draft";
 }
 function dayTime(post) {
-  const v = postPlacementAt(post);
-  if (!v) return "";
+  const placedAt = postPlacementAt(post);
+  if (!placedAt) return "";
   try {
-    return new Date(v).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    return new Date(placedAt).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
   } catch {
     return "";
   }
@@ -3706,8 +3707,8 @@ function DayPopover({
   const failedPosts = items.filter((p) => p.status === "failed");
   const counts = {};
   items.forEach((p) => {
-    const k = dayDotKey(p);
-    counts[k] = (counts[k] || 0) + 1;
+    const dayKey = dayDotKey(p);
+    counts[dayKey] = (counts[dayKey] || 0) + 1;
   });
   const summary = ["published", "scheduled", "pending", "draft", "failed"]
     .filter((k) => counts[k])
@@ -3717,12 +3718,12 @@ function DayPopover({
   // Outline the "+N more" trigger while open; return focus on close.
   useEffect(() => {
     if (!anchor) return undefined;
-    const o = anchor.style.outline;
+    const savedOutline = anchor.style.outline;
     const off = anchor.style.outlineOffset;
     anchor.style.outline = "2px solid var(--text)";
     anchor.style.outlineOffset = "1px";
     return () => {
-      anchor.style.outline = o;
+      anchor.style.outline = savedOutline;
       anchor.style.outlineOffset = off;
       try {
         anchor.focus({ preventScroll: true });
@@ -3740,24 +3741,24 @@ function DayPopover({
     function place() {
       const el = popRef.current;
       if (!el) return;
-      const h = el.offsetHeight;
+      const elementHeight = el.offsetHeight;
       const vw = window.innerWidth;
       const vh = window.innerHeight;
       if (!anchor || !anchor.isConnected) {
         setPos({
           left: Math.max(8, (vw - DAY_W) / 2),
-          top: Math.max(8, (vh - h) / 2),
+          top: Math.max(8, (vh - elementHeight) / 2),
           side: "none",
         });
         return;
       }
       const cell = anchor.closest?.(".cell") || anchor;
-      const r = cell.getBoundingClientRect();
+      const rect = cell.getBoundingClientRect();
       const a = anchor.getBoundingClientRect();
       let side =
-        r.left - POPOVER_GAP - DAY_W >= 8
+        rect.left - POPOVER_GAP - DAY_W >= 8
           ? "left"
-          : r.right + POPOVER_GAP + DAY_W <= vw - 8
+          : rect.right + POPOVER_GAP + DAY_W <= vw - 8
             ? "right"
             : "below";
       let left;
@@ -3766,17 +3767,17 @@ function DayPopover({
       if (side === "below") {
         left = Math.min(Math.max(8, a.left + a.width / 2 - DAY_W / 2), vw - DAY_W - 8);
         top = a.bottom + POPOVER_GAP;
-        if (top + h > vh - 8) {
+        if (top + elementHeight > vh - 8) {
           side = "above";
-          top = Math.max(8, a.top - POPOVER_GAP - h);
+          top = Math.max(8, a.top - POPOVER_GAP - elementHeight);
         }
         arrow = Math.min(Math.max(16, a.left + a.width / 2 - left), DAY_W - 16);
       } else {
-        left = side === "right" ? r.right + POPOVER_GAP : r.left - POPOVER_GAP - DAY_W;
-        top = a.top + a.height / 2 - h + 40;
-        if (top + h > vh - 8) top = Math.max(8, vh - 8 - h);
+        left = side === "right" ? rect.right + POPOVER_GAP : rect.left - POPOVER_GAP - DAY_W;
+        top = a.top + a.height / 2 - elementHeight + 40;
+        if (top + elementHeight > vh - 8) top = Math.max(8, vh - 8 - elementHeight);
         if (top < 8) top = 8;
-        arrow = Math.min(Math.max(14, a.top + a.height / 2 - top), h - 14);
+        arrow = Math.min(Math.max(14, a.top + a.height / 2 - top), elementHeight - 14);
       }
       setPos({ left, top, side, arrow });
     }
@@ -3793,7 +3794,7 @@ function DayPopover({
   React.useLayoutEffect(() => {
     if (selectedId != null) return;
     if (listRef.current) listRef.current.scrollTop = scrollRef.current;
-    const t = setTimeout(() => {
+    const timer = setTimeout(() => {
       const row =
         lastRowRef.current != null
           ? listRef.current?.querySelector(`[data-row-id="${lastRowRef.current}"]`)
@@ -3802,7 +3803,7 @@ function DayPopover({
         preventScroll: true,
       });
     }, 0);
-    return () => clearTimeout(t);
+    return () => clearTimeout(timer);
   }, [selectedId]);
 
   useEffect(() => {
@@ -3897,9 +3898,9 @@ function DayPopover({
       <div className="dp-list" ref={listRef} role="list" aria-labelledby="dp-title">
         {items.map((post) => {
           const account = (accounts || []).find((a) => a.id === post.connected_account_id);
-          const t = dayTime(post);
-          const showT = t !== prevTime;
-          prevTime = t;
+          const timeLabel = dayTime(post);
+          const showT = timeLabel !== prevTime;
+          prevTime = timeLabel;
           const key = dayDotKey(post);
           return (
             <div
@@ -3910,9 +3911,9 @@ function DayPopover({
               className="dp-row"
               onClick={() => openRow(post)}
               onKeyDown={(e) => rowKey(e, post)}
-              aria-label={`${t} ${account?.account_name || ""} ${post.status}`}
+              aria-label={`${timeLabel} ${account?.account_name || ""} ${post.status}`}
             >
-              <span className="dp-t">{showT ? t : ""}</span>
+              <span className="dp-t">{showT ? timeLabel : ""}</span>
               <Ch platform={account?.platform || post.preview_platform} />
               <div className="dp-main">
                 <div className="dp-l1">

@@ -1,3 +1,4 @@
+// Signed-in pages besides the composer: dashboard, analytics, settings, team, library, and onboarding.
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Ch,
@@ -22,19 +23,19 @@ import lockupDark from "../assets/brand/socialcastly-lockup-dark.png";
 import { sortUpNext, upNextTime, upNextDateParts } from "../upNext.js";
 
 const DAY = 864e5;
-const when = (p) => p?.published_at || p?.scheduled_at || p?.created_at;
-const isLive = (p) => ["scheduled", "queued", "publishing"].includes(p?.status);
+const when = (post) => post?.published_at || post?.scheduled_at || post?.created_at;
+const isLive = (post) => ["scheduled", "queued", "publishing"].includes(post?.status);
 const startOfWeek = (d = new Date()) => {
-  const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  x.setDate(x.getDate() - ((x.getDay() + 6) % 7));
-  return x;
+  const dateValue = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  dateValue.setDate(dateValue.getDate() - ((dateValue.getDay() + 6) % 7));
+  return dateValue;
 };
 const svgIco = (path) => (
   <svg className="ico" viewBox="0 0 24 24">
     {path}
   </svg>
 );
-const I = {
+const navIcons = {
   plus: svgIco(<path d="M12 5v14M5 12h14" />),
   alert: svgIco(
     <>
@@ -76,8 +77,8 @@ const I = {
   ),
 };
 function splitTime(v) {
-  const t = fmtTime(v);
-  return [t.replace(/\s?(AM|PM)/i, ""), (t.match(/AM|PM/i) || [""])[0]];
+  const timeLabel = fmtTime(v);
+  return [timeLabel.replace(/\s?(AM|PM)/i, ""), (timeLabel.match(/AM|PM/i) || [""])[0]];
 }
 
 function PostRow({ post, account, onOpen, onRetry, onDelete }) {
@@ -119,7 +120,7 @@ function PostRow({ post, account, onOpen, onRetry, onDelete }) {
             className="btn btn-sm btn-secondary"
             onClick={() => onRetry(post.id)}
           >
-            {I.retry}Retry
+            {navIcons.retry}Retry
           </button>
         )}
         <PostRowMenu
@@ -156,20 +157,20 @@ function WeekBars({ posts, accounts, start, days = 7 }) {
   const plats = [...new Set(accounts.map((a) => a.platform))].slice(0, 4);
   const acc = new Map(accounts.map((a) => [a.id, a]));
   const cols = Array.from({ length: days }, (_, i) => {
-    const d = new Date(start);
-    d.setDate(d.getDate() + i);
-    return d;
+    const date = new Date(start);
+    date.setDate(date.getDate() + i);
+    return date;
   });
   const counts = cols.map((d) =>
     plats.map(
       (pl) =>
-        posts.filter((p) => {
-          const w = when(p);
+        posts.filter((post) => {
+          const w = when(post);
           if (!w) return false;
-          const x = new Date(w);
+          const dateValue = new Date(w);
           return (
-            x.toDateString() === d.toDateString() &&
-            acc.get(p.connected_account_id)?.platform === pl
+            dateValue.toDateString() === d.toDateString() &&
+            acc.get(post.connected_account_id)?.platform === pl
           );
         }).length,
     ),
@@ -264,28 +265,28 @@ export function Dashboard({
         ? wkEnd
         : new Date(now.getFullYear(), now.getMonth() + 1, 1);
   const inR = (p, a, b) => {
-    const w = p.scheduled_at && new Date(p.scheduled_at);
-    return w && w >= a && w < b;
+    const date = p.scheduled_at && new Date(p.scheduled_at);
+    return date && date >= a && date < b;
   };
   const scheduledR = posts.filter((p) => isLive(p) && inR(p, rangeStart, rangeEnd)).length;
   const scheduledLast = posts.filter((p) => inR(p, lastWk, wk) && p.status !== "draft").length;
   const pub30 = posts.filter(
-    (p) =>
-      p.status === "published" &&
-      p.published_at &&
-      Date.now() - new Date(p.published_at) < 30 * DAY,
+    (post) =>
+      post.status === "published" &&
+      post.published_at &&
+      Date.now() - new Date(post.published_at) < 30 * DAY,
   );
-  const pubConfirmed = pub30.filter((p) => p.provider_post_id).length;
+  const pubConfirmed = pub30.filter((post) => post.provider_post_id).length;
   const failed = posts.filter((p) => p.status === "failed");
   const failedPlats = [
-    ...new Set(failed.map((p) => meta(acc.get(p.connected_account_id)?.platform).label)),
+    ...new Set(failed.map((post) => meta(acc.get(post.connected_account_id)?.platform).label)),
   ];
   const upcomingAll = posts
     .filter((p) => isLive(p) || p.status === "failed")
     .filter(
-      (p) =>
-        new Date(p.scheduled_at) >= new Date(now.getFullYear(), now.getMonth(), now.getDate()) ||
-        p.status === "failed",
+      (post) =>
+        new Date(post.scheduled_at) >= new Date(now.getFullYear(), now.getMonth(), now.getDate()) ||
+        post.status === "failed",
     );
   const upcoming = sortUpNext(upcomingAll).slice(0, 6);
   return (
@@ -306,7 +307,7 @@ export function Dashboard({
       </PageHead>
       {failed.length > 0 && (
         <div className="alert error">
-          {I.alert}
+          {navIcons.alert}
           <div className="grow sm">
             <b>
               {failed.length} post{failed.length === 1 ? "" : "s"} failed to publish
@@ -362,7 +363,7 @@ export function Dashboard({
               <div className="xs subtle">Newest first</div>
             </div>
             <button type="button" className="btn btn-sm btn-ghost" onClick={() => goToTab("queue")}>
-              View queue{I.arrow}
+              View queue{navIcons.arrow}
             </button>
           </div>
           {upcoming.length ? (
@@ -420,12 +421,12 @@ export function Dashboard({
             <h2>Channel health</h2>
             <div className="col" style={{ marginTop: 14 }}>
               {accounts.length ? (
-                accounts.slice(0, 6).map((a) => {
-                  const [l, c] = healthOf(a, posts);
+                accounts.slice(0, 6).map((account) => {
+                  const [l, c] = healthOf(account, posts);
                   return (
-                    <div key={a.id} className="row">
-                      <Ch platform={a.platform} size="" />
-                      <span className="grow sm">{a.account_name}</span>
+                    <div key={account.id} className="row">
+                      <Ch platform={account.platform} size="" />
+                      <span className="grow sm">{account.account_name}</span>
                       <span className={`badge ${c}`}>{l}</span>
                     </div>
                   );
@@ -470,11 +471,11 @@ export function Analytics({ posts, accounts }) {
   const successRate = attempted ? Math.round((published.length / attempted) * 1000) / 10 : null;
   const prevStart = since - range * DAY;
   const prevPub = posts.filter(
-    (p) =>
-      p.status === "published" &&
-      p.published_at &&
-      new Date(p.published_at) >= prevStart &&
-      new Date(p.published_at) < since,
+    (post) =>
+      post.status === "published" &&
+      post.published_at &&
+      new Date(post.published_at) >= prevStart &&
+      new Date(post.published_at) < since,
   ).length;
   const delta = prevPub ? Math.round(((published.length - prevPub) / prevPub) * 1000) / 10 : null;
   const byPlat = Object.entries(
@@ -487,38 +488,38 @@ export function Analytics({ posts, accounts }) {
   const maxPlat = Math.max(1, ...byPlat.map(([, n]) => n));
   const heat = useMemo(() => {
     const g = Array.from({ length: 5 }, () => Array(8).fill(0));
-    published.forEach((p) => {
-      const d = new Date(p.published_at || p.scheduled_at);
-      const wd = (d.getDay() + 6) % 7;
-      const h = d.getHours();
-      if (wd < 5 && h >= 6 && h < 22) g[wd][Math.floor((h - 6) / 2)] += 1;
+    published.forEach((post) => {
+      const date = new Date(post.published_at || post.scheduled_at);
+      const wd = (date.getDay() + 6) % 7;
+      const hour = date.getHours();
+      if (wd < 5 && hour >= 6 && hour < 22) g[wd][Math.floor((hour - 6) / 2)] += 1;
     });
     return g;
   }, [published]);
   const heatMax = Math.max(1, ...heat.flat());
   const series = useMemo(() => {
-    const n = Math.min(range, 90);
-    const arr = Array.from({ length: n }, (_, i) => {
-      const d = new Date(Date.now() - (n - 1 - i) * DAY);
+    const count = Math.min(range, 90);
+    const arr = Array.from({ length: count }, (_, i) => {
+      const d = new Date(Date.now() - (count - 1 - i) * DAY);
       return { d, pub: 0, fail: 0 };
     });
-    const idx = (w) => n - 1 - Math.floor((Date.now() - new Date(w)) / DAY);
-    published.forEach((p) => {
-      const i = idx(p.published_at || p.scheduled_at);
+    const idx = (w) => count - 1 - Math.floor((Date.now() - new Date(w)) / DAY);
+    published.forEach((post) => {
+      const i = idx(post.published_at || post.scheduled_at);
       if (arr[i]) arr[i].pub += 1;
     });
-    failed.forEach((p) => {
-      const i = idx(p.scheduled_at);
+    failed.forEach((post) => {
+      const i = idx(post.scheduled_at);
       if (arr[i]) arr[i].fail += 1;
     });
     return arr;
   }, [published, failed, range]);
   const sMax = Math.max(1, ...series.map((s) => s.pub + s.fail));
-  const W = 800,
-    H = 200;
+  const chartWidth = 800,
+    chartHeight = 200;
   const pts = (k) =>
     series
-      .map((s, i) => `${(i / Math.max(1, series.length - 1)) * W},${H - (s[k] / sMax) * (H - 20)}`)
+      .map((s, i) => `${(i / Math.max(1, series.length - 1)) * chartWidth},${chartHeight - (s[k] / sMax) * (chartHeight - 20)}`)
       .join(" ");
   const recent = published
     .slice()
@@ -536,17 +537,17 @@ export function Analytics({ posts, accounts }) {
         "provider_post_id",
         "content",
       ],
-      ...inRange.map((p) => {
-        const a = acc.get(p.connected_account_id);
+      ...inRange.map((post) => {
+        const a = acc.get(post.connected_account_id);
         return [
-          p.id,
+          post.id,
           a?.platform || "",
           a?.account_name || "",
-          p.status,
-          p.scheduled_at || "",
-          p.published_at || "",
-          p.provider_post_id || "",
-          (p.content || "").replace(/\s+/g, " "),
+          post.status,
+          post.scheduled_at || "",
+          post.published_at || "",
+          post.provider_post_id || "",
+          (post.content || "").replace(/\s+/g, " "),
         ];
       }),
     ];
@@ -578,11 +579,11 @@ export function Analytics({ posts, accounts }) {
           onClick={exportCsv}
           disabled={!inRange.length}
         >
-          {I.download}Export CSV
+          {navIcons.download}Export CSV
         </button>
       </PageHead>
       <div className="alert info sm">
-        {I.alert}
+        {navIcons.alert}
         <div className="grow">
           <b>Reach and engagement aren't connected yet.</b>{" "}
           <span className="muted">
@@ -635,7 +636,7 @@ export function Analytics({ posts, accounts }) {
           </div>
         ) : (
           <svg
-            viewBox={`0 0 ${W} ${H}`}
+            viewBox={`0 0 ${chartWidth} ${chartHeight}`}
             preserveAspectRatio="none"
             style={{ width: "100%", height: 200, marginTop: 16 }}
           >
@@ -713,16 +714,16 @@ export function Analytics({ posts, accounts }) {
                 </tr>
               </thead>
               <tbody>
-                {recent.map((p) => {
-                  const a = acc.get(p.connected_account_id);
+                {recent.map((post) => {
+                  const a = acc.get(post.connected_account_id);
                   return (
-                    <tr key={p.id}>
+                    <tr key={post.id}>
                       <td>
                         <div className="row">
-                          {p.media_urls?.[0] ? (
+                          {post.media_urls?.[0] ? (
                             <img
                               className="thumb"
-                              src={p.media_urls[0]}
+                              src={post.media_urls[0]}
                               alt=""
                               style={{ objectFit: "cover" }}
                               onError={(e) => {
@@ -731,7 +732,7 @@ export function Analytics({ posts, accounts }) {
                             />
                           ) : null}
                           <div>
-                            <div className="sm">{postTitle(p)}</div>
+                            <div className="sm">{postTitle(post)}</div>
                             <div className="row xs subtle" style={{ gap: 6 }}>
                               <Ch platform={a?.platform} />
                               {a?.account_name}
@@ -739,9 +740,9 @@ export function Analytics({ posts, accounts }) {
                           </div>
                         </div>
                       </td>
-                      <td className="sm">{fmtDay(p.published_at)}</td>
+                      <td className="sm">{fmtDay(post.published_at)}</td>
                       <td>
-                        {p.provider_post_id ? (
+                        {post.provider_post_id ? (
                           <span className="badge b-success nodot">Confirmed</span>
                         ) : (
                           <span className="badge b-warning nodot">Unconfirmed</span>
@@ -1013,7 +1014,7 @@ function Notifications() {
   return (
     <>
       <div className="alert info sm">
-        {I.alert}
+        {navIcons.alert}
         <div className="grow">
           Preferences are saved in this browser only — notification delivery isn't wired to the
           server yet.
@@ -1075,7 +1076,7 @@ export function Team({ user, accounts }) {
           disabled
           title="Team invites aren't available yet"
         >
-          {I.plus}Invite member
+          {navIcons.plus}Invite member
         </button>
       </PageHead>
       <div className="grid g3">
@@ -1218,7 +1219,7 @@ export function MediaLibrary({ request, onUseAsset }) {
           disabled={busy}
           onClick={() => input.current?.click()}
         >
-          {I.upload}
+          {navIcons.upload}
           {busy ? "Uploading…" : "Upload"}
         </button>
         <input
@@ -1263,7 +1264,7 @@ export function MediaLibrary({ request, onUseAsset }) {
         }}
         role="button"
       >
-        {I.upload}
+        {navIcons.upload}
         <div>
           <b>Drag files here to upload</b>
           <div className="sm muted">PNG, JPG, GIF, MP4</div>
@@ -1474,7 +1475,7 @@ export function Onboarding({ accounts, connect, goToTab, connectable = [], dark 
         </>
       )}
       <div className="alert info" style={{ marginTop: 12 }}>
-        {I.lock}
+        {navIcons.lock}
         <div className="sm">
           <b>Your tokens are encrypted at rest.</b>{" "}
           <span className="muted">
@@ -1487,7 +1488,7 @@ export function Onboarding({ accounts, connect, goToTab, connectable = [], dark 
           Back
         </button>
         <button type="button" className="btn btn-primary btn-lg" onClick={() => goToTab("studio")}>
-          Continue{I.arrow}
+          Continue{navIcons.arrow}
         </button>
       </div>
     </div>
@@ -1525,7 +1526,7 @@ export function States({ goToTab }) {
               Schedule your first post and it'll appear here, ready to cast.
             </p>
             <button type="button" className="btn btn-primary" onClick={() => goToTab("studio")}>
-              {I.plus}Create a post
+              {navIcons.plus}Create a post
             </button>
           </div>
         </div>
@@ -1551,7 +1552,7 @@ export function States({ goToTab }) {
           </div>
           <div className="empty">
             <div className="art" style={{ color: "var(--error)" }}>
-              {I.alert}
+              {navIcons.alert}
             </div>
             <h2>We couldn't load your calendar</h2>
             <p className="muted sm">
@@ -1562,7 +1563,7 @@ export function States({ goToTab }) {
                 Contact support
               </button>
               <button type="button" className="btn btn-primary">
-                {I.retry}Try again
+                {navIcons.retry}Try again
               </button>
             </div>
           </div>
@@ -1595,7 +1596,7 @@ export function States({ goToTab }) {
           >
             <div className="modal" style={{ padding: 20 }}>
               <div className="col">
-                <div style={{ color: "var(--error)" }}>{I.alert}</div>
+                <div style={{ color: "var(--error)" }}>{navIcons.alert}</div>
                 <h2>Disconnect @acmestudio?</h2>
                 <p className="sm muted">
                   4 scheduled posts for this X account will move to drafts. You can reconnect

@@ -1,3 +1,4 @@
+// Studio shell: session, composer, navigation, and the API client for the signed-in app.
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { igCropPayload } from "./igFrame.js";
 import {
@@ -1902,12 +1903,16 @@ function App() {
           typeof item === "string"
             ? isVideoMedia(item)
               ? new Promise((resolve) => {
-                  const v = document.createElement("video");
-                  v.preload = "metadata";
-                  v.onloadedmetadata = () =>
-                    resolve({ width: v.videoWidth, height: v.videoHeight, duration: v.duration });
-                  v.onerror = () => resolve(null);
-                  v.src = item;
+                  const videoElement = document.createElement("video");
+                  videoElement.preload = "metadata";
+                  videoElement.onloadedmetadata = () =>
+                    resolve({
+                      width: videoElement.videoWidth,
+                      height: videoElement.videoHeight,
+                      duration: videoElement.duration,
+                    });
+                  videoElement.onerror = () => resolve(null);
+                  videoElement.src = item;
                 })
               : new Promise((resolve) => {
                   const img = new Image();

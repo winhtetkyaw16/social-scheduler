@@ -1,3 +1,4 @@
+// Preview column for the channel currently selected in the composer.
 import { useObjectUrls } from "./objectUrl.js";
 import { useEffect, useRef, useState } from "react";
 import { ChannelTile } from "./sc/ui.jsx";

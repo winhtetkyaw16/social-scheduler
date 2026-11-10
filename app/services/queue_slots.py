@@ -26,6 +26,7 @@ OCCUPY_STATUSES = {"scheduled", "queued", "publishing"}
 
 
 def default_slot_plan(timezone_name: str = "UTC") -> list[tuple[int, str, str]]:
+    """Weekday 09:00/12:30/17:00 and weekend 10:00/16:00. Weekday is Monday=0."""
     rows: list[tuple[int, str, str]] = []
     for weekday in range(0, 5):
         for clock in DEFAULT_WEEKDAY_TIMES:
@@ -37,6 +38,7 @@ def default_slot_plan(timezone_name: str = "UTC") -> list[tuple[int, str, str]]:
 
 
 def _zone(name: str) -> ZoneInfo:
+    """Resolve an IANA timezone name, or raise HTTP 422."""
     try:
         return ZoneInfo(name)
     except ZoneInfoNotFoundError as exc:
@@ -48,6 +50,7 @@ def _zone(name: str) -> ZoneInfo:
 def list_slots(
     db: Session, user_id: UUID, platform: str | None = None
 ) -> list[QueueSlot]:
+    """The user's slots, optionally for one platform, ordered by weekday and time."""
     stmt = select(QueueSlot).where(QueueSlot.user_id == user_id)
     if platform:
         stmt = stmt.where(QueueSlot.platform == platform)
@@ -58,6 +61,7 @@ def list_slots(
 def replace_platform_slots(
     db: Session, user_id: UUID, payload: QueueSlotsReplace
 ) -> list[QueueSlot]:
+    """Replace one platform's slots. Duplicate weekday and time pairs are dropped."""
     platform = payload.platform.strip().lower()
     if not platform:
         raise HTTPException(status_code=422, detail="platform is required")
@@ -94,6 +98,7 @@ def replace_platform_slots(
 def _slots_for_platform(
     db: Session, user_id: UUID, platform: str, timezone_name: str
 ) -> tuple[list[tuple[int, str, str]], bool]:
+    """Saved slots, or the default plan. The bool is True when defaults were used."""
     rows = list_slots(db, user_id, platform)
     if rows:
         return [(row.weekday, row.time_local, row.timezone) for row in rows], False
@@ -101,6 +106,7 @@ def _slots_for_platform(
 
 
 def _occupied_keys(db: Session, account_id: UUID) -> set[str]:
+    """UTC minute keys (YYYY-MM-DDTHH:MM) taken by scheduled, queued, or publishing posts."""
     posts = db.scalars(
         select(ScheduledPost).where(
             ScheduledPost.connected_account_id == account_id,
@@ -155,6 +161,7 @@ def next_slot_for_account(
     reserved: set[str] | None = None,
     timezone_fallback: str = "UTC",
 ) -> QueueNextRead:
+    """Next free slot within 60 days for this account, or HTTP 409."""
     occupied = _occupied_keys(db, account.id)
     if reserved:
         occupied |= reserved
@@ -187,6 +194,7 @@ def allocate_slots(
     account_ids: list[UUID],
     timezone_fallback: str = "UTC",
 ) -> QueueAllocateResponse:
+    """Next free slot for each account id, in order. Each account only blocks its own queue."""
     accounts = list(
         db.scalars(
             select(ConnectedAccount).where(
@@ -231,6 +239,7 @@ def upcoming_queue(
     days: int = 14,
     timezone_fallback: str = "UTC",
 ) -> list[QueueUpcomingItem]:
+    """Slots in the next ``days`` (clamped to 1..60) and the post filling each minute, if any."""
     days = max(1, min(int(days or 14), 60))
     accounts = list(
         db.scalars(

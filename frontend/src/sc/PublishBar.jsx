@@ -1,3 +1,4 @@
+// Bottom bar that schedules, queues, or publishes the composer draft.
 import React, { useEffect, useRef, useState } from "react";
 import { Clock3, ChevronDown, LoaderCircle, Zap, CalendarDays } from "lucide-react";
 
@@ -53,12 +54,12 @@ export function PublishModeControl({ mode, onChange, disabled }) {
 }
 
 function formatSlot(iso, timeZone) {
-  const d = new Date(iso);
+  const date = new Date(iso);
   const opts = { timeZone: timeZone || undefined };
   try {
-    return `${d.toLocaleDateString(undefined, { ...opts, weekday: "short", month: "short", day: "numeric" })} · ${d.toLocaleTimeString(undefined, { ...opts, hour: "numeric", minute: "2-digit" })}`;
+    return `${date.toLocaleDateString(undefined, { ...opts, weekday: "short", month: "short", day: "numeric" })} · ${date.toLocaleTimeString(undefined, { ...opts, hour: "numeric", minute: "2-digit" })}`;
   } catch {
-    return d.toLocaleString();
+    return date.toLocaleString();
   }
 }
 

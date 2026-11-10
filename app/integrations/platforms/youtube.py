@@ -42,11 +42,13 @@ _YOUTUBE_PRIVACY = {"public": "public", "unlisted": "unlisted", "private": "priv
 
 
 def youtube_privacy(settings: dict | None) -> str:
+    """Map privacy_status onto public, unlisted, or private. Unknown values become public."""
     raw = str((settings or {}).get("privacy_status") or "public").strip().lower()
     return _YOUTUBE_PRIVACY.get(raw, "public")
 
 
 def youtube_category_id(settings: dict | None) -> str:
+    """Map a category name or numeric id onto a YouTube categoryId. Default is 22."""
     raw = str((settings or {}).get("category") or "").strip()
     if raw.isdigit():
         return raw
@@ -54,10 +56,11 @@ def youtube_category_id(settings: dict | None) -> str:
 
 
 def youtube_made_for_kids(settings: dict | None) -> bool:
-    s = settings or {}
-    if "made_for_kids" in s:
-        return bool(s.get("made_for_kids"))
-    return s.get("audience_classification") == "Made for kids"
+    """True when the composer marked the video made for kids."""
+    prefs = settings or {}
+    if "made_for_kids" in prefs:
+        return bool(prefs.get("made_for_kids"))
+    return prefs.get("audience_classification") == "Made for kids"
 
 
 class YouTubePlatform(SocialPlatform):
@@ -190,6 +193,7 @@ class YouTubePlatform(SocialPlatform):
 
 
 def _title_and_description(content: str) -> tuple[str, str]:
+    """First line (max 100 chars) is the title; the rest is the description."""
     text = (content or "").strip()
     if not text:
         return "Untitled upload", ""
@@ -201,6 +205,7 @@ def _title_and_description(content: str) -> tuple[str, str]:
 
 
 def _load_video_bytes(url: str) -> tuple[bytes, str]:
+    """Video bytes and a MIME type from a local upload or a public URL."""
     local = local_upload_path(url)
     if local is not None:
         data = local.read_bytes()

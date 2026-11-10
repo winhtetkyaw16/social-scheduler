@@ -44,6 +44,7 @@ router = APIRouter()
 
 
 def _owned_item(db: Session, item_id: UUID, user_id: UUID) -> PublishItem:
+    """Load a draft publish item owned by user_id, with its approval row, or raise 404."""
     item = db.scalar(
         select(PublishItem)
         .options(selectinload(PublishItem.approval))
@@ -56,6 +57,7 @@ def _owned_item(db: Session, item_id: UUID, user_id: UUID) -> PublishItem:
 
 @router.get("/drafts", response_model=list[PublishItemRead])
 def list_drafts(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Drafts and items sent back for changes, newest first."""
     return list(
         db.scalars(
             select(PublishItem)
@@ -76,6 +78,7 @@ def create_draft(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    """Store a new draft publish item for the signed-in user."""
     item = PublishItem(
         owner_id=user.id,
         content=payload.content,
@@ -98,6 +101,7 @@ def update_draft(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    """Patch an owned draft that is still editable."""
     item = _owned_item(db, item_id, user.id)
     if item.status not in {"draft", "changes_requested"}:
         raise HTTPException(
@@ -119,6 +123,7 @@ def update_draft(
 def delete_draft(
     item_id: UUID, db: Session = Depends(get_db), user: User = Depends(get_current_user)
 ):
+    """Delete an owned draft, including ones that were rejected."""
     item = _owned_item(db, item_id, user.id)
     if item.status not in {"draft", "changes_requested", "rejected"}:
         raise HTTPException(
@@ -171,6 +176,7 @@ def queue_draft(
 def submit_for_approval(
     item_id: UUID, db: Session = Depends(get_db), user: User = Depends(get_current_user)
 ):
+    """Move an owned draft with content into pending approval."""
     item = _owned_item(db, item_id, user.id)
     if item.status not in {"draft", "changes_requested"}:
         raise HTTPException(
@@ -196,6 +202,7 @@ def submit_for_approval(
 def list_approvals(
     db: Session = Depends(get_db), user: User = Depends(get_current_user)
 ):
+    """Items the signed-in user still has to approve, oldest first."""
     return list(
         db.scalars(
             select(PublishItem)
@@ -217,6 +224,7 @@ def decide_approval(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    """Record the decision. An approval that is already due is queued to publish."""
     item = _owned_item(db, item_id, user.id)
     if item.status != "pending_approval" or item.approval is None:
         raise HTTPException(
@@ -255,6 +263,7 @@ def decide_approval(
 
 @router.get("/library", response_model=list[MediaAssetRead])
 def list_library(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Media assets owned by the signed-in user, newest first."""
     return list(
         db.scalars(
             select(MediaAsset)
@@ -268,6 +277,7 @@ def list_library(db: Session = Depends(get_db), user: User = Depends(get_current
 def list_post_comments(
     post_id: UUID, db: Session = Depends(get_db), user: User = Depends(get_current_user)
 ):
+    """Internal comments on an owned scheduled post, oldest first."""
     post = db.scalar(
         select(ScheduledPost).where(
             ScheduledPost.id == post_id, ScheduledPost.user_id == user.id
@@ -304,6 +314,7 @@ def add_post_comment(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    """Add an internal comment on an owned scheduled post."""
     post = db.scalar(
         select(ScheduledPost).where(
             ScheduledPost.id == post_id, ScheduledPost.user_id == user.id

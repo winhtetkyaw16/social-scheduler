@@ -8,8 +8,8 @@ function jwt(expSec) {
 }
 
 test("fresh token does not need refresh", () => {
-  const t = jwt(Math.floor(Date.now() / 1000) + 600);
-  assert.equal(accessTokenNeedsRefresh(t), false);
+  const token = jwt(Math.floor(Date.now() / 1000) + 600);
+  assert.equal(accessTokenNeedsRefresh(token), false);
 });
 
 test("expired or near-expiry token needs refresh", () => {

@@ -205,6 +205,7 @@ def short_problem(facts: MediaFacts | None) -> str | None:
 
 
 def _format_limits(platform: str, fmt: str, media: list[str]) -> str | None:
+    """A user-facing reason this format cannot be published, or None when the media fits."""
     if platform == "facebook" and fmt == REEL:
         return _one_video(
             media,
@@ -258,10 +259,12 @@ def _format_limits(platform: str, fmt: str, media: list[str]) -> str | None:
 
 
 def _one_item(media: list[str], message: str) -> str | None:
+    """Return message unless media contains exactly one file."""
     return None if len(media) == 1 else message
 
 
 def _one_video(media: list[str], message: str) -> str | None:
+    """Return message unless media is exactly one video."""
     videos = [item for item in media if is_video_url(item)]
     if len(media) == 1 and len(videos) == 1:
         return None
@@ -269,6 +272,7 @@ def _one_video(media: list[str], message: str) -> str | None:
 
 
 def _facebook_reel(url: str) -> str | None:
+    """A Facebook Reel length, shape, or frame-rate problem, or None."""
     facts = inspect_media(url)
     if facts is None:
         return None
@@ -283,6 +287,7 @@ def _facebook_reel(url: str) -> str | None:
 
 
 def _facebook_story(url: str) -> str | None:
+    """A Facebook Story size or video-shape problem, or None."""
     if not is_video_url(url):
         facts = inspect_media(url)
         if (
@@ -305,6 +310,7 @@ def _facebook_story(url: str) -> str | None:
 
 
 def _instagram_story(url: str) -> str | None:
+    """An Instagram Story size, length, or aspect problem, or None."""
     facts = inspect_media(url)
     if not is_video_url(url):
         if (
@@ -327,6 +333,7 @@ def _instagram_story(url: str) -> str | None:
 
 
 def _instagram_reel(url: str) -> str | None:
+    """An Instagram Reel size, length, or aspect problem, or None."""
     facts = inspect_media(url)
     if facts is None:
         return None
@@ -341,6 +348,7 @@ def _instagram_reel(url: str) -> str | None:
 
 
 def _youtube_short(media: list[str]) -> str | None:
+    """A YouTube Shorts measurement problem when the only video is not a Short."""
     videos = [item for item in media if is_video_url(item)]
     if len(videos) != 1:
         return None
@@ -348,6 +356,7 @@ def _youtube_short(media: list[str]) -> str | None:
 
 
 def _pinterest_video(media: list[str]) -> str | None:
+    """A Video Pin problem unless there is one video, one cover, and a valid duration."""
     videos = [item for item in media if is_video_url(item)]
     images = [item for item in media if not is_video_url(item)]
     if len(videos) != 1 or len(images) != 1 or len(media) != 2:
@@ -364,6 +373,7 @@ def _pinterest_video(media: list[str]) -> str | None:
 
 
 def _vertical_9_16(facts: MediaFacts, *, minimum: tuple[int, int]) -> str | None:
+    """A size sentence when the video is below minimum or not within tolerance of 9:16."""
     if not facts.width or not facts.height:
         return None
     if facts.width < minimum[0] or facts.height < minimum[1]:
@@ -375,11 +385,13 @@ def _vertical_9_16(facts: MediaFacts, *, minimum: tuple[int, int]) -> str | None
 
 
 def _ratio(facts: MediaFacts) -> float | None:
+    """Width divided by height, or None when either side is missing."""
     if not facts.width or not facts.height:
         return None
     return facts.width / facts.height
 
 
 def _clock(seconds: float) -> str:
+    """Format a duration in seconds as m:ss."""
     total = int(round(seconds))
     return f"{total // 60}:{total % 60:02d}"

@@ -7,8 +7,8 @@ export function upNextTime(post) {
 
 function ms(value) {
   if (!value) return null;
-  const t = new Date(value).getTime();
-  return Number.isNaN(t) ? null : t;
+  const timestampMs = new Date(value).getTime();
+  return Number.isNaN(timestampMs) ? null : timestampMs;
 }
 
 // Newest first; posts with no usable time go to the bottom (stable order).
@@ -44,8 +44,8 @@ export function upNextDateParts(value, now = new Date()) {
     "Nov",
     "Dec",
   ];
-  const h = d.getHours();
-  const time = `${h % 12 || 12}:${String(d.getMinutes()).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`;
+  const hour = d.getHours();
+  const time = `${hour % 12 || 12}:${String(d.getMinutes()).padStart(2, "0")} ${hour < 12 ? "AM" : "PM"}`;
   const year = d.getFullYear() !== now.getFullYear() ? `, ${d.getFullYear()}` : "";
   return { date: `${months[d.getMonth()]} ${d.getDate()}${year}`, time };
 }

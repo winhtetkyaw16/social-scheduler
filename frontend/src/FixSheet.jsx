@@ -1,3 +1,4 @@
+// Fix for me sheet: per-account media choices before a blocked publish.
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useObjectUrl } from "./objectUrl.js";
 import { Check, ChevronDown, Play, X as XIcon } from "lucide-react";
@@ -192,10 +193,10 @@ export default function FixSheet({
   };
   const up = () => {
     if (dragStart.current == null) return;
-    const d = drag;
+    const dragDistance = drag;
     dragStart.current = null;
     setDrag(0);
-    if (d > 90) onCancel();
+    if (dragDistance > 90) onCancel();
   };
 
   const row = (e) => {

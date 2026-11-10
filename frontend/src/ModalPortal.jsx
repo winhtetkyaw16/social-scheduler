@@ -1,3 +1,4 @@
+// Renders dialog children on document.body so they sit above the studio shell.
 import { createPortal } from "react-dom";
 import { modalLayerClass } from "./modalLayer.js";
 

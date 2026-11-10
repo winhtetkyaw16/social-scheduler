@@ -1,3 +1,5 @@
+"""Connected-account, OAuth callback, and destination-pick routes."""
+
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Response, status
@@ -23,9 +25,11 @@ router = APIRouter()
 
 
 @router.get("/catalog")
-def get_platform_catalog(user: User = Depends(get_current_user)) -> list[dict]:
-    """Return connectable networks, account types, and publish readiness."""
-    _ = user
+def get_platform_catalog(_user: User = Depends(get_current_user)) -> list[dict]:
+    """Return connectable networks, account types, and publish readiness.
+
+    ``_user`` is unused. The dependency is what requires a signed-in caller.
+    """
     return catalog_public()
 
 

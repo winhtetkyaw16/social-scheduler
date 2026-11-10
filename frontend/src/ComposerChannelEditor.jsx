@@ -1,3 +1,4 @@
+// Per-channel caption, format, and settings editor inside the composer.
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useObjectUrl } from "./objectUrl.js";
 import { ChannelTile } from "./sc/ui.jsx";

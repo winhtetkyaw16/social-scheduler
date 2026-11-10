@@ -29,6 +29,7 @@ _ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
 
 def _reload_dotenv() -> None:
     # Tests set OAuth env vars to empty before import; do not clobber them from .env.
+    """Reload .env outside tests. Tests pin empty OAuth variables and must not be overwritten."""
     if os.getenv("APP_ENV", "").lower() == "test":
         return
     load_dotenv(_ENV_FILE, override=True)
@@ -46,11 +47,14 @@ _STATE_TTL = timedelta(minutes=15)
 
 
 def _meta_graph(version: str) -> str:
+    """Base URL for a Facebook Graph API version, such as v21.0."""
     return f"https://graph.facebook.com/{version}"
 
 
 @dataclass(frozen=True)
 class _ProviderOAuth:
+    """Static OAuth client settings for one network."""
+
     platform: str
     authorize_url: str
     token_url: str
@@ -64,6 +68,7 @@ class _ProviderOAuth:
 
 
 def _providers() -> dict[str, _ProviderOAuth]:
+    """Build the provider table from the current environment."""
     _reload_dotenv()
     x_id = os.getenv("X_CLIENT_ID", "") or ""
     x_secret = os.getenv("X_CLIENT_SECRET", "") or ""
@@ -278,6 +283,7 @@ def _providers() -> dict[str, _ProviderOAuth]:
 
 
 def _require_provider(platform: str) -> _ProviderOAuth:
+    """The provider, or HTTP 404/503 when the network or its env vars are missing."""
     normalized = platform.strip().lower()
     if normalized not in connectable_platform_names():
         raise HTTPException(
@@ -357,6 +363,7 @@ def _write_state(
     verifier: str | None,
     return_to: str | None = None,
 ) -> str:
+    """Encrypt the OAuth state (user, platform, PKCE verifier, return origin, expiry)."""
     payload = json.dumps(
         {
             "sub": str(user_id),
@@ -371,6 +378,7 @@ def _write_state(
 
 
 def _read_state(state: str, platform: str) -> tuple[UUID, str | None, str | None]:
+    """Decrypt state into user id, PKCE verifier, and return origin. HTTP 400 when it is stale."""
     try:
         payload = json.loads(decrypt_token(state))
         expires = int(payload["exp"])
@@ -392,6 +400,7 @@ def _read_state(state: str, platform: str) -> tuple[UUID, str | None, str | None
 
 
 def _peek_return_base(state: str | None) -> str:
+    """Best-effort return origin from state, used when a callback fails early."""
     if not state:
         return config.FRONTEND_URL
     try:
@@ -405,6 +414,7 @@ def _peek_return_base(state: str | None) -> str:
 def _studio_redirect(
     return_base: str | None = None, **query: str | None
 ) -> RedirectResponse:
+    """302 back to the studio. Empty query fields are dropped and connect_error is truncated."""
     clean = {key: value for key, value in query.items() if value}
     if "connect_error" in clean:
         clean["connect_error"] = clean["connect_error"][:180]
@@ -1026,6 +1036,7 @@ REFRESH_LEEWAY_SECONDS = 5 * 60
 
 
 def _utc(value: datetime | None) -> datetime | None:
+    """Tag a naive datetime as UTC, or convert an aware one to UTC."""
     if value is None:
         return None
     return (
@@ -1036,6 +1047,7 @@ def _utc(value: datetime | None) -> datetime | None:
 
 
 def token_needs_refresh(account, leeway_seconds: int = REFRESH_LEEWAY_SECONDS) -> bool:
+    """True when the access token expires within leeway_seconds."""
     exp = _utc(getattr(account, "token_expires_at", None))
     return exp is not None and exp - datetime.now(timezone.utc) <= timedelta(
         seconds=leeway_seconds

@@ -1,3 +1,4 @@
+// Live per-network post previews, including Instagram frame crops and carousels.
 import React, { memo, useEffect, useMemo, useRef, useState } from "react";
 import {
   Bookmark,
@@ -82,7 +83,8 @@ function useUrls(items) {
   );
   return urls;
 }
-function Av({ account, size = 40 }) {
+/** Account photo, or initials when the image is missing. */
+function PreviewAvatar({ account, size = 40 }) {
   const [broken, setBroken] = useState(false);
   const name = accountDisplayName(account);
   const ini = name
@@ -173,9 +175,9 @@ const Md = memo(function Md({ url, video, ratio, fit, radius, overlay, children 
     </div>
   );
 });
-function clip(text, n) {
+function clip(text, limit) {
   const t = text || "";
-  return t.length > n ? [t.slice(0, n).replace(/\s+\S*$/, ""), true] : [t, false];
+  return t.length > limit ? [t.slice(0, limit).replace(/\s+\S*$/, ""), true] : [t, false];
 }
 const handle = (a) => accountHandle(a);
 const name = (a) => accountDisplayName(a);
@@ -222,11 +224,11 @@ function useNatural(url, video) {
       }
     };
     if (video) {
-      const v = document.createElement("video");
-      v.preload = "metadata";
-      v.muted = true;
-      v.onloadedmetadata = () => done(v.videoWidth, v.videoHeight);
-      v.src = url;
+      const videoElement = document.createElement("video");
+      videoElement.preload = "metadata";
+      videoElement.muted = true;
+      videoElement.onloadedmetadata = () => done(videoElement.videoWidth, videoElement.videoHeight);
+      videoElement.src = url;
     } else {
       const im = new Image();
       im.onload = () => done(im.naturalWidth, im.naturalHeight);
@@ -267,11 +269,12 @@ function useNaturals(urls, vids) {
         }
       };
       if (vids[i]) {
-        const v = document.createElement("video");
-        v.preload = "metadata";
-        v.muted = true;
-        v.onloadedmetadata = () => done(v.videoWidth, v.videoHeight);
-        v.src = url;
+        const videoElement = document.createElement("video");
+        videoElement.preload = "metadata";
+        videoElement.muted = true;
+        videoElement.onloadedmetadata = () =>
+          done(videoElement.videoWidth, videoElement.videoHeight);
+        videoElement.src = url;
       } else {
         const im = new Image();
         im.onload = () => done(im.naturalWidth, im.naturalHeight);
@@ -300,18 +303,18 @@ function IgCropEditor({ urls, vids, nats, keys, frame, crop, onChange, startIdx,
   const offs = crop?.offsets || {};
   const off = offs[keys[sel]] || [0.5, 0.5];
   const move = (e) => {
-    const d = drag.current;
+    const dragState = drag.current;
     const el = frameEl.current;
-    if (!d || !el) return;
-    const r = el.getBoundingClientRect();
+    if (!dragState || !el) return;
+    const rect = el.getBoundingClientRect();
     onChange({
       offsets: {
         [keys[sel]]: igDragOffset(
-          d.off,
-          e.clientX - d.x,
-          e.clientY - d.y,
-          r.width,
-          r.height,
+          dragState.off,
+          e.clientX - dragState.x,
+          e.clientY - dragState.y,
+          rect.width,
+          rect.height,
           nats[sel] || frame,
         ),
       },
@@ -419,11 +422,11 @@ function IgCropEditor({ urls, vids, nats, keys, frame, crop, onChange, startIdx,
     </ModalPortal>
   );
 }
-function fmtDur(s) {
-  if (!Number.isFinite(s)) return "";
-  const m = Math.floor(s / 60),
-    r = Math.round(s % 60);
-  return `${m}:${String(r).padStart(2, "0")}`;
+function fmtDur(totalSeconds) {
+  if (!Number.isFinite(totalSeconds)) return "";
+  const minutes = Math.floor(totalSeconds / 60),
+    r = Math.round(totalSeconds % 60);
+  return `${minutes}:${String(r).padStart(2, "0")}`;
 }
 function useVideoMeta(url, video) {
   const [d, setD] = useState(null);
@@ -431,13 +434,13 @@ function useVideoMeta(url, video) {
     setD(null);
     if (!url || !video) return undefined;
     let off = false;
-    const v = document.createElement("video");
-    v.preload = "metadata";
-    v.muted = true;
-    v.onloadedmetadata = () => {
-      if (!off) setD(v.duration);
+    const videoElement = document.createElement("video");
+    videoElement.preload = "metadata";
+    videoElement.muted = true;
+    videoElement.onloadedmetadata = () => {
+      if (!off) setD(videoElement.duration);
     };
-    v.src = url;
+    videoElement.src = url;
     return () => {
       off = true;
     };
@@ -483,7 +486,7 @@ function InstagramPreview({ account, caption, capCls, media, format, igCrop, onI
   const pos = curVid ? "50% 50%" : igObjectPosition(igCrop?.offsets?.[keys[idx]]);
   const [rl] = igRatioLabel(box);
   const label = view === "feed" ? igRatioLabel(box).join(" · ") : "9:16 · 1080×1920";
-  const n = urls.length;
+  const urlCount = urls.length;
   const fm = (k, txt, show = true) =>
     show && (
       <a role="tab" className={view === k ? "on" : ""} onClick={() => setView(k)}>
@@ -511,7 +514,7 @@ function InstagramPreview({ account, caption, capCls, media, format, igCrop, onI
   })();
   const head = (
     <div className="h">
-      <Av account={account} size={32} />
+      <PreviewAvatar account={account} size={32} />
       <b className="grow">{uname}</b>
       <MoreHorizontal size={18} />
     </div>
@@ -519,18 +522,18 @@ function InstagramPreview({ account, caption, capCls, media, format, igCrop, onI
   const feedCard = (
     <div className="pp2 igf">
       {head}
-      <div className="md cnv" style={{ aspectRatio: box }} {...navProps(idx, n, setIdx)}>
+      <div className="md cnv" style={{ aspectRatio: box }} {...navProps(idx, urlCount, setIdx)}>
         <IgMedia url={cur} video={curVid} pos={pos} />
-        <NavArrows idx={idx} n={n} go={setIdx} />
+        <NavArrows idx={idx} n={urlCount} go={setIdx} />
         {curVid && cur && (
           <span className="play">
             <Play size={18} fill="currentColor" />
           </span>
         )}
         {cur && <span className="ig-dim">{rl}</span>}
-        {n > 1 && (
+        {urlCount > 1 && (
           <span className="ig-ct">
-            {idx + 1}/{n}
+            {idx + 1}/{urlCount}
           </span>
         )}
       </div>
@@ -538,7 +541,7 @@ function InstagramPreview({ account, caption, capCls, media, format, igCrop, onI
         <Heart size={22} />
         <MessageCircle size={22} />
         <Send size={22} />
-        <NavDots idx={idx} n={n} go={setIdx} cls="ig-dots" />
+        <NavDots idx={idx} n={urlCount} go={setIdx} cls="ig-dots" />
         <span className="grow" />
         <Bookmark size={22} />
       </div>
@@ -619,7 +622,7 @@ function InstagramPreview({ account, caption, capCls, media, format, igCrop, onI
               </div>
               <div className="ov">
                 <div className="row" style={{ gap: 6, marginBottom: 4 }}>
-                  <Av account={account} size={24} />
+                  <PreviewAvatar account={account} size={24} />
                   <b>{uname}</b>
                   <span className="igv-follow">Follow</span>
                 </div>
@@ -651,7 +654,7 @@ function InstagramPreview({ account, caption, capCls, media, format, igCrop, onI
                 <i />
               </div>
               <div className="igs-h">
-                <Av account={account} size={28} />
+                <PreviewAvatar account={account} size={28} />
                 <b>{uname}</b>
                 <span>Just now</span>
               </div>
@@ -687,11 +690,11 @@ function sizeLabel(r) {
 }
 // Shared carousel controls: arrows (hover / keyboard focus), dots, Left/Right keys.
 function NavArrows({ idx, n, go }) {
-  const a = arrowsFor(idx, n);
+  const arrows = arrowsFor(idx, n);
   if (n < 2) return null;
   return (
     <>
-      {a.prev && (
+      {arrows.prev && (
         <button
           type="button"
           className="cnav prev"
@@ -704,7 +707,7 @@ function NavArrows({ idx, n, go }) {
           <ChevronLeft size={16} />
         </button>
       )}
-      {a.next && (
+      {arrows.next && (
         <button
           type="button"
           className="cnav next"
@@ -748,10 +751,10 @@ const navProps = (idx, n, go) =>
         tabIndex: 0,
         "aria-roledescription": "carousel",
         onKeyDown: (e) => {
-          const d = keyDir(e.key);
-          if (d && e.target === e.currentTarget) {
+          const keyDirection = keyDir(e.key);
+          if (keyDirection && e.target === e.currentTarget) {
             e.preventDefault();
-            go(stepIndex(idx, n, d));
+            go(stepIndex(idx, n, keyDirection));
           }
         },
       }
@@ -779,7 +782,8 @@ function useCarousel(media) {
   };
 }
 // Media box at a given ratio with ratio pill, 1/N badge, dots, optional duration badge.
-function CMd({ c, ratio, radius, inset, dur, pill = true }) {
+/** Carousel frame: media, counter, arrows, and an optional duration. `c` is useCarousel() state. */
+function CarouselFrame({ c, ratio, radius, inset, dur, pill = true }) {
   const [rl] = sizeLabel(ratio);
   return (
     <div
@@ -835,10 +839,10 @@ function ChooseVideo({ gate }) {
 /** Non-Facebook single-video networks: whole preview gated until a video is picked. */
 function GatedPreview({ account, gate, caption, capCls }) {
   return (
-    <Cpv net={gate.net} label="Blocked · choose one video">
+    <PreviewShell net={gate.net} label="Blocked · choose one video">
       <div className="pp2">
         <div className="h">
-          <Av account={account} size={32} />
+          <PreviewAvatar account={account} size={32} />
           <div className="grow">
             <b>{name(account)}</b>
             <div className="sub">Now</div>
@@ -850,11 +854,12 @@ function GatedPreview({ account, gate, caption, capCls }) {
         </div>
         <ChooseVideo gate={gate} />
       </div>
-    </Cpv>
+    </PreviewShell>
   );
 }
 
-function Cpv({ net, tabs, view, setView, label, foot, children }) {
+/** Chrome around a network preview: network name or tabs, label, and the proportion note. */
+function PreviewShell({ net, tabs, view, setView, label, foot, children }) {
   return (
     <div className="igp cpv">
       <div className="igp-top">
@@ -877,7 +882,8 @@ function Cpv({ net, tabs, view, setView, label, foot, children }) {
   );
 }
 // 9:16 vertical frame (Reel / Story / Short / TikTok), reusing the Instagram .igv frame styles.
-function VFrame({ c, top, rail, ov, story, account, uname }) {
+/** 9:16 Reel, Story, Short, or TikTok frame. `c` is useCarousel() state. */
+function VerticalFrame({ c, top, rail, ov, story, account, uname }) {
   const url = c.cur || c.vurl;
   const vid = c.cur ? c.vid : !!c.vurl;
   const nav = !story && c.n > 1 && c.cur;
@@ -903,7 +909,7 @@ function VFrame({ c, top, rail, ov, story, account, uname }) {
               <i />
             </div>
             <div className="igs-h">
-              <Av account={account} size={28} />
+              <PreviewAvatar account={account} size={28} />
               <b>{uname}</b>
               <span>Just now</span>
             </div>
@@ -941,14 +947,18 @@ function Tile({ url, video }) {
 function FbGrid({ urls, media }) {
   const vids = media.map(isVideo);
   const nats = useNaturals(urls, vids);
-  const g = fbGridLayout(nats.slice(0, urls.length));
+  const gridLayout = fbGridLayout(nats.slice(0, urls.length));
   return (
     <div
       className="fbg"
-      style={{ aspectRatio: g.ratio, gridTemplateColumns: g.cols, gridTemplateRows: g.rows }}
-      data-kind={g.kind}
+      style={{
+        aspectRatio: gridLayout.ratio,
+        gridTemplateColumns: gridLayout.cols,
+        gridTemplateRows: gridLayout.rows,
+      }}
+      data-kind={gridLayout.kind}
     >
-      {g.cells.map((cell, j) => (
+      {gridLayout.cells.map((cell, j) => (
         <div key={cell.i} className="fbg-c" style={{ gridArea: cell.area }}>
           <Tile url={urls[cell.i]} video={vids[cell.i]} />
           {vids[cell.i] && urls[cell.i] && (
@@ -956,7 +966,9 @@ function FbGrid({ urls, media }) {
               <Play size={16} fill="currentColor" />
             </span>
           )}
-          {g.more > 0 && j === g.cells.length - 1 && <span className="fbg-more">+{g.more}</span>}
+          {gridLayout.more > 0 && j === gridLayout.cells.length - 1 && (
+            <span className="fbg-more">+{gridLayout.more}</span>
+          )}
         </div>
       ))}
       <span className="fbg-lbl">Approximate layout</span>
@@ -966,12 +978,12 @@ function FbGrid({ urls, media }) {
 function ThreadsMedia({ urls, media }) {
   const vids = media.map(isVideo);
   const nats = useNaturals(urls, vids);
-  const l = threadsLayout(nats.slice(0, urls.length));
-  if (l.kind === "none") return null;
-  if (l.kind === "single")
+  const threadLayout = threadsLayout(nats.slice(0, urls.length));
+  if (threadLayout.kind === "none") return null;
+  if (threadLayout.kind === "single")
     return (
       <div className="thm">
-        <div className="thm-one" style={{ aspectRatio: l.ratio }}>
+        <div className="thm-one" style={{ aspectRatio: threadLayout.ratio }}>
           <Tile url={urls[0]} video={vids[0]} />
           {vids[0] && urls[0] && (
             <span className="play">
@@ -981,7 +993,7 @@ function ThreadsMedia({ urls, media }) {
         </div>
       </div>
     );
-  return <ThreadsRow urls={urls} vids={vids} tiles={l.tiles} />;
+  return <ThreadsRow urls={urls} vids={vids} tiles={threadLayout.tiles} />;
 }
 const isGif = (item) =>
   typeof item === "string" ? /\.gif(\?|$)/i.test(item) : item?.type === "image/gif";
@@ -991,12 +1003,14 @@ function XMedia({ urls, media }) {
   const nats = useNaturals(urls, vids);
   const vi = media.findIndex((m) => isVideo(m) || isGif(m));
   const one = vi >= 0 ? vi : 0;
-  const l = xLayout(vi >= 0 ? [nats[one]] : nats.slice(0, urls.length), { single: vi >= 0 });
-  if (l.kind === "none") return null;
-  if (l.kind === "single")
+  const postLayout = xLayout(vi >= 0 ? [nats[one]] : nats.slice(0, urls.length), {
+    single: vi >= 0,
+  });
+  if (postLayout.kind === "none") return null;
+  if (postLayout.kind === "single")
     return (
       <div className="thm xm">
-        <div className="thm-one" style={{ aspectRatio: l.ratio }}>
+        <div className="thm-one" style={{ aspectRatio: postLayout.ratio }}>
           <Tile url={urls[one]} video={vids[one]} />
           {vids[one] && urls[one] && (
             <span className="play">
@@ -1006,18 +1020,27 @@ function XMedia({ urls, media }) {
         </div>
       </div>
     );
-  return <ThreadsRow urls={urls} vids={vids} tiles={l.tiles} cls="xm" />;
+  return <ThreadsRow urls={urls} vids={vids} tiles={postLayout.tiles} cls="xm" />;
 }
 // LinkedIn feed (display only): single at own ratio (4:5..3:1), 2 side by side, 3+ hero + row/stack filling a 4:5..1:1 block, +N.
 function LiGrid({ urls, media }) {
   const vids = media.map(isVideo);
   const nats = useNaturals(urls, vids);
-  const g = liLayout(nats.slice(0, urls.length), { video: urls.length === 1 && vids[0] });
-  if (g.kind === "none") return null;
+  const linkedInLayout = liLayout(nats.slice(0, urls.length), {
+    video: urls.length === 1 && vids[0],
+  });
+  if (linkedInLayout.kind === "none") return null;
   return (
-    <div className="lig" style={{ aspectRatio: g.ratio }} data-kind={g.kind}>
-      <div className="lig-in" style={{ gridTemplateColumns: g.cols, gridTemplateRows: g.rows }}>
-        {g.cells.map((cell, j) => (
+    <div
+      className="lig"
+      style={{ aspectRatio: linkedInLayout.ratio }}
+      data-kind={linkedInLayout.kind}
+    >
+      <div
+        className="lig-in"
+        style={{ gridTemplateColumns: linkedInLayout.cols, gridTemplateRows: linkedInLayout.rows }}
+      >
+        {linkedInLayout.cells.map((cell, j) => (
           <div key={cell.i} className="lig-c" style={{ gridArea: cell.area }}>
             <Tile url={urls[cell.i]} video={vids[cell.i]} />
             {vids[cell.i] && urls[cell.i] && (
@@ -1025,7 +1048,9 @@ function LiGrid({ urls, media }) {
                 <Play size={16} fill="currentColor" />
               </span>
             )}
-            {g.more > 0 && j === g.cells.length - 1 && <span className="fbg-more">+{g.more}</span>}
+            {linkedInLayout.more > 0 && j === linkedInLayout.cells.length - 1 && (
+              <span className="fbg-more">+{linkedInLayout.more}</span>
+            )}
           </div>
         ))}
       </div>
@@ -1035,7 +1060,7 @@ function LiGrid({ urls, media }) {
 function ThreadsRow({ urls, vids, tiles, cls = "" }) {
   const row = useRef(null);
   const [idx, setIdx] = useState(0);
-  const n = tiles.length;
+  const tileCount = tiles.length;
   const lefts = () => Array.from(row.current?.children || []).map((el) => el.offsetLeft);
   const sync = () => {
     const r = row.current;
@@ -1043,7 +1068,7 @@ function ThreadsRow({ urls, vids, tiles, cls = "" }) {
   };
   useEffect(() => {
     sync();
-  }, [n]);
+  }, [tileCount]);
   const go = (i) => {
     const r = row.current;
     const x = lefts()[i];
@@ -1052,7 +1077,7 @@ function ThreadsRow({ urls, vids, tiles, cls = "" }) {
   };
   return (
     <div className={`thm ${cls}`}>
-      <div className="thc cnv" {...navProps(idx, n, go)}>
+      <div className="thc cnv" {...navProps(idx, tileCount, go)}>
         <div className="thm-row" ref={row} onScroll={sync}>
           {tiles.map((t, i) => (
             <div
@@ -1069,22 +1094,22 @@ function ThreadsRow({ urls, vids, tiles, cls = "" }) {
             </div>
           ))}
         </div>
-        <NavArrows idx={idx} n={n} go={go} />
+        <NavArrows idx={idx} n={tileCount} go={go} />
       </div>
-      <NavDots idx={idx} n={n} go={go} />
+      <NavDots idx={idx} n={tileCount} go={go} />
     </div>
   );
 }
 
 function FacebookPreview({ account, caption, capCls, media, format }) {
-  const c = useCarousel(media);
+  const carousel = useCarousel(media);
   const init = viewFrom(format, { "Reel / Video": "reel", Story: "story" }, "post");
   const [view, setView] = useState(init);
   useEffect(() => {
     setView(init);
   }, [init]);
-  const nat = useNatural(c.cur, c.vid);
-  const box = nat ? FIT.fb(nat) : c.vid ? 16 / 9 : 1;
+  const nat = useNatural(carousel.cur, carousel.vid);
+  const box = nat ? FIT.fb(nat) : carousel.vid ? 16 / 9 : 1;
   const [t, more] = clip(caption, 110);
   const gate = oneVideoGate(
     "facebook",
@@ -1095,14 +1120,14 @@ function FacebookPreview({ account, caption, capCls, media, format }) {
     view === "post" && fbState !== "ok"
       ? "Blocked · choose one video"
       : view === "post"
-        ? c.n > 1
-          ? `${c.n} items · Approximate layout`
-          : c.cur
+        ? carousel.n > 1
+          ? `${carousel.n} items · Approximate layout`
+          : carousel.cur
             ? sizeLabel(box).join(" · ")
             : "Text post"
         : "9:16 · 1080×1920";
   return (
-    <Cpv
+    <PreviewShell
       net="Facebook"
       tabs={[
         ["post", "Post"],
@@ -1116,7 +1141,7 @@ function FacebookPreview({ account, caption, capCls, media, format }) {
       {view === "post" && (
         <div className="pp2">
           <div className="h">
-            <Av account={account} size={32} />
+            <PreviewAvatar account={account} size={32} />
             <div className="grow">
               <b>{name(account)}</b>
               <div className="sub">
@@ -1134,8 +1159,10 @@ function FacebookPreview({ account, caption, capCls, media, format }) {
             )}
           </div>
           {gate.state !== "ok" && <ChooseVideo gate={gate} />}
-          {fbState === "ok" && c.n === 1 && <CMd c={c} ratio={box} radius={0} />}
-          {fbState === "ok" && c.n > 1 && <FbGrid urls={c.urls} media={media} />}
+          {fbState === "ok" && carousel.n === 1 && (
+            <CarouselFrame c={carousel} ratio={box} radius={0} />
+          )}
+          {fbState === "ok" && carousel.n > 1 && <FbGrid urls={carousel.urls} media={media} />}
           <div className="ac fb">
             <span>
               <ThumbsUp size={15} />
@@ -1153,8 +1180,8 @@ function FacebookPreview({ account, caption, capCls, media, format }) {
         </div>
       )}
       {view === "reel" && (
-        <VFrame
-          c={c}
+        <VerticalFrame
+          c={carousel}
           top="Reels"
           rail={
             <>
@@ -1177,7 +1204,7 @@ function FacebookPreview({ account, caption, capCls, media, format }) {
           ov={
             <>
               <div className="row" style={{ gap: 6, marginBottom: 4 }}>
-                <Av account={account} size={24} />
+                <PreviewAvatar account={account} size={24} />
                 <b>{name(account)}</b>
                 <span className="igv-follow">Follow</span>
               </div>
@@ -1189,30 +1216,38 @@ function FacebookPreview({ account, caption, capCls, media, format }) {
           }
         />
       )}
-      {view === "story" && <VFrame c={c} story account={account} uname={name(account)} />}
-    </Cpv>
+      {view === "story" && (
+        <VerticalFrame c={carousel} story account={account} uname={name(account)} />
+      )}
+    </PreviewShell>
   );
 }
 
 function LinkedInPreview({ account, caption, capCls, media }) {
-  const c = useCarousel(media);
-  const nat = useNatural(c.cur, c.vid);
+  const carousel = useCarousel(media);
+  const nat = useNatural(carousel.cur, carousel.vid);
   const box = nat
-    ? c.vid
+    ? carousel.vid
       ? Math.min(2.4, Math.max(1 / 2.4, nat))
       : Math.min(3, Math.max(4 / 5, nat))
-    : c.vid
+    : carousel.vid
       ? 16 / 9
       : 1;
   const [t, more] = clip(caption, 120);
   return (
-    <Cpv
+    <PreviewShell
       net="LinkedIn"
-      label={!c.cur ? "Text post" : c.n > 1 ? `${c.n} items · grid` : sizeLabel(box).join(" · ")}
+      label={
+        !carousel.cur
+          ? "Text post"
+          : carousel.n > 1
+            ? `${carousel.n} items · grid`
+            : sizeLabel(box).join(" · ")
+      }
     >
       <div className="pp2">
         <div className="h">
-          <Av account={account} size={32} />
+          <PreviewAvatar account={account} size={32} />
           <div className="grow">
             <b>{name(account)}</b>
             <div className="sub">
@@ -1229,7 +1264,7 @@ function LinkedInPreview({ account, caption, capCls, media }) {
             </>
           )}
         </div>
-        {c.cur && <LiGrid urls={c.urls} media={media} />}
+        {carousel.cur && <LiGrid urls={carousel.urls} media={media} />}
         <div className="ac li">
           <span>
             <ThumbsUp size={15} />
@@ -1249,26 +1284,26 @@ function LinkedInPreview({ account, caption, capCls, media }) {
           </span>
         </div>
       </div>
-    </Cpv>
+    </PreviewShell>
   );
 }
 
 function InsetPreview({ net, account, caption, capCls, media, fit, uname, sub, actions, inset }) {
-  const c = useCarousel(media);
-  const nat = useNatural(c.cur, c.vid);
-  const box = nat ? FIT[fit](nat) : c.vid ? 16 / 9 : 1;
+  const carousel = useCarousel(media);
+  const nat = useNatural(carousel.cur, carousel.vid);
+  const box = nat ? FIT[fit](nat) : carousel.vid ? 16 / 9 : 1;
   const [t, more] = clip(caption, 140);
-  const lbl = !c.cur
+  const lbl = !carousel.cur
     ? "Text post"
     : net === "Threads" || net === "X"
-      ? c.n > 1
-        ? `${c.n} items · swipe row`
+      ? carousel.n > 1
+        ? `${carousel.n} items · swipe row`
         : "Feed fit"
       : sizeLabel(box).join(" · ");
   return (
-    <Cpv net={net} label={lbl}>
+    <PreviewShell net={net} label={lbl}>
       <div className="pp2 cpv-row">
-        <Av account={account} size={32} />
+        <PreviewAvatar account={account} size={32} />
         <div className="grow" style={{ minWidth: 0 }}>
           <div className="cpv-nm">
             <b>{uname}</b> <span className="sub">{sub}</span>
@@ -1283,30 +1318,30 @@ function InsetPreview({ net, account, caption, capCls, media, fit, uname, sub, a
               </>
             )}
           </div>
-          {c.cur &&
+          {carousel.cur &&
             (net === "Threads" ? (
-              <ThreadsMedia urls={c.urls} media={media} />
+              <ThreadsMedia urls={carousel.urls} media={media} />
             ) : net === "X" ? (
-              <XMedia urls={c.urls} media={media} />
+              <XMedia urls={carousel.urls} media={media} />
             ) : (
               <div className={`cpv-media ${inset || ""}`}>
-                <CMd c={c} ratio={box} radius={12} inset />
+                <CarouselFrame c={carousel} ratio={box} radius={12} inset />
               </div>
             ))}
           <div className="ac cpv-ac">{actions}</div>
         </div>
       </div>
-    </Cpv>
+    </PreviewShell>
   );
 }
 
 function TikTokPreview({ account, caption, media }) {
-  const c = useCarousel(media);
+  const carousel = useCarousel(media);
   const [t, more] = clip(caption, 70);
   return (
-    <Cpv net="TikTok" label="9:16 · 1080×1920">
-      <VFrame
-        c={c}
+    <PreviewShell net="TikTok" label="9:16 · 1080×1920">
+      <VerticalFrame
+        c={carousel}
         top={
           <span className="cpv-tt">
             <span>Following</span>
@@ -1315,7 +1350,7 @@ function TikTokPreview({ account, caption, media }) {
         }
         rail={
           <>
-            <Av account={account} size={30} />
+            <PreviewAvatar account={account} size={30} />
             <span>
               <Heart size={22} fill="currentColor" />
               1.2K
@@ -1343,21 +1378,21 @@ function TikTokPreview({ account, caption, media }) {
           </>
         }
       />
-    </Cpv>
+    </PreviewShell>
   );
 }
 
 function YouTubePreview({ account, caption, media, title, format }) {
-  const c = useCarousel(media);
+  const carousel = useCarousel(media);
   const init = ["Short", "Reel / Video", "Story"].includes(format) ? "shorts" : "video";
   const [view, setView] = useState(init);
   useEffect(() => {
     setView(init);
   }, [init]);
-  const dur = useVideoMeta(c.vid ? c.cur : "", c.vid);
+  const dur = useVideoMeta(carousel.vid ? carousel.cur : "", carousel.vid);
   const ttl = title || String(caption || "").split("\n")[0];
   return (
-    <Cpv
+    <PreviewShell
       net="YouTube"
       tabs={[
         ["video", "Video"],
@@ -1369,9 +1404,9 @@ function YouTubePreview({ account, caption, media, title, format }) {
     >
       {view === "video" ? (
         <div className="pp2">
-          <CMd c={c} ratio={16 / 9} radius={0} dur={dur} />
+          <CarouselFrame c={carousel} ratio={16 / 9} radius={0} dur={dur} />
           <div className="cpv-row" style={{ padding: 12 }}>
-            <Av account={account} size={32} />
+            <PreviewAvatar account={account} size={32} />
             <div className="grow" style={{ minWidth: 0 }}>
               <b className="yt-t">{clip(ttl, 100)[0]}</b>
               <div className="sub">{name(account)} · 0 views · Just now</div>
@@ -1380,8 +1415,8 @@ function YouTubePreview({ account, caption, media, title, format }) {
           </div>
         </div>
       ) : (
-        <VFrame
-          c={c}
+        <VerticalFrame
+          c={carousel}
           top="Shorts"
           rail={
             <>
@@ -1403,7 +1438,7 @@ function YouTubePreview({ account, caption, media, title, format }) {
           ov={
             <>
               <div className="row" style={{ gap: 6, marginBottom: 4 }}>
-                <Av account={account} size={24} />
+                <PreviewAvatar account={account} size={24} />
                 <b>{handle(account)}</b>
                 <span className="yt-sub">Subscribe</span>
               </div>
@@ -1412,7 +1447,7 @@ function YouTubePreview({ account, caption, media, title, format }) {
           }
         />
       )}
-    </Cpv>
+    </PreviewShell>
   );
 }
 
@@ -1516,7 +1551,7 @@ export default function PostPreview({
         <div style={{ padding: "8px 4px 4px" }}>
           <b className="yt-t">{clip(ttl, 100)[0]}</b>
           <div className="row" style={{ gap: 6, marginTop: 6 }}>
-            <Av account={account} size={22} />
+            <PreviewAvatar account={account} size={22} />
             <span className="sub grow">{name(account)}</span>
             <Heart size={15} />
             <Share size={15} />
@@ -1553,7 +1588,7 @@ export default function PostPreview({
   return (
     <div className="pp2">
       <div className="h">
-        <Av account={account} />
+        <PreviewAvatar account={account} />
         <b>{name(account)}</b>
       </div>
       <div className={capCls}>

@@ -34,6 +34,7 @@ def scheduler_mode() -> str:
 
 
 def poll_seconds() -> float:
+    """Poll interval from INPROCESS_SCHEDULER_SECONDS, at least 2. Invalid values use 15."""
     try:
         return max(2.0, float(os.getenv("INPROCESS_SCHEDULER_SECONDS", "15")))
     except ValueError:
@@ -78,6 +79,7 @@ def _due_post_ids(db, now: datetime, limit: int = 50) -> list[tuple[str, str | N
 
 
 def _fail_stale_publishing(db, now: datetime) -> None:
+    """Fail posts stuck in publishing for 15 minutes with no provider id."""
     before = now - timedelta(seconds=STALE_PUBLISHING_SECONDS)
     for stuck in db.scalars(
         select(ScheduledPost).where(
@@ -128,6 +130,7 @@ def run_due_posts_once(use_celery: bool | None = None) -> int:
 
 
 async def scheduler_loop(stop: asyncio.Event) -> None:
+    """Until stop is set, publish due posts on the poll interval. Errors are logged."""
     interval = poll_seconds()
     logger.warning(
         "Background publish scheduler started (mode=%s, every %.0fs)",

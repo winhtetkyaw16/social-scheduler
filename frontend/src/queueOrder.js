@@ -16,8 +16,8 @@ export function queueTimeFor(post, tab) {
 }
 
 function ms(value) {
-  const t = new Date(value || 0).getTime();
-  return Number.isNaN(t) ? 0 : t;
+  const timestampMs = new Date(value || 0).getTime();
+  return Number.isNaN(timestampMs) ? 0 : timestampMs;
 }
 
 // Returns [[dayKey, { d, items }], ...] in display order for the given tab.
@@ -29,9 +29,9 @@ export function groupQueuePosts(posts, tab) {
   const groups = new Map();
   for (const p of sorted) {
     const d = new Date(queueTimeFor(p, tab) || 0);
-    const k = queueDateKey(d);
-    if (!groups.has(k)) groups.set(k, { d, items: [] });
-    groups.get(k).items.push(p);
+    const dayKey = queueDateKey(d);
+    if (!groups.has(dayKey)) groups.set(dayKey, { d, items: [] });
+    groups.get(dayKey).items.push(p);
   }
   return [...groups.entries()].sort((a, b) => dir * a[0].localeCompare(b[0]));
 }

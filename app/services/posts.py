@@ -339,6 +339,7 @@ def archive_post(db: Session, post: ScheduledPost) -> ScheduledPost:
 
 
 def _metadata_value(mapping: object, account_id: UUID, default):
+    """Look up account_id in a metadata map. Missing maps and keys return default."""
     if not isinstance(mapping, dict):
         return default
     key = str(account_id)
@@ -346,6 +347,7 @@ def _metadata_value(mapping: object, account_id: UUID, default):
 
 
 def _caption_for_account(metadata: dict, account_id: UUID, fallback: str) -> str:
+    """Per-account caption when custom mode is on and this account opted out of the shared one."""
     universal = metadata.get("caption")
     if not isinstance(universal, str):
         universal = fallback or ""
@@ -409,6 +411,7 @@ def _ig_crop_for_account(metadata: dict, account_id, media: list[str]) -> dict:
 def _media_for_account(
     metadata: dict, account_id: UUID, fallback: list[str], platform: str | None = None
 ) -> list[str]:
+    """Shared URLs filtered by the account's pick, plus custom media in custom caption mode."""
     shared = metadata.get("sharedMediaUrls")
     if not isinstance(shared, list):
         shared = list(fallback or [])

@@ -8,6 +8,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class PublishItemCreate(BaseModel):
+    """Body for creating a draft publish item."""
+
     content: str = Field(default="", max_length=10000)
     media_urls: list[str] = Field(default_factory=list, max_length=35)
     post_format: str = Field(default="Post", max_length=32)
@@ -17,6 +19,8 @@ class PublishItemCreate(BaseModel):
 
 
 class PublishItemUpdate(BaseModel):
+    """Partial update for an editable draft. Omitted fields stay as they are."""
+
     content: str | None = Field(default=None, max_length=10000)
     media_urls: list[str] | None = Field(default=None, max_length=35)
     post_format: str | None = Field(default=None, max_length=32)
@@ -25,6 +29,8 @@ class PublishItemUpdate(BaseModel):
 
 
 class PublishItemRead(BaseModel):
+    """Draft or approval item returned to the client."""
+
     model_config = ConfigDict(from_attributes=True)
     id: UUID
     owner_id: UUID
@@ -39,11 +45,15 @@ class PublishItemRead(BaseModel):
 
 
 class ApprovalDecision(BaseModel):
+    """Approve, request changes, or reject, with an optional comment."""
+
     decision: str = Field(pattern="^(approved|changes_requested|rejected)$")
     comment: str | None = Field(default=None, max_length=2000)
 
 
 class MediaAssetRead(BaseModel):
+    """One file in the user's media library."""
+
     model_config = ConfigDict(from_attributes=True)
     id: UUID
     filename: str
@@ -65,10 +75,14 @@ class MediaUploadResponse(BaseModel):
 
 
 class InternalCommentCreate(BaseModel):
+    """Body of a new internal comment on a scheduled post."""
+
     body: str = Field(min_length=1, max_length=5000)
 
 
 class InternalCommentRead(BaseModel):
+    """Internal comment, including the author's display name."""
+
     id: UUID
     post_id: UUID
     user_id: UUID

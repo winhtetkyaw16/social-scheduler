@@ -1,3 +1,5 @@
+"""Meta deauthorize and data-deletion callbacks acknowledge the signed request."""
+
 import base64
 import hashlib
 import hmac

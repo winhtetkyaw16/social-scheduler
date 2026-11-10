@@ -1,3 +1,4 @@
+// Shared studio widgets: channel marks, avatars, status badges, and small formatters.
 import React, { useEffect, useState } from "react";
 import facebookGlyph from "../assets/logos/facebook-glyph.svg";
 import instagramGlyph from "../assets/logos/instagram-glyph.svg";
@@ -80,7 +81,7 @@ export function chColor(platform) {
 }
 
 export function Ch({ platform, size = "sm", style }) {
-  const m = meta(platform);
+  const platformMeta = meta(platform);
   if (PLATFORM_GLYPHS[platform])
     return (
       <ChannelTile
@@ -92,11 +93,11 @@ export function Ch({ platform, size = "sm", style }) {
     );
   return (
     <span
-      className={`ch ${m.cls} ${size}`}
+      className={`ch ${platformMeta.cls} ${size}`}
       title={platform}
-      style={!m.cls ? { background: "var(--text-3)", ...style } : style}
+      style={!platformMeta.cls ? { background: "var(--text-3)", ...style } : style}
     >
-      {m.short}
+      {platformMeta.short}
     </span>
   );
 }
@@ -345,8 +346,8 @@ export function fmtTime(v) {
 }
 export function fmtTime24(v) {
   if (!v) return "";
-  const d = new Date(v);
-  return `${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`;
+  const date = new Date(v);
+  return `${date.getHours()}:${String(date.getMinutes()).padStart(2, "0")}`;
 }
 export function fmtDay(v) {
   return v

@@ -9,11 +9,11 @@ export const IG_CHIPS = [
   ["1.91:1", 1.91],
 ];
 
-export const igClamp = (r) => Math.min(IG_MAX, Math.max(IG_MIN, r));
-export function igNearest(r) {
-  const c = igClamp(r);
+export const igClamp = (ratio) => Math.min(IG_MAX, Math.max(IG_MIN, ratio));
+export function igNearest(ratio) {
+  const clampedRatio = igClamp(ratio);
   return IG_CHIPS.reduce(
-    (best, [, v]) => (Math.abs(v - c) < Math.abs(best - c) ? v : best),
+    (best, [, v]) => (Math.abs(v - clampedRatio) < Math.abs(best - clampedRatio) ? v : best),
     IG_CHIPS[0][1],
   );
 }
@@ -33,27 +33,27 @@ export function igFrameRatio(items, chosen = null) {
   return vid ? igNearest(vid.ratio) : 1;
 }
 
-export function igChipLabel(r) {
-  const hit = IG_CHIPS.find(([, v]) => Math.abs(v - r) < 0.006);
+export function igChipLabel(ratio) {
+  const hit = IG_CHIPS.find(([, v]) => Math.abs(v - ratio) < 0.006);
   if (hit) return hit[0];
-  return r >= 1 ? `${r.toFixed(2)}:1` : `1:${(1 / r).toFixed(2)}`;
+  return ratio >= 1 ? `${ratio.toFixed(2)}:1` : `1:${(1 / ratio).toFixed(2)}`;
 }
 
 /** True when a photo of `ratio` will be cropped to fit `frame`. */
 export const igNeedsCrop = (ratio, frame) => ratio > 0 && Math.abs(ratio - frame) >= 0.005;
 
-const unit = (v) => (Number.isFinite(+v) ? Math.min(1, Math.max(0, +v)) : 0.5);
+const unit = (value) => (Number.isFinite(+value) ? Math.min(1, Math.max(0, +value)) : 0.5);
 
 /** Crop rectangle {sx,sy,sw,sh} of `frame` aspect inside a w x h photo; ox/oy (0..1) choose the position. */
-export function igCropRect(w, h, frame, ox = 0.5, oy = 0.5) {
-  const r = w / h;
-  if (Math.abs(r - frame) < 0.005) return { sx: 0, sy: 0, sw: w, sh: h };
-  if (r > frame) {
-    const sw = Math.max(1, Math.round(h * frame));
-    return { sx: Math.round((w - sw) * unit(ox)), sy: 0, sw, sh: h };
+export function igCropRect(width, height, frame, ox = 0.5, oy = 0.5) {
+  const ratio = width / height;
+  if (Math.abs(ratio - frame) < 0.005) return { sx: 0, sy: 0, sw: width, sh: height };
+  if (ratio > frame) {
+    const sw = Math.max(1, Math.round(height * frame));
+    return { sx: Math.round((width - sw) * unit(ox)), sy: 0, sw, sh: height };
   }
-  const sh = Math.max(1, Math.round(w / frame));
-  return { sx: 0, sy: Math.round((h - sh) * unit(oy)), sw: w, sh };
+  const sh = Math.max(1, Math.round(width / frame));
+  return { sx: 0, sy: Math.round((height - sh) * unit(oy)), sw: width, sh };
 }
 
 /** CSS object-position that shows the same crop as igCropRect (with object-fit: cover). */

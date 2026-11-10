@@ -1,3 +1,4 @@
+// Row menu and delete confirmation for a scheduled or published post.
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Ch, AccountAvatar } from "./ui.jsx";
@@ -69,11 +70,11 @@ export function PostRowMenu({ post, onEdit, onDelete }) {
     function place() {
       const b = btnRef.current;
       if (!b) return;
-      const r = b.getBoundingClientRect();
+      const rect = b.getBoundingClientRect();
       const h = menuRef.current?.offsetHeight || 84;
-      const left = Math.min(Math.max(8, r.right - MENU_W), window.innerWidth - MENU_W - 8);
-      let top = r.bottom + 4;
-      if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - 4 - h);
+      const left = Math.min(Math.max(8, rect.right - MENU_W), window.innerWidth - MENU_W - 8);
+      let top = rect.bottom + 4;
+      if (top + h > window.innerHeight - 8) top = Math.max(8, rect.top - 4 - h);
       setPos({ left, top });
     }
     place();
@@ -102,9 +103,9 @@ export function PostRowMenu({ post, onEdit, onDelete }) {
     };
     document.addEventListener("mousedown", onDown, true);
     window.addEventListener("keydown", onKey, true);
-    const t = setTimeout(() => menuRef.current?.querySelector("a")?.focus(), 0);
+    const timer = setTimeout(() => menuRef.current?.querySelector("a")?.focus(), 0);
     return () => {
-      clearTimeout(t);
+      clearTimeout(timer);
       document.removeEventListener("mousedown", onDown, true);
       window.removeEventListener("keydown", onKey, true);
     };
@@ -178,8 +179,8 @@ export function PostRowMenu({ post, onEdit, onDelete }) {
 function previewTime(v) {
   if (!v) return "No time set";
   try {
-    const d = new Date(v);
-    return `${d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })} · ${d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`;
+    const date = new Date(v);
+    return `${date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })} · ${date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`;
   } catch {
     return String(v);
   }
@@ -197,9 +198,9 @@ export function DeletePostModal({ post, account, request, onClose, onDeleted }) 
   const remote = willRemoteDelete(post);
   useEffect(() => {
     const prev = document.activeElement;
-    const t = setTimeout(() => cancelRef.current?.focus(), 0);
+    const timer = setTimeout(() => cancelRef.current?.focus(), 0);
     return () => {
-      clearTimeout(t);
+      clearTimeout(timer);
       try {
         prev?.focus?.({ preventScroll: true });
       } catch {

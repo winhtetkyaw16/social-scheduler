@@ -13,6 +13,7 @@ from app.integrations.platform_catalog import (
 
 
 def _can_publish(platform: str, account_type: str) -> bool:
+    """False for login placeholders, Facebook personal profiles, and Pinterest user accounts."""
     if platform not in publishable_platform_names():
         return False
     if platform == "facebook" and account_type in {"login", "user"}:
@@ -143,6 +144,8 @@ class AccountRead(BaseModel):
 
 
 class DestinationChoice(BaseModel):
+    """One Page, organization, channel, or board the user can connect."""
+
     id: str
     name: str
     account_type: str
@@ -152,6 +155,8 @@ class DestinationChoice(BaseModel):
 
 
 class DestinationList(BaseModel):
+    """Destinations available for a pending OAuth pick session."""
+
     platform: str
     pick_session_id: str
     identity: dict = Field(default_factory=dict)
@@ -160,5 +165,7 @@ class DestinationList(BaseModel):
 
 
 class DestinationSave(BaseModel):
+    """The pick session and the destination ids the user chose to save."""
+
     pick_session_id: UUID
     destination_ids: list[str] = Field(min_length=1)

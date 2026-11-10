@@ -18,14 +18,14 @@ test("threads single clamps to 4:5..1.91:1", () => {
   assert.equal(threadsLayout([]).kind, "none");
 });
 test("threads carousel tiles clamp each width to 3:4..4:3", () => {
-  const l = threadsLayout([9 / 16, 1, 16 / 9, 0]);
-  assert.equal(l.kind, "row");
+  const threadLayout = threadsLayout([9 / 16, 1, 16 / 9, 0]);
+  assert.equal(threadLayout.kind, "row");
   assert.deepEqual(
-    l.tiles.map((t) => t.w),
+    threadLayout.tiles.map((t) => t.w),
     [3 / 4, 1, 4 / 3, 1],
   );
   assert.deepEqual(
-    l.tiles.map((t) => t.cropped),
+    threadLayout.tiles.map((t) => t.cropped),
     [true, false, true, false],
   );
 });
@@ -39,12 +39,12 @@ test("fb 1 and 2 items", () => {
 });
 test("fb 3 and 4 items follow first item orientation", () => {
   for (const n of [3, 4]) {
-    const v = fbGridLayout([P, ...Array(n - 1).fill(L)]);
-    assert.equal(v.dir, "vertical");
-    assert.equal(v.cols, "2fr 1fr");
-    assert.equal(v.cells[0].area, `1 / 1 / ${n} / 2`);
-    assert.equal(v.cells.length, n);
-    assert.equal(v.more, 0);
+    const gridLayout = fbGridLayout([P, ...Array(n - 1).fill(L)]);
+    assert.equal(gridLayout.dir, "vertical");
+    assert.equal(gridLayout.cols, "2fr 1fr");
+    assert.equal(gridLayout.cells[0].area, `1 / 1 / ${n} / 2`);
+    assert.equal(gridLayout.cells.length, n);
+    assert.equal(gridLayout.more, 0);
     const h = fbGridLayout([L, ...Array(n - 1).fill(P)]);
     assert.equal(h.dir, "horizontal");
     assert.equal(h.rows, "2fr 1fr");
@@ -78,15 +78,15 @@ test("x single clamps to 3:4..2:1; gif/video forces single", () => {
   assert.equal(xLayout([]).kind, "none");
 });
 test("x 2-4 images form a row with clamped widths, max 4", () => {
-  const l = xLayout([0.5, 1, 3, 1.5, 1]);
-  assert.equal(l.kind, "row");
-  assert.equal(l.tiles.length, 4);
+  const postLayout = xLayout([0.5, 1, 3, 1.5, 1]);
+  assert.equal(postLayout.kind, "row");
+  assert.equal(postLayout.tiles.length, 4);
   assert.deepEqual(
-    l.tiles.map((t) => t.w),
+    postLayout.tiles.map((t) => t.w),
     [3 / 4, 1, 2, 1.5],
   );
   assert.deepEqual(
-    l.tiles.map((t) => t.cropped),
+    postLayout.tiles.map((t) => t.cropped),
     [true, false, true, false],
   );
 });
@@ -99,10 +99,10 @@ test("linkedin single and video", () => {
   assert.equal(liLayout([9 / 16], { video: true }).ratio, 9 / 16);
 });
 test("linkedin 2 images side by side, columns share the block", () => {
-  const l = liLayout([PL, LS]);
-  assert.equal(l.kind, "pair");
-  near(l.colFracs[0] + l.colFracs[1], 1);
-  assert.ok(l.ratio >= 4 / 5 && l.ratio <= 2);
+  const linkedInLayout = liLayout([PL, LS]);
+  assert.equal(linkedInLayout.kind, "pair");
+  near(linkedInLayout.colFracs[0] + linkedInLayout.colFracs[1], 1);
+  assert.ok(linkedInLayout.ratio >= 4 / 5 && linkedInLayout.ratio <= 2);
 });
 const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-9, `${a} != ${b}`);
 const fills = (l) => {
@@ -121,29 +121,29 @@ const fills = (l) => {
 test("linkedin 3/4/6 with wide first: hero on top 60-66%, row fills the rest", () => {
   for (const rest of [1, PL, LS, 0.5])
     for (const n of [3, 4, 6]) {
-      const l = liLayout([LS, ...Array(n - 1).fill(rest)]);
-      assert.equal(l.kind, "top");
-      fills(l);
-      assert.ok(l.rowFracs[0] >= 0.6 - 1e-9 && l.rowFracs[0] <= 0.66 + 1e-9);
+      const linkedInLayout = liLayout([LS, ...Array(n - 1).fill(rest)]);
+      assert.equal(linkedInLayout.kind, "top");
+      fills(linkedInLayout);
+      assert.ok(linkedInLayout.rowFracs[0] >= 0.6 - 1e-9 && linkedInLayout.rowFracs[0] <= 0.66 + 1e-9);
       const k = Math.min(n, LINKEDIN_MAX_VISIBLE) - 1;
-      assert.equal(l.cells.length, k + 1);
-      assert.equal(l.cells[0].area, `1 / 1 / 2 / ${k + 1}`);
-      assert.equal(l.more, Math.max(0, n - LINKEDIN_MAX_VISIBLE));
+      assert.equal(linkedInLayout.cells.length, k + 1);
+      assert.equal(linkedInLayout.cells[0].area, `1 / 1 / 2 / ${k + 1}`);
+      assert.equal(linkedInLayout.more, Math.max(0, n - LINKEDIN_MAX_VISIBLE));
     }
   assert.equal(liLayout([4 / 3, 1, 1]).kind, "left"); // exactly 4:3 is not wider than 4:3
 });
 test("linkedin 3/4/6 with portrait or square first: full-height left column, even stack", () => {
   for (const first of [PL, 1, 0.5])
     for (const n of [3, 4, 6]) {
-      const l = liLayout([first, ...Array(n - 1).fill(LS)]);
-      assert.equal(l.kind, "left");
-      assert.equal(l.cols, "2fr 1fr");
-      fills(l);
+      const linkedInLayout = liLayout([first, ...Array(n - 1).fill(LS)]);
+      assert.equal(linkedInLayout.kind, "left");
+      assert.equal(linkedInLayout.cols, "2fr 1fr");
+      fills(linkedInLayout);
       const k = Math.min(n, 4) - 1;
-      assert.equal(l.cells[0].area, `1 / 1 / ${k + 1} / 2`);
-      l.rowFracs.forEach((f) => near(f, 1 / k));
-      assert.equal(l.cells.length, Math.min(n, 4));
-      assert.equal(l.more, n > 4 ? n - 4 : 0);
+      assert.equal(linkedInLayout.cells[0].area, `1 / 1 / ${k + 1} / 2`);
+      linkedInLayout.rowFracs.forEach((f) => near(f, 1 / k));
+      assert.equal(linkedInLayout.cells.length, Math.min(n, 4));
+      assert.equal(linkedInLayout.more, n > 4 ? n - 4 : 0);
     }
 });
 test("linkedin +N follows max", () => {

@@ -1,3 +1,4 @@
+// Composer shell: channel tabs, shared caption, schedule, and the per-account media picker.
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useObjectUrl } from "./objectUrl.js";
 import {
@@ -296,30 +297,30 @@ export default function ComposerV2(props) {
     setAiOpen(false);
     setTplOpen(false);
     setValue((v) => {
-      const t = v.trim();
+      const trimmed = v.trim();
       if (kind === "grammar")
-        return t
-          ? t
+        return trimmed
+          ? trimmed
               .replace(/\s+([,.!?])/g, "$1")
               .replace(/[ \t]{2,}/g, " ")
               .replace(/\bi\b/g, "I")
               .replace(/(^|[.!?]\s+)([a-z])/g, (_, s, c) => s + c.toUpperCase())
-          : t;
+          : trimmed;
       if (kind === "hashtags") {
         const words = [
           ...new Set(
-            (t.toLowerCase().match(/[\p{L}\p{N}]{5,}/gu) || []).filter(
+            (trimmed.toLowerCase().match(/[\p{L}\p{N}]{5,}/gu) || []).filter(
               (w) => !["about", "their", "there", "which", "would", "these"].includes(w),
             ),
           ),
         ]
           .slice(0, 3)
           .map((w) => `#${w}`);
-        return `${t}${t ? "\n\n" : ""}${(words.length ? words : ["#socialmedia", "#marketing"]).join(" ")}`;
+        return `${trimmed}${trimmed ? "\n\n" : ""}${(words.length ? words : ["#socialmedia", "#marketing"]).join(" ")}`;
       }
       if (kind === "shorten")
-        return t.length <= 280 ? t : `${t.slice(0, 279).replace(/\s+\S*$/, "")}…`;
-      return t && !/^here[’']s the idea/i.test(t) ? `Here’s the idea: ${t}` : t;
+        return trimmed.length <= 280 ? trimmed : `${trimmed.slice(0, 279).replace(/\s+\S*$/, "")}…`;
+      return trimmed && !/^here[’']s the idea/i.test(trimmed) ? `Here’s the idea: ${trimmed}` : trimmed;
     });
   }
   function addFiles(list) {
@@ -490,10 +491,10 @@ export default function ComposerV2(props) {
                   const on = new Set((row?.indices || []).map((i) => mediaKeyOf(sharedMedia[i])));
                   const picked = Array.isArray(mediaSelectionByAccount[tabAccount.id]);
                   const toggle = (item) => {
-                    const k = mediaKeyOf(item);
+                    const mediaKey = mediaKeyOf(item);
                     const next = sharedMedia
                       .map(mediaKeyOf)
-                      .filter((x) => (x === k ? !on.has(x) : on.has(x)));
+                      .filter((x) => (x === mediaKey ? !on.has(x) : on.has(x)));
                     setAccountMediaKeys(tabAccount.id, next);
                   };
                   return (
@@ -961,17 +962,17 @@ export default function ComposerV2(props) {
           {selectedAccounts.length ? (
             <>
               <div className="pvh" role="tablist">
-                {selectedAccounts.map((a) => (
+                {selectedAccounts.map((account) => (
                   <a
                     role="tab"
-                    key={a.id}
-                    className={previewAccount?.id === a.id ? "active" : ""}
-                    onClick={() => setPreviewId(a.id)}
-                    title={a.account_name}
+                    key={account.id}
+                    className={previewAccount?.id === account.id ? "active" : ""}
+                    onClick={() => setPreviewId(account.id)}
+                    title={account.account_name}
                   >
-                    <ChannelTile platform={a.platform} size={18} />
-                    <span className={previewAccount?.id === a.id ? "" : "sr-only"}>
-                      {LABELS[a.platform]}
+                    <ChannelTile platform={account.platform} size={18} />
+                    <span className={previewAccount?.id === account.id ? "" : "sr-only"}>
+                      {LABELS[account.platform]}
                     </span>
                   </a>
                 ))}

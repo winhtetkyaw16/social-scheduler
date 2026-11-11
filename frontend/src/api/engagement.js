@@ -24,6 +24,10 @@ export function commentReadPath(commentId) {
   return `/comments/${encodeURIComponent(commentId)}/read`;
 }
 
+export function commentHidePath(commentId) {
+  return `/comments/${encodeURIComponent(commentId)}/hide`;
+}
+
 export const bulkReadPath = "/comments/read";
 export const capabilitiesPath = "/engagement/capabilities";
 
@@ -58,6 +62,12 @@ export function createEngagementClient(request) {
     },
     markRead(commentId) {
       return request(commentReadPath(commentId), { method: "POST" });
+    },
+    hideReply(commentId, hidden = true) {
+      return request(commentHidePath(commentId), {
+        method: "POST",
+        body: JSON.stringify({ hidden }),
+      });
     },
     markReadBulk(body) {
       return request(bulkReadPath, {

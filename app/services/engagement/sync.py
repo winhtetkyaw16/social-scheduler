@@ -22,7 +22,9 @@ from app.models.engagement import PostComment, PostInsightsSnapshot
 from app.services.engagement import registry
 from app.services.engagement.base import (
     AccountUnavailable,
+    CreditsRequired,
     NotSupported,
+    ProviderAuthError,
     ProviderComment,
     ProviderInsights,
     ProviderReply,
@@ -300,6 +302,7 @@ def sync_posts(
         "insights_captured": 0,
         "skipped": 0,
         "reconnects": 0,
+        "credits": 0,
         "errors": 0,
     }
     grouped: dict[UUID, list[ScheduledPost]] = defaultdict(list)
@@ -334,12 +337,32 @@ def sync_posts(
                 getattr(account, "platform", ""),
             )
             continue
+        auth_failed = False
         for post in account_posts:
+            if auth_failed:
+                summary["skipped"] += 1
+                continue
             try:
                 result = _sync_one_post(db, account, post, force_insights=force_insights)
                 db.commit()
-            except ReconnectRequired:
+            except CreditsRequired:
                 db.rollback()
+                summary["credits"] += 1
+                summary["skipped"] += 1
+                logger.info(
+                    "Engagement sync skipped post=%s account=%s outcome=credits",
+                    post.id,
+                    account_id,
+                )
+                continue
+            except ReconnectRequired as exc:
+                db.rollback()
+                if isinstance(exc, ProviderAuthError):
+                    from app.services.engagement.http import auth_message
+                    from app.services.token_refresh import mark_needs_reconnect
+
+                    mark_needs_reconnect(db, account, auth_message(account, exc.kind))
+                    auth_failed = True
                 summary["reconnects"] += 1
                 summary["skipped"] += 1
                 logger.info(
@@ -377,13 +400,14 @@ def run_engagement_sweep(db: Session, now: datetime | None = None) -> dict:
     summary = sync_posts(db, posts, force_insights=False)
     logger.info(
         "Engagement sync posts_seen=%s posts_synced=%s comments=%s insights=%s "
-        "skipped=%s reconnects=%s errors=%s",
+        "skipped=%s reconnects=%s credits=%s errors=%s",
         summary["posts_seen"],
         summary["posts_synced"],
         summary["comments_upserted"],
         summary["insights_captured"],
         summary["skipped"],
         summary["reconnects"],
+        summary["credits"],
         summary["errors"],
     )
     return summary

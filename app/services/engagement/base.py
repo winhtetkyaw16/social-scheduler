@@ -1,8 +1,7 @@
 """Network-agnostic contract for comments, replies, and post insights.
 
-Real network clients come later. Until then every registered network uses the
-default methods, which raise ``NotSupported``. Callers check ``capabilities``
-first so a sweep can skip work the network cannot do.
+Callers check ``capabilities`` first. Networks the official API does not offer
+keep the default methods, which raise ``NotSupported``.
 """
 
 from __future__ import annotations
@@ -15,10 +14,12 @@ from typing import Any, Mapping
 CAPABILITY_COMMENTS_READ = "comments_read"
 CAPABILITY_COMMENT_REPLY = "comment_reply"
 CAPABILITY_INSIGHTS = "insights"
+CAPABILITY_HIDE_REPLY = "hide_reply"
 CAPABILITY_KEYS = (
     CAPABILITY_COMMENTS_READ,
     CAPABILITY_COMMENT_REPLY,
     CAPABILITY_INSIGHTS,
+    CAPABILITY_HIDE_REPLY,
 )
 
 
@@ -39,6 +40,26 @@ class ReconnectRequired(Exception):
         super().__init__(message)
 
 
+class ProviderAuthError(ReconnectRequired):
+    """The network rejected the token or a permission. Persist needs_reconnect.
+
+    ``kind`` is ``expired`` or ``permission``. The message shown to the user is
+    built later so provider bodies are not copied through.
+    """
+
+    def __init__(self, message: str, *, kind: str = "expired"):
+        self.kind = kind
+        super().__init__(message)
+
+
+class CreditsRequired(Exception):
+    """X refused the call because the developer account has no API credits."""
+
+    def __init__(self, message: str):
+        self.message = message
+        super().__init__(message)
+
+
 class AccountUnavailable(Exception):
     """The connected account is missing or inactive."""
 
@@ -52,14 +73,20 @@ class EngagementCapabilities:
     """What one network can do, and which OAuth scopes each capability needs.
 
     ``required_scopes`` is keyed by capability (``comments_read``,
-    ``comment_reply``, ``insights``). An empty map means nothing extra has been
-    confirmed. This PR does not add scopes to the OAuth connect flow.
+    ``comment_reply``, ``insights``, ``hide_reply``). ``reasons`` explains a
+    capability the official API does not offer for this app.
     """
 
     supports_comments_read: bool = False
     supports_comment_reply: bool = False
     supports_insights: bool = False
+    supports_hide_reply: bool = False
     required_scopes: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
+    # Why a capability stays off. Keyed like required_scopes.
+    reasons: Mapping[str, str] = field(default_factory=dict)
+    notes: str = ""
+    # Scopes that still allow a reduced insights read when the preferred scope is missing.
+    insights_fallback_scopes: tuple[str, ...] = ()
 
     def scopes_for(self, capability: str) -> tuple[str, ...]:
         values = self.required_scopes.get(capability) or ()
@@ -131,6 +158,10 @@ class EngagementProvider:
     def fetch_insights(self, account, post) -> ProviderInsights:
         """Return the latest metrics the network exposes for ``post``."""
         raise NotSupported(self.network, CAPABILITY_INSIGHTS)
+
+    def hide_reply(self, account, comment, hidden: bool) -> None:
+        """Hide or unhide a reply. Only networks that document this are implemented."""
+        raise NotSupported(self.network, "hide_reply")
 
     def access_token(self, account) -> str:
         """Decrypt the current access token after the caller has refreshed it.

@@ -211,6 +211,7 @@ def test_every_non_public_api_route_requires_auth(client):
         ("POST", "/api/v1/posts/{post_id}/engagement/sync"),
         ("GET", "/api/v1/inbox"),
         ("POST", "/api/v1/comments/{comment_id}/reply"),
+        ("POST", "/api/v1/comments/{comment_id}/hide"),
         ("POST", "/api/v1/comments/{comment_id}/read"),
         ("POST", "/api/v1/comments/read"),
         ("GET", "/api/v1/engagement/capabilities"),

@@ -24,6 +24,7 @@ CELERY_BROKER_URL=redis://127.0.0.1:6379/1
 TOKEN_REFRESH_INTERVAL_SECONDS=3600
 ENGAGEMENT_SYNC_INTERVAL_SECONDS=900
 ENGAGEMENT_SYNC_LOOKBACK_DAYS=30
+TIKTOK_ENABLE_VIDEO_LIST=false
 
 SECRET_KEY=REPLACE_WITH_AT_LEAST_32_RANDOM_CHARACTERS
 ACCESS_TOKEN_EXPIRE_MINUTES=30
@@ -200,7 +201,7 @@ These pages and files are public:
 - `GET /media/{filename}` and legacy `GET /static/uploads/{filename}`
 - `GET /static/build/*` (the studio's JavaScript and CSS, so the login page can load)
 
-`ENGAGEMENT_SYNC_INTERVAL_SECONDS` (default 900) is how often Celery beat, and the in-process scheduler when beat is not running, pulls comments and insights. `ENGAGEMENT_SYNC_LOOKBACK_DAYS` (default 30) limits that sweep to posts published in the last 30 days. No new OAuth scopes are required for this job. Every network currently reports that comments, replies, and insights are not supported until a later change wires the real APIs.
+`ENGAGEMENT_SYNC_INTERVAL_SECONDS` (default 900) is how often Celery beat, and the in-process scheduler when beat is not running, pulls comments and insights. `ENGAGEMENT_SYNC_LOOKBACK_DAYS` (default 30) limits that sweep to posts published in the last 30 days. Facebook, Instagram, Threads, YouTube, and X accounts need to reconnect so the new comment and insights permissions are granted. `TIKTOK_ENABLE_VIDEO_LIST` stays false until the TikTok console enables `video.list`. LinkedIn comments and insights stay unavailable. Meta permissions in Development mode work for app-role users until App Review. YouTube in Testing mode works for its test users.
 
 Every other `/api/` route returns 401 without a bearer token, including the publish routes added for approvals history, Evergreen, and Bulk CSV, and the comments, inbox, and insights routes:
 

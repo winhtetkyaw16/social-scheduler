@@ -39,6 +39,7 @@ test("engagement client calls the authenticated request helper", async () => {
   await client.listInbox({ status: "replied" });
   await client.reply("comment 1", "Thanks");
   await client.markRead("comment 1");
+  await client.hideReply("comment 1", true);
   await client.markReadBulk({ all_matching: true, status: "unread" });
   await client.insights("post/1");
   await client.capabilities();
@@ -50,9 +51,11 @@ test("engagement client calls the authenticated request helper", async () => {
   assert.equal(calls[2].options.method, "POST");
   assert.equal(calls[2].options.body, JSON.stringify({ text: "Thanks" }));
   assert.equal(calls[3].options.method, "POST");
-  assert.equal(calls[4].path, bulkReadPath);
-  assert.equal(calls[5].path, "/posts/post%2F1/insights");
-  assert.equal(calls[6].path, capabilitiesPath);
-  assert.equal(calls[7].path, "/posts/post%2F1/engagement/sync");
-  assert.equal(calls[7].options.method, "POST");
+  assert.equal(calls[4].path, "/comments/comment%201/hide");
+  assert.equal(calls[4].options.body, JSON.stringify({ hidden: true }));
+  assert.equal(calls[5].path, bulkReadPath);
+  assert.equal(calls[6].path, "/posts/post%2F1/insights");
+  assert.equal(calls[7].path, capabilitiesPath);
+  assert.equal(calls[8].path, "/posts/post%2F1/engagement/sync");
+  assert.equal(calls[8].options.method, "POST");
 });

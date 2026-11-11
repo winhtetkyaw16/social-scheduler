@@ -87,6 +87,12 @@ class CommentReplyRequest(BaseModel):
     text: str = Field(min_length=1, max_length=8000)
 
 
+class CommentHideRequest(BaseModel):
+    """Hide or show one reply. Used by X."""
+
+    hidden: bool = True
+
+
 class CommentReplyResult(BaseModel):
     """The stored reply and the parent comment after it was marked replied."""
 
@@ -155,14 +161,17 @@ class SyncPostResult(BaseModel):
 
 
 class NetworkCapabilities(BaseModel):
-    """What a network can do. All current networks are not supported yet."""
+    """What a network can do, and why a capability stays off."""
 
     network: str
     label: str
     supports_comments_read: bool
     supports_comment_reply: bool
     supports_insights: bool
+    supports_hide_reply: bool = False
     required_scopes: dict[str, list[str]]
+    reasons: dict[str, str] = Field(default_factory=dict)
+    notes: str = ""
 
 
 class AccountCapabilities(BaseModel):
@@ -177,9 +186,11 @@ class AccountCapabilities(BaseModel):
     supports_comments_read: bool
     supports_comment_reply: bool
     supports_insights: bool
+    supports_hide_reply: bool = False
     can_read_comments: bool
     can_reply: bool
     can_read_insights: bool
+    can_hide_reply: bool = False
     missing_scopes: dict[str, list[str]]
     reconnect_for_permissions: bool
     message: str | None = None

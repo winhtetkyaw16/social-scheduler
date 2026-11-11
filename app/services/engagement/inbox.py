@@ -13,7 +13,14 @@ from sqlalchemy.orm import Session
 from app.models import ConnectedAccount, ScheduledPost
 from app.models.engagement import PostComment, PostInsightsSnapshot
 from app.services.engagement import registry
-from app.services.engagement.base import CAPABILITY_KEYS, EngagementCapabilities
+from app.services.engagement.base import (
+    CAPABILITY_HIDE_REPLY,
+    CAPABILITY_INSIGHTS,
+    CAPABILITY_KEYS,
+    EngagementCapabilities,
+)
+from app.services.engagement.parsing import granted_scopes
+from app.services.oauth_scopes import YOUTUBE_ANALYTICS
 from app.services.engagement.tokens import reconnect_message
 from app.services.error_messages import network_name
 
@@ -250,7 +257,24 @@ def _supported_flag(caps: EngagementCapabilities, key: str) -> bool:
         return caps.supports_comments_read
     if key == "comment_reply":
         return caps.supports_comment_reply
+    if key == CAPABILITY_HIDE_REPLY:
+        return caps.supports_hide_reply
     return caps.supports_insights
+
+
+def insights_allowed(caps: EngagementCapabilities, granted: set[str], missing: list[str]) -> bool:
+    """True when insights can run, including YouTube's statistics fallback."""
+    if not caps.supports_insights:
+        return False
+    if not missing:
+        return True
+    if not caps.insights_fallback_scopes:
+        return False
+    if set(missing) <= {YOUTUBE_ANALYTICS} and any(
+        scope in granted for scope in caps.insights_fallback_scopes
+    ):
+        return True
+    return False
 
 
 def capability_matrix(db: Session, user_id: UUID) -> dict:
@@ -266,9 +290,16 @@ def capability_matrix(db: Session, user_id: UUID) -> dict:
                 "supports_comments_read": caps.supports_comments_read,
                 "supports_comment_reply": caps.supports_comment_reply,
                 "supports_insights": caps.supports_insights,
+                "supports_hide_reply": caps.supports_hide_reply,
                 "required_scopes": {
                     key: list(caps.scopes_for(key)) for key in CAPABILITY_KEYS
                 },
+                "reasons": {
+                    key: str(caps.reasons.get(key) or "")
+                    for key in CAPABILITY_KEYS
+                    if caps.reasons.get(key)
+                },
+                "notes": caps.notes or "",
             }
         )
     accounts = list(
@@ -282,7 +313,7 @@ def capability_matrix(db: Session, user_id: UUID) -> dict:
     for account in accounts:
         provider = registry.get_engagement_provider(account.platform)
         caps = provider.capabilities
-        granted = {str(scope) for scope in (account.scopes or [])}
+        granted = granted_scopes(account)
         missing = _missing_scopes(caps, granted)
         reconnect_for_permissions = any(
             _supported_flag(caps, key) and bool(missing[key]) for key in CAPABILITY_KEYS
@@ -291,6 +322,8 @@ def capability_matrix(db: Session, user_id: UUID) -> dict:
         usable = account.is_active and not needs_reconnect
 
         def can(flag: bool, key: str) -> bool:
+            if key == CAPABILITY_INSIGHTS:
+                return bool(usable and insights_allowed(caps, granted, missing[key]))
             return bool(flag and usable and not missing[key])
 
         if needs_reconnect:
@@ -310,9 +343,11 @@ def capability_matrix(db: Session, user_id: UUID) -> dict:
                 "supports_comments_read": caps.supports_comments_read,
                 "supports_comment_reply": caps.supports_comment_reply,
                 "supports_insights": caps.supports_insights,
+                "supports_hide_reply": caps.supports_hide_reply,
                 "can_read_comments": can(caps.supports_comments_read, "comments_read"),
                 "can_reply": can(caps.supports_comment_reply, "comment_reply"),
                 "can_read_insights": can(caps.supports_insights, "insights"),
+                "can_hide_reply": can(caps.supports_hide_reply, CAPABILITY_HIDE_REPLY),
                 "missing_scopes": missing,
                 "reconnect_for_permissions": reconnect_for_permissions,
                 "message": message,

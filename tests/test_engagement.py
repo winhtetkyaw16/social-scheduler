@@ -178,7 +178,7 @@ class FakeProvider(EngagementProvider):
         return ProviderReply(provider_comment_id=self.reply_id, raw={"text": text})
 
 
-def _install(monkeypatch, providers: dict[str, EngagementProvider]):
+def _install(monkeypatch, providers: dict[str, EngagementProvider], *, unsupported_rest=False):
     from app.services.engagement import registry
 
     real = registry.get_engagement_provider
@@ -187,6 +187,8 @@ def _install(monkeypatch, providers: dict[str, EngagementProvider]):
         key = canonical_network(name)
         if key in providers:
             return providers[key]
+        if unsupported_rest:
+            return UnsupportedEngagementProvider(key or "unknown")
         return real(name)
 
     monkeypatch.setattr(registry, "get_engagement_provider", wrapped)
@@ -319,7 +321,7 @@ def test_default_provider_raises_not_supported():
         provider.fetch_insights(None, None)
 
 
-def test_registry_covers_every_network_as_not_supported():
+def test_registry_capability_matrix():
     from app.services.engagement.registry import get_engagement_provider
 
     assert supported_networks() == (
@@ -332,12 +334,28 @@ def test_registry_covers_every_network_as_not_supported():
         "tiktok",
         "pinterest",
     )
-    for name in supported_networks():
-        provider = get_engagement_provider(name)
-        assert provider.network == name
-        assert provider.capabilities.supports_comments_read is False
-        assert provider.capabilities.supports_comment_reply is False
-        assert provider.capabilities.supports_insights is False
+    expected = {
+        "facebook": (True, True, True, False),
+        "instagram": (True, True, True, False),
+        "threads": (True, True, True, False),
+        "x": (True, True, True, True),
+        "linkedin": (False, False, False, False),
+        "youtube": (True, True, True, False),
+        "tiktok": (False, False, False, False),
+        "pinterest": (False, False, True, False),
+    }
+    for name, flags in expected.items():
+        caps = get_engagement_provider(name).capabilities
+        assert (
+            caps.supports_comments_read,
+            caps.supports_comment_reply,
+            caps.supports_insights,
+            caps.supports_hide_reply,
+        ) == flags, name
+    linkedin = get_engagement_provider("linkedin").capabilities
+    assert "Community Management" in linkedin.reasons["comments_read"]
+    tiktok = get_engagement_provider("tiktok").capabilities
+    assert "comment-text" in tiktok.reasons["comments_read"]
     assert get_engagement_provider("Twitter").network == "x"
 
 
@@ -490,7 +508,11 @@ def test_sync_upserts_throttles_insights_and_isolates_account_errors(client, aut
     broken_post = _published(user_id, instagram_id, content="Broken")
     facebook = FakeProvider("facebook", only={facebook_id})
     instagram = FakeProvider("instagram", fail=True, only={instagram_id})
-    _install(monkeypatch, {"facebook": facebook, "instagram": instagram})
+    _install(
+        monkeypatch,
+        {"facebook": facebook, "instagram": instagram},
+        unsupported_rest=True,
+    )
     monkeypatch.setenv("ENGAGEMENT_SYNC_LOOKBACK_DAYS", "30")
 
     from app.tasks.sync_engagement import sweep_engagement
@@ -559,7 +581,7 @@ def test_sync_skips_reconnect_without_calling_the_provider(client, auth_headers,
     account_id = _connect(client, headers)
     _published(user_id, account_id)
     provider = FakeProvider("facebook", only={account_id})
-    _install(monkeypatch, {"facebook": provider})
+    _install(monkeypatch, {"facebook": provider}, unsupported_rest=True)
     db = SessionLocal()
     try:
         account = db.get(ConnectedAccount, account_id)
@@ -769,13 +791,18 @@ def test_reply_is_gated_then_stores_our_reply(client, auth_headers, monkeypatch)
     comment_id = _add_comment(
         post_id, account_id, text="Question?", network="facebook", minutes_ago=4
     )
+    linkedin_id = _connect(client, headers, "linkedin")
+    linkedin_post = _published(user_id, linkedin_id)
+    linkedin_comment = _add_comment(
+        linkedin_post, linkedin_id, text="Hi", network="linkedin", minutes_ago=1
+    )
     blocked = client.post(
-        f"/api/v1/comments/{comment_id}/reply",
+        f"/api/v1/comments/{linkedin_comment}/reply",
         headers=headers,
         json={"text": "On it"},
     )
     assert blocked.status_code == 501, blocked.text
-    assert "does not support replying" in blocked.json()["detail"]
+    assert "Community Management" in blocked.json()["detail"]
 
     provider = FakeProvider("facebook")
     _install(monkeypatch, {"facebook": provider})
@@ -873,11 +900,9 @@ def test_insights_and_manual_sync(client, auth_headers, monkeypatch):
     matrix = caps.json()
     by_network = {row["network"]: row for row in matrix["networks"]}
     assert set(by_network) == set(supported_networks())
-    for row in matrix["networks"]:
-        if row["network"] != "facebook":
-            assert row["supports_comments_read"] is False
-            assert row["supports_comment_reply"] is False
-            assert row["supports_insights"] is False
+    assert by_network["linkedin"]["supports_comments_read"] is False
+    assert "Community Management" in by_network["linkedin"]["reasons"]["comments_read"]
+    assert "comment-text" in by_network["tiktok"]["reasons"]["comments_read"]
     facebook = next(row for row in matrix["accounts"] if row["account_id"] == str(account_id))
     assert facebook["supports_comment_reply"] is True
     assert facebook["can_reply"] is True

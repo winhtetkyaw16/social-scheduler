@@ -126,6 +126,7 @@ export default function PublishBar(props) {
     request,
     selectedAccounts,
     onSetupQueue,
+    onDiscard,
     blocked = false,
     blockHint = "Fix the errors above to post",
   } = props;
@@ -139,6 +140,20 @@ export default function PublishBar(props) {
   const noSlots = mode === "queue" && q.none;
   const cta = PUBLISH_MODES.find((m) => m.id === mode)?.cta || "Schedule post";
 
+  // Short label so the bar fits on one row; the full text and time zone stay in the
+  // tooltip, the accessible name, and the picker.
+  const shortWhen = (() => {
+    const parsed = date && time ? new Date(`${date}T${time}`) : null;
+    return parsed && !Number.isNaN(parsed.getTime())
+      ? parsed.toLocaleString([], {
+          month: "short",
+          day: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+        })
+      : whenText;
+  })();
+
   let detail;
   if (mode === "schedule") {
     detail = (
@@ -148,11 +163,11 @@ export default function PublishBar(props) {
           className="when"
           aria-expanded={whenOpen}
           aria-label={`Publish time: ${whenText} ${zoneText}`}
+          title={`${whenText} ${zoneText}`}
           onClick={() => setWhenOpen((o) => !o)}
         >
           <CalendarDays className="ico" />
-          {whenText}
-          <span className="subtle">{zoneText}</span>
+          <span className="c2-when-text">{shortWhen}</span>
           <ChevronDown size={14} className="subtle" />
         </button>
         {whenOpen && (
@@ -233,6 +248,11 @@ export default function PublishBar(props) {
 
   return (
     <div className={`abar c2-pbar ${blocked ? "fix-first" : ""}`}>
+      {onDiscard && (
+        <button type="button" className="btn btn-ghost c2-pdiscard" onClick={onDiscard}>
+          Discard
+        </button>
+      )}
       <button
         type="button"
         className="btn btn-secondary c2-pdraft"

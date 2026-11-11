@@ -1,9 +1,9 @@
 // Signed-in pages besides the composer: dashboard, analytics, settings, team, library, and onboarding.
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { AlertCircle, CheckCircle2 } from "lucide-react";
 import {
   Ch,
   meta,
-  chColor,
   Avatar,
   AccountAvatar,
   StatusBadge,
@@ -20,7 +20,7 @@ import { PostRowMenu, DeletePostModal, failedBannerText } from "./PostActions.js
 import markPng from "../assets/brand/socialcastly-mark-256.png";
 import lockupLight from "../assets/brand/socialcastly-lockup-light.png";
 import lockupDark from "../assets/brand/socialcastly-lockup-dark.png";
-import { sortUpNext, upNextTime, upNextDateParts } from "../upNext.js";
+import { selectUpNext, upNextTime, upNextDateParts } from "../upNext.js";
 
 const DAY = 864e5;
 const when = (post) => post?.published_at || post?.scheduled_at || post?.created_at;
@@ -97,8 +97,9 @@ function PostRow({ post, account, onOpen, onRetry, onDelete }) {
         </div>
         <div className="txt">{post.content || "Untitled post"}</div>
         {post.status === "failed" && (
-          <div className="xs" style={{ color: "var(--error)", marginTop: 6 }}>
-            ⚠ {failedBannerText(post, account)}
+          <div className="row xs" style={{ gap: 4, color: "var(--error)", marginTop: 8 }}>
+            <AlertCircle size={14} aria-hidden="true" style={{ flex: "none" }} />
+            {failedBannerText(post, account)}
           </div>
         )}
       </div>
@@ -148,90 +149,72 @@ function healthOf(account, posts) {
   if (account.connection_warning) return ["Reconnect soon", "b-warning"];
   const exp = account.token_expires_at ? new Date(account.token_expires_at) : null;
   if (exp && exp < new Date() && !account.has_refresh_token && !("connection_warning" in account))
-    return ["Token expired", "b-error"];
+    return ["Reconnect needed", "b-error"];
   if (
     exp &&
     !account.has_refresh_token &&
     exp - Date.now() < 7 * DAY &&
     !("connection_warning" in account)
-  )
-    return [`Token expires in ${Math.max(1, Math.ceil((exp - Date.now()) / DAY))}d`, "b-warning"];
+  ) {
+    const days = Math.max(1, Math.ceil((exp - Date.now()) / DAY));
+    return [`Reconnect within ${days} day${days === 1 ? "" : "s"}`, "b-warning"];
+  }
   const recentFail = failedSinceConnect(account, posts);
   if (recentFail) return ["Has failed posts", "b-error"];
   return ["Healthy", "b-success"];
 }
 
+// "Posts this week": one indigo bar per day; the per-channel split is in each bar's tooltip.
 function WeekBars({ posts, accounts, start, days = 7 }) {
-  const plats = [...new Set(accounts.map((a) => a.platform))].slice(0, 4);
   const acc = new Map(accounts.map((a) => [a.id, a]));
   const cols = Array.from({ length: days }, (_, i) => {
     const date = new Date(start);
     date.setDate(date.getDate() + i);
     return date;
   });
-  const counts = cols.map((d) =>
-    plats.map(
-      (pl) =>
-        posts.filter((post) => {
-          const w = when(post);
-          if (!w) return false;
-          const dateValue = new Date(w);
-          return (
-            dateValue.toDateString() === d.toDateString() &&
-            acc.get(post.connected_account_id)?.platform === pl
-          );
-        }).length,
-    ),
+  const perDay = cols.map((d) =>
+    posts.filter((post) => {
+      const w = when(post);
+      return w && post.status !== "draft" && new Date(w).toDateString() === d.toDateString();
+    }),
   );
-  const max = Math.max(1, ...counts.map((c) => c.reduce((x, y) => x + y, 0)));
+  const max = Math.max(1, ...perDay.map((list) => list.length));
+  const tooltip = (d, list) => {
+    const byNetwork = {};
+    list.forEach((post) => {
+      const label = meta(acc.get(post.connected_account_id)?.platform).label || "Other";
+      byNetwork[label] = (byNetwork[label] || 0) + 1;
+    });
+    const parts = Object.entries(byNetwork).map(([label, n]) => `${label} ${n}`);
+    const day = d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+    return `${day}: ${list.length} post${list.length === 1 ? "" : "s"}${parts.length ? ` (${parts.join(", ")})` : ""}`;
+  };
   return (
     <div className="card chart-card">
-      <div className="row between">
-        <h2>Posts this week</h2>
-        <div className="legend">
-          {plats.map((pl) => (
-            <span key={pl} style={{ "--c": chColor(pl) }}>
-              {meta(pl).label}
-            </span>
-          ))}
-        </div>
-      </div>
-      {counts.flat().every((n) => n === 0) ? (
+      <h2>Posts this week</h2>
+      {perDay.every((list) => list.length === 0) ? (
         <div className="xs subtle" style={{ padding: "40px 0", textAlign: "center" }}>
           No posts scheduled or published this week yet.
         </div>
       ) : (
-        <div className="bars wb-bars">
-          {cols.map((d, i) => {
-            const tot = counts[i].reduce((x, y) => x + y, 0);
-            return (
-              <div
-                key={i}
-                className="wb-col"
-                title={`${d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })}: ${tot} post${tot === 1 ? "" : "s"}`}
-              >
-                <div className="wb-plot">
-                  {tot === 0 ? (
-                    <i className="wb-empty" />
-                  ) : (
-                    plats.map((pl, j) =>
-                      counts[i][j] ? (
-                        <i
-                          key={pl}
-                          title={`${meta(pl).label}: ${counts[i][j]}`}
-                          style={{
-                            height: `${(counts[i][j] / max) * 100}%`,
-                            background: chColor(pl),
-                          }}
-                        />
-                      ) : null,
-                    )
-                  )}
-                </div>
-                <span className="lbl">{d.toLocaleDateString([], { weekday: "short" })}</span>
+        <div className="bars wb-bars" style={{ marginTop: 16 }}>
+          {cols.map((d, i) => (
+            <div key={i} className="wb-col" title={tooltip(d, perDay[i])}>
+              <div className="wb-plot">
+                {perDay[i].length === 0 ? (
+                  <i className="wb-empty" />
+                ) : (
+                  <i
+                    style={{
+                      height: `${(perDay[i].length / max) * 100}%`,
+                      background: "rgba(99,102,241,.8)",
+                    }}
+                  />
+                )}
               </div>
-            );
-          })}
+              <span className="lbl">{d.toLocaleDateString([], { weekday: "short" })}</span>
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -284,19 +267,16 @@ export function Dashboard({
       post.published_at &&
       Date.now() - new Date(post.published_at) < 30 * DAY,
   );
-  const pubConfirmed = pub30.filter((post) => post.provider_post_id).length;
   const failed = posts.filter((p) => p.status === "failed");
   const failedPlats = [
     ...new Set(failed.map((post) => meta(acc.get(post.connected_account_id)?.platform).label)),
   ];
-  const upcomingAll = posts
-    .filter((p) => isLive(p) || p.status === "failed")
-    .filter(
-      (post) =>
-        new Date(post.scheduled_at) >= new Date(now.getFullYear(), now.getMonth(), now.getDate()) ||
-        post.status === "failed",
-    );
-  const upcoming = sortUpNext(upcomingAll).slice(0, 6);
+  const queuedCount = posts.filter((p) => p.status === "queued").length;
+  // Scheduled, queued and recently failed posts together, earliest first (see upNext.js).
+  const upcoming = selectUpNext(posts, now);
+  const troubled = accounts
+    .map((account) => [account, ...healthOf(account, posts)])
+    .filter(([, label]) => label !== "Healthy");
   return (
     <>
       <PageHead
@@ -345,19 +325,17 @@ export function Dashboard({
         <div className="card stat">
           <div className="sm muted">Published (30d)</div>
           <div className="v">{pub30.length}</div>
-          <div className="d">{pubConfirmed} confirmed by provider</div>
+          <div className="d">Last 30 days</div>
         </div>
         <div className="card stat">
-          <div className="sm muted">Engagement rate</div>
-          <div className="v">—</div>
-          <div className="d">Not tracked yet</div>
+          <div className="sm muted">Queued</div>
+          <div className="v">{queuedCount}</div>
+          <div className="d">Waiting for the next free slot</div>
         </div>
         <div className="card stat">
           <div className="sm muted">Failed posts</div>
           <div className="v">{failed.length}</div>
-          <div className={`d ${failed.length ? "down" : ""}`}>
-            {failed.length ? "Needs attention" : "All clear"}
-          </div>
+          <div className="d">{failed.length ? "Needs attention" : "All clear"}</div>
         </div>
       </div>
       <div
@@ -368,7 +346,9 @@ export function Dashboard({
           <div className="card-head">
             <div>
               <h2>Up next</h2>
-              <div className="xs subtle">Newest first</div>
+              <div className="xs subtle">
+                {now.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" })}
+              </div>
             </div>
             <button type="button" className="btn btn-sm btn-ghost" onClick={() => goToTab("queue")}>
               View queue{navIcons.arrow}
@@ -395,14 +375,14 @@ export function Dashboard({
             />
           )}
         </div>
-        <div className="col" style={{ gap: 20 }}>
+        <div className="col" style={{ gap: 24 }}>
           <WeekBars posts={posts} accounts={accounts} start={wk} />
           <div className="card card-pad">
             <div className="row between">
               <h2>Waiting for approval</h2>
-              <span className="badge b-warning">{approvals.length}</span>
+              {approvals.length > 0 && <span className="badge nodot">{approvals.length}</span>}
             </div>
-            <div className="col" style={{ marginTop: 14, gap: 12 }}>
+            <div className="col" style={{ marginTop: 16, gap: 12 }}>
               {approvals.length ? (
                 approvals.slice(0, 3).map((a) => (
                   <div key={a.id} className="row">
@@ -427,26 +407,37 @@ export function Dashboard({
           </div>
           <div className="card card-pad">
             <h2>Channel health</h2>
-            <div className="col" style={{ marginTop: 14 }}>
-              {accounts.length ? (
-                accounts.slice(0, 6).map((account) => {
-                  const [l, c] = healthOf(account, posts);
-                  return (
-                    <div key={account.id} className="row">
-                      <Ch platform={account.platform} size="" />
-                      <span className="grow sm">{account.account_name}</span>
-                      <span className={`badge ${c}`}>{l}</span>
-                    </div>
-                  );
-                })
+            <div className="col" style={{ marginTop: 16 }}>
+              {!accounts.length ? (
+                <div className="row">
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => goToTab("accounts")}
+                  >
+                    Connect a channel
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => goToTab("onboarding")}
+                  >
+                    Get started
+                  </button>
+                </div>
+              ) : troubled.length ? (
+                troubled.slice(0, 6).map(([account, label, tone]) => (
+                  <div key={account.id} className="row">
+                    <Ch platform={account.platform} size="" />
+                    <span className="grow sm">{account.account_name}</span>
+                    <span className={`badge ${tone}`}>{label}</span>
+                  </div>
+                ))
               ) : (
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-sm"
-                  onClick={() => goToTab("accounts")}
-                >
-                  Connect a channel
-                </button>
+                <div className="row sm muted" style={{ gap: 8 }}>
+                  <CheckCircle2 size={16} aria-hidden="true" style={{ color: "var(--success)" }} />
+                  All channels are working
+                </div>
               )}
             </div>
           </div>
@@ -462,6 +453,96 @@ export function Dashboard({
         />
       )}
     </>
+  );
+}
+
+// Area/line chart in the "Impressions over time" style, plotting real publishing counts.
+// series: [{ d: Date, pub: number, fail: number }] oldest -> newest. No invented numbers.
+function PublishedChart({ series }) {
+  const width = 800;
+  const height = 256;
+  const top = 8;
+  const bottom = 8;
+  const peak = Math.max(1, ...series.map((point) => Math.max(point.pub, point.fail)));
+  const step = Math.max(1, Math.ceil(peak / 3));
+  const yMax = step * 3;
+  const x = (i) => (i / Math.max(1, series.length - 1)) * width;
+  const y = (value) => top + (1 - value / yMax) * (height - top - bottom);
+  const line = (key) =>
+    series.map((point, i) => `${i ? "L" : "M"}${x(i)},${y(point[key])}`).join(" ");
+  const area = `${line("pub")} L${width},${height - bottom} L0,${height - bottom} Z`;
+  const ticks = [0, 1, 2, 3].map((n) => n * step);
+  const labelEvery = Math.max(1, Math.ceil(series.length / 6));
+  const xLabels = series
+    .map((point, i) => ({
+      i,
+      label: point.d.toLocaleDateString([], { month: "short", day: "numeric" }),
+    }))
+    .filter(({ i }) => i % labelEvery === 0 || i === series.length - 1);
+  return (
+    <div className="sc-chart" style={{ marginTop: 16 }}>
+      {/* Each label is centred on its gridline (same y() as the SVG), not spaced by flexbox. */}
+      <div
+        className="sc-chart-y"
+        aria-hidden="true"
+        style={{ width: `${String(yMax).length + 1}ch` }}
+      >
+        {ticks.map((tick) => (
+          <span key={tick} style={{ top: `${(y(tick) / height) * 100}%` }}>
+            {tick}
+          </span>
+        ))}
+      </div>
+      <div className="sc-chart-plot">
+        <svg
+          viewBox={`0 0 ${width} ${height}`}
+          preserveAspectRatio="none"
+          role="img"
+          aria-label="Posts published per day"
+        >
+          <defs>
+            <linearGradient id="sc-pub-fill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#4F46E5" stopOpacity="0.16" />
+              <stop offset="100%" stopColor="#4F46E5" stopOpacity="0.02" />
+            </linearGradient>
+          </defs>
+          {ticks.map((tick) => (
+            <line
+              key={tick}
+              x1="0"
+              x2={width}
+              y1={y(tick)}
+              y2={y(tick)}
+              className="sc-chart-grid"
+              vectorEffect="non-scaling-stroke"
+            />
+          ))}
+          <path d={area} fill="url(#sc-pub-fill)" stroke="none" />
+          <path
+            d={line("fail")}
+            fill="none"
+            stroke="#A5B4FC"
+            strokeWidth="2"
+            strokeDasharray="4 4"
+            vectorEffect="non-scaling-stroke"
+          />
+          <path
+            d={line("pub")}
+            fill="none"
+            stroke="#4F46E5"
+            strokeWidth="2"
+            vectorEffect="non-scaling-stroke"
+          />
+        </svg>
+        <div className="sc-chart-x" aria-hidden="true">
+          {xLabels.map(({ i, label }) => (
+            <span key={i} style={{ left: `${(i / Math.max(1, series.length - 1)) * 100}%` }}>
+              {label}
+            </span>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -522,16 +603,6 @@ export function Analytics({ posts, accounts }) {
     });
     return arr;
   }, [published, failed, range]);
-  const sMax = Math.max(1, ...series.map((s) => s.pub + s.fail));
-  const chartWidth = 800,
-    chartHeight = 200;
-  const pts = (k) =>
-    series
-      .map(
-        (s, i) =>
-          `${(i / Math.max(1, series.length - 1)) * chartWidth},${chartHeight - (s[k] / sMax) * (chartHeight - 20)}`,
-      )
-      .join(" ");
   const recent = published
     .slice()
     .sort((a, b) => new Date(b.published_at || 0) - new Date(a.published_at || 0))
@@ -593,17 +664,10 @@ export function Analytics({ posts, accounts }) {
           {navIcons.download}Export CSV
         </button>
       </PageHead>
-      <div className="alert info sm">
-        {navIcons.alert}
-        <div className="grow">
-          <b>Reach and engagement aren't connected yet.</b>{" "}
-          <span className="muted">
-            These numbers come from your own publishing history. Impressions, engagements and clicks
-            need provider insights APIs, which this workspace doesn't pull yet.
-          </span>
-        </div>
-      </div>
-      <div className="grid g4">
+      <p className="xs muted" style={{ marginTop: -8 }}>
+        Reach and engagement numbers aren't available yet. These numbers come from your own posts.
+      </p>
+      <div className="grid g3">
         <div className="card stat">
           <div className="sm muted">Posts published</div>
           <div className="v">{published.length}</div>
@@ -627,39 +691,27 @@ export function Analytics({ posts, accounts }) {
             {failed.length ? "Check the queue" : "None"}
           </div>
         </div>
-        <div className="card stat">
-          <div className="sm muted">Impressions</div>
-          <div className="v">—</div>
-          <div className="d">Not available</div>
-        </div>
       </div>
       <div className="card card-pad">
         <div className="row between">
-          <h2>Publishing over time</h2>
-          <div className="legend">
-            <span style={{ "--c": "var(--primary)" }}>Published</span>
-            <span style={{ "--c": "var(--error)" }}>Failed</span>
+          <h2>Posts published over time</h2>
+          <div className="row xs muted" style={{ gap: 16 }}>
+            <span className="row" style={{ gap: 6 }}>
+              <i className="sc-legend-swatch" style={{ background: "var(--primary)" }} />
+              Published
+            </span>
+            <span className="row" style={{ gap: 6 }}>
+              <i className="sc-legend-swatch" style={{ background: "#A5B4FC" }} />
+              Failed
+            </span>
           </div>
         </div>
         {published.length + failed.length === 0 ? (
-          <div className="xs subtle" style={{ padding: "60px 0", textAlign: "center" }}>
+          <div className="xs subtle" style={{ padding: "96px 0", textAlign: "center" }}>
             No published or failed posts in the last {range} days.
           </div>
         ) : (
-          <svg
-            viewBox={`0 0 ${chartWidth} ${chartHeight}`}
-            preserveAspectRatio="none"
-            style={{ width: "100%", height: 200, marginTop: 16 }}
-          >
-            <polyline fill="none" stroke="var(--primary)" strokeWidth="2.5" points={pts("pub")} />
-            <polyline
-              fill="none"
-              stroke="var(--error)"
-              strokeWidth="2"
-              strokeDasharray="4 4"
-              points={pts("fail")}
-            />
-          </svg>
+          <PublishedChart series={series} />
         )}
       </div>
       <div
@@ -682,7 +734,7 @@ export function Analytics({ posts, accounts }) {
                     </span>
                   </div>
                   <div className="progress" style={{ marginTop: 8 }}>
-                    <i style={{ width: `${(n / maxPlat) * 100}%`, background: chColor(pl) }} />
+                    <i style={{ width: `${(n / maxPlat) * 100}%`, background: "var(--primary)" }} />
                   </div>
                 </div>
               ))
@@ -721,7 +773,7 @@ export function Analytics({ posts, accounts }) {
                 <tr>
                   <th>Post</th>
                   <th>Published</th>
-                  <th>Provider</th>
+                  <th>Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -754,9 +806,9 @@ export function Analytics({ posts, accounts }) {
                       <td className="sm">{fmtDay(post.published_at)}</td>
                       <td>
                         {post.provider_post_id ? (
-                          <span className="badge b-success nodot">Confirmed</span>
+                          <span className="badge b-success nodot">Live</span>
                         ) : (
-                          <span className="badge b-warning nodot">Unconfirmed</span>
+                          <span className="badge nodot">Not confirmed yet</span>
                         )}
                       </td>
                     </tr>
@@ -827,10 +879,12 @@ function Profile({ user, dark, setDark, onLogout }) {
       role="button"
       className="card"
       onClick={() => pick(m)}
+      aria-pressed={mode === m}
       style={{
-        padding: 10,
+        padding: 12,
         cursor: "pointer",
-        outline: mode === m ? "2px solid var(--primary)" : undefined,
+        borderColor: mode === m ? "var(--primary)" : undefined,
+        boxShadow: mode === m ? "0 0 0 3px rgba(79,70,229,.3)" : undefined,
       }}
     >
       <div
@@ -843,52 +897,41 @@ function Profile({ user, dark, setDark, onLogout }) {
     </div>
   );
   return (
-    <div className="grid" style={{ gridTemplateColumns: "280px 1fr", gap: 32 }}>
+    <div className="grid" style={{ gridTemplateColumns: "256px 1fr", gap: 32, maxWidth: 896 }}>
       <div>
         <h3>Personal info</h3>
         <p className="sm muted">Shown to teammates on posts and approvals.</p>
       </div>
       <div className="card card-pad col" style={{ gap: 16 }}>
-        <div className="row" style={{ gap: 14 }}>
+        <div className="row" style={{ gap: 16 }}>
           <Avatar name={user?.full_name} size={64} />
-          <div className="col" style={{ gap: 6 }}>
-            <b>{user?.full_name || "Workspace member"}</b>
-            <span className="xs subtle">Profile photos aren't supported yet</span>
-          </div>
+          <b>{user?.full_name || "Workspace member"}</b>
         </div>
-        <div className="grid g2" style={{ gap: 16 }}>
-          <div className="field">
-            <label className="label">Full name</label>
-            <input className="input" value={user?.full_name || ""} readOnly />
-          </div>
-          <div className="field">
-            <label className="label">Workspace</label>
-            <input className="input" value={user?.workspace_name || ""} readOnly />
-          </div>
-          <div className="field">
-            <label className="label">Timezone</label>
-            <input className="input" value={tz} readOnly />
-            <span className="hint">
+        <dl className="sc-kv">
+          <dt>Full name</dt>
+          <dd>{user?.full_name || "—"}</dd>
+          <dt>Workspace</dt>
+          <dd>{user?.workspace_name || "—"}</dd>
+          <dt>Timezone</dt>
+          <dd>
+            {tz}
+            <div className="xs subtle">
               Detected from this browser. Used as the default for scheduling.
-            </span>
-          </div>
-          <div className="field">
-            <label className="label">Language</label>
-            <input className="input" value="English" readOnly />
-          </div>
-        </div>
-        <span className="xs subtle">
-          Profile editing isn't available from the API yet, so these fields are read-only.
-        </span>
+            </div>
+          </dd>
+          <dt>Language</dt>
+          <dd>English</dd>
+        </dl>
+        <span className="xs subtle">You can't edit these details yet.</span>
       </div>
       <div>
         <h3>Appearance</h3>
         <p className="sm muted">Choose how SocialCastly looks to you.</p>
       </div>
       <div className="grid g3" style={{ gap: 14 }}>
-        {opt("light", "Light", "#F8FAFC")}
-        {opt("dark", "Dark", "#0B1120")}
-        {opt("system", "System", "linear-gradient(90deg,#F8FAFC 50%,#0B1120 50%)")}
+        {opt("light", "Light", "#F9FAFB")}
+        {opt("dark", "Dark", "#0B0F19")}
+        {opt("system", "System", "linear-gradient(90deg,#F9FAFB 50%,#0B0F19 50%)")}
       </div>
       <div>
         <h3>Session</h3>
@@ -912,7 +955,7 @@ function Billing({ accounts, posts }) {
   const box = (label, val) => (
     <div style={{ background: "rgba(255,255,255,.16)", borderRadius: 10, padding: 12 }}>
       <div className="xs">{label}</div>
-      <b style={{ fontSize: 18 }}>{val}</b>
+      <b style={{ fontSize: 16 }}>{val}</b>
     </div>
   );
   return (
@@ -939,7 +982,7 @@ function Billing({ accounts, posts }) {
             <span className="sm">No billing connected</span>
           </div>
           <div>
-            <span style={{ fontSize: 36, fontWeight: 800 }}>Self-hosted</span>
+            <span style={{ fontSize: 20, fontWeight: 600 }}>Self-hosted</span>
             <span> · no subscription</span>
           </div>
           <div className="grid g3" style={{ gap: 12 }}>
@@ -980,11 +1023,11 @@ function Billing({ accounts, posts }) {
 
 const NOTIF_KEY = "socialcastly_notification_prefs";
 const NOTIF_ROWS = [
-  ["failed", "Post failed to publish", "When a network rejects a post or retries are exhausted"],
+  ["failed", "Post failed to publish", "When a post couldn't be published"],
   ["published", "Post published", "Confirmation each time a post goes live"],
   ["approval_requested", "Approval requested", "A teammate submits a draft for your review"],
   ["approval_decision", "Approval decision", "Your draft is approved, rejected or needs changes"],
-  ["reconnect", "Channel needs reconnecting", "Access token is expiring or revoked"],
+  ["reconnect", "Channel needs reconnecting", "When a channel needs to be reconnected"],
   ["digest", "Weekly performance digest", "Every Monday at 9:00 AM"],
 ];
 function Notifications() {
@@ -1083,29 +1126,30 @@ export function Team({ user, accounts }) {
       <PageHead title="Team" sub="Invite teammates and control what they can do.">
         <button
           type="button"
-          className="btn btn-primary"
+          className="btn btn-secondary"
           disabled
-          title="Team invites aren't available yet"
+          title="Inviting teammates is coming soon"
         >
           {navIcons.plus}Invite member
+          <span className="badge nodot">Coming soon</span>
         </button>
       </PageHead>
-      <div className="grid g3">
+      <div className="grid g3" style={{ gap: 16 }}>
         <div className="card card-pad">
           <div className="row">
-            <span className="badge b-primary nodot">Admin</span>
+            <span className="badge nodot">Admin</span>
             <span className="xs subtle grow">1 member</span>
           </div>
-          <p className="sm muted" style={{ marginTop: 10 }}>
+          <p className="sm muted" style={{ marginTop: 8 }}>
             Full access, billing, channels and team management.
           </p>
         </div>
         <div className="card card-pad">
           <div className="row">
-            <span className="badge b-info nodot">Editor</span>
+            <span className="badge nodot">Editor</span>
             <span className="xs subtle grow">0 members</span>
           </div>
-          <p className="sm muted" style={{ marginTop: 10 }}>
+          <p className="sm muted" style={{ marginTop: 8 }}>
             Create, schedule and approve posts on all channels.
           </p>
         </div>
@@ -1114,7 +1158,7 @@ export function Team({ user, accounts }) {
             <span className="badge nodot">Contributor</span>
             <span className="xs subtle grow">0 members</span>
           </div>
-          <p className="sm muted" style={{ marginTop: 10 }}>
+          <p className="sm muted" style={{ marginTop: 8 }}>
             Draft posts and submit them for approval.
           </p>
         </div>
@@ -1141,7 +1185,7 @@ export function Team({ user, accounts }) {
                 </div>
               </td>
               <td>
-                <span className="badge b-primary nodot">Admin</span>
+                <span className="badge nodot">Admin</span>
               </td>
               <td>
                 <div className="row" style={{ gap: 4 }}>
@@ -1157,8 +1201,7 @@ export function Team({ user, accounts }) {
           </tbody>
         </table>
         <div className="card-pad xs subtle" style={{ borderTop: "1px solid var(--border)" }}>
-          Multi-member workspaces aren't supported by the backend yet. Invites will appear here when
-          they are.
+          Inviting teammates is coming soon.
         </div>
       </div>
     </>
@@ -1216,14 +1259,15 @@ export function MediaLibrary({ request, onUseAsset }) {
   return (
     <>
       <PageHead title="Media library" sub="Images and videos ready to use in posts.">
-        <button
-          type="button"
-          className="btn btn-secondary"
-          disabled={!selected}
-          onClick={() => selected && onUseAsset?.(selected)}
-        >
-          {selected ? "1 selected · Use in post" : "Select to use in post"}
-        </button>
+        {selected && (
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => onUseAsset?.(selected)}
+          >
+            Use in post
+          </button>
+        )}
         <button
           type="button"
           className="btn btn-primary"
@@ -1255,12 +1299,10 @@ export function MediaLibrary({ request, onUseAsset }) {
             ["video", "Videos"],
           ]}
         />
-        <div className="row sm subtle" style={{ gap: 10 }}>
-          {size(total)} used
-        </div>
+        {assets.length > 0 && <div className="sm subtle">{size(total)} used</div>}
       </div>
       <div
-        className={`dropzone`}
+        className={`dropzone${!loading && !assets.length ? " sc-drop-empty" : ""}`}
         style={over ? { borderColor: "var(--primary)", background: "var(--primary-soft)" } : null}
         onClick={() => input.current?.click()}
         onDragOver={(e) => {
@@ -1277,8 +1319,12 @@ export function MediaLibrary({ request, onUseAsset }) {
       >
         {navIcons.upload}
         <div>
-          <b>Drag files here to upload</b>
-          <div className="sm muted">PNG, JPG, GIF, MP4</div>
+          <b className="sm">{assets.length ? "Drag files here to upload" : "No media yet"}</b>
+          <div className="sm muted">
+            {assets.length
+              ? "PNG, JPG, GIF, MP4"
+              : "Drag images or videos here, or click to upload. PNG, JPG, GIF, MP4"}
+          </div>
         </div>
       </div>
       {error && (
@@ -1289,14 +1335,14 @@ export function MediaLibrary({ request, onUseAsset }) {
       {loading ? (
         <div
           className="grid"
-          style={{ gridTemplateColumns: "repeat(auto-fill,minmax(150px,1fr))", gap: 14 }}
+          style={{ gridTemplateColumns: "repeat(auto-fill,minmax(150px,1fr))", gap: 16 }}
         >
           {Array.from({ length: 6 }, (_, i) => (
             <div key={i} className="skel" style={{ aspectRatio: "1" }} />
           ))}
         </div>
       ) : shown.length ? (
-        <div className="grid media-grid" style={{ gridTemplateColumns: "repeat(6,1fr)", gap: 14 }}>
+        <div className="grid media-grid" style={{ gridTemplateColumns: "repeat(5,1fr)", gap: 16 }}>
           {shown.map((a) => (
             <div
               key={a.id}
@@ -1357,17 +1403,7 @@ export function MediaLibrary({ request, onUseAsset }) {
             </div>
           ))}
         </div>
-      ) : (
-        <div className="card">
-          <Empty
-            art="🖼️"
-            title="No media yet"
-            text="Upload images or videos to reuse them across posts."
-            action="Upload"
-            onAction={() => input.current?.click()}
-          />
-        </div>
-      )}
+      ) : null}
     </>
   );
 }

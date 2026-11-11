@@ -1,5 +1,14 @@
 // Shared studio widgets: channel marks, avatars, status badges, and small formatters.
 import React, { useEffect, useState } from "react";
+import {
+  BarChart3,
+  CalendarDays,
+  CheckCircle2,
+  FileText,
+  Image as ImageIcon,
+  Inbox,
+  Receipt,
+} from "lucide-react";
 import facebookGlyph from "../assets/logos/facebook-glyph.svg";
 import instagramGlyph from "../assets/logos/instagram-glyph.svg";
 import linkedinGlyph from "../assets/logos/linkedin-glyph.svg";
@@ -224,19 +233,21 @@ export function Ico({ d, children, style }) {
   );
 }
 
+// Status badges: neutral for anything still waiting (scheduled, queued, draft, pending),
+// green for done, amber for "needs a look soon", red only for failures.
 export function StatusBadge({ status, post }) {
   const s = status === "published" && post && !post.provider_post_id ? "unconfirmed" : status;
   const cls =
     {
       published: "b-success",
-      scheduled: "b-primary",
-      queued: "b-info",
-      publishing: "b-info",
+      scheduled: "",
+      queued: "",
+      publishing: "",
       failed: "b-error",
       draft: "",
       unconfirmed: "b-warning",
       archived: "",
-      pending: "b-warning",
+      pending: "",
       approved: "b-success",
       rejected: "b-error",
       changes_requested: "b-warning",
@@ -249,7 +260,7 @@ export function StatusBadge({ status, post }) {
       publishing: "Publishing",
       failed: "Failed",
       draft: "Draft",
-      unconfirmed: "Unconfirmed",
+      unconfirmed: "Not confirmed yet",
       archived: "Archived",
       pending: "Pending review",
       approved: "Approved",
@@ -259,12 +270,22 @@ export function StatusBadge({ status, post }) {
   return <span className={`badge ${cls}`}>{label}</span>;
 }
 
-export function Empty({ title, text, action, onAction, art = "📭" }) {
+// Older callers pass an emoji as `art`; show a calm line icon instead.
+const EMPTY_ICONS = {
+  "📊": BarChart3,
+  "🧾": Receipt,
+  "🖼️": ImageIcon,
+  "📝": FileText,
+  "✅": CheckCircle2,
+  "🗓️": CalendarDays,
+  "📭": Inbox,
+};
+
+export function Empty({ title, text, action, onAction, art = "📭", icon }) {
+  const EmptyIcon = icon || (typeof art === "string" ? EMPTY_ICONS[art] || Inbox : null);
   return (
     <div className="empty">
-      <div className="art">
-        <span style={{ fontSize: 40 }}>{art}</span>
-      </div>
+      <div className="art">{EmptyIcon ? <EmptyIcon size={24} aria-hidden="true" /> : art}</div>
       <h3>{title}</h3>
       {text && (
         <p className="sm muted" style={{ maxWidth: 380 }}>
@@ -274,9 +295,9 @@ export function Empty({ title, text, action, onAction, art = "📭" }) {
       {action && (
         <button
           type="button"
-          className="btn btn-primary"
+          className="btn btn-secondary"
           onClick={onAction}
-          style={{ marginTop: 6 }}
+          style={{ marginTop: 8 }}
         >
           {action}
         </button>

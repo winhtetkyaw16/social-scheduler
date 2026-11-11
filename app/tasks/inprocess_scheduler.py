@@ -165,11 +165,24 @@ async def scheduler_loop(stop: asyncio.Event) -> None:
         scheduler_mode(),
         interval,
     )
+    from app.tasks.evergreen import evergreen_poll_seconds, run_evergreen_once
+
+    evergreen_every = evergreen_poll_seconds()
+    next_evergreen = 0.0
+    loop = asyncio.get_running_loop()
     while not stop.is_set():
         try:
             await asyncio.to_thread(run_due_posts_once)
         except Exception:
             logger.exception("Background publish scheduler pass failed")
+        # Evergreen re-shares are only created here; publishing them is the normal
+        # due-post pass above (atomic claim), so a re-share can never go out twice.
+        if loop.time() >= next_evergreen:
+            next_evergreen = loop.time() + evergreen_every
+            try:
+                await asyncio.to_thread(run_evergreen_once)
+            except Exception:
+                logger.exception("Evergreen pass failed")
         try:
             await asyncio.wait_for(stop.wait(), timeout=interval)
         except asyncio.TimeoutError:

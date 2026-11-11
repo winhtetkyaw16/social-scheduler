@@ -33,6 +33,7 @@ def _add_column_if_missing(engine: Engine, table: str, column: str, ddl: str) ->
 
 def ensure_database_schema(engine: Engine) -> None:
     """Create missing tables and patch legacy schemas without requiring Alembic."""
+    had_decision_history = inspect(engine).has_table("approval_decisions")
     Base.metadata.create_all(bind=engine)
     for column, ddl in _USER_COLUMN_PATCHES.items():
         _add_column_if_missing(engine, "users", column, ddl)
@@ -44,3 +45,21 @@ def ensure_database_schema(engine: Engine) -> None:
     )
     _add_column_if_missing(engine, "connected_accounts", "needs_reconnect", bool_ddl)
     _add_column_if_missing(engine, "connected_accounts", "reconnect_reason", "TEXT")
+    if not had_decision_history:
+        _backfill_decision_history(engine)
+
+
+def _backfill_decision_history(engine: Engine) -> None:
+    """Fill a newly created approval_decisions table from existing approval rows."""
+    from sqlalchemy.orm import Session
+
+    from app.services.approval_history import backfill_from_workflows
+
+    try:
+        with Session(engine) as session:
+            added = backfill_from_workflows(session)
+        if added:
+            logger.info("Copied %s earlier approval decisions into history", added)
+    except Exception:
+        # History is a convenience; never block startup on it.
+        logger.exception("Could not copy earlier approval decisions into history")

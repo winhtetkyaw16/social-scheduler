@@ -3,6 +3,7 @@
 Importing this package registers every mapped class on the shared metadata.
 """
 
+from app.models.approval_decision import ApprovalDecisionRecord
 from app.models.base import Base
 from app.models.connected_account import ConnectedAccount, OAuthPickSession
 from app.models.execution_log import ExecutionLog
@@ -28,6 +29,7 @@ __all__ = [
     "PublishItem",
     "MediaAsset",
     "ApprovalWorkflow",
+    "ApprovalDecisionRecord",
     "PostInternalComment",
     "QueueSlot",
 ]

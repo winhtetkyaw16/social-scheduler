@@ -76,3 +76,49 @@ test("date parts split date (top line) and time (bottom line)", () => {
   });
   assert.deepEqual(upNextDateParts(undefined, now), { date: "No time set", time: "" });
 });
+
+test("selectUpNext mixes upcoming and recent failed posts, earliest first", async () => {
+  const { selectUpNext } = await import("./upNext.js");
+  const now = new Date(2026, 10, 11, 12, 0);
+  const posts = [
+    { id: "old-fail", status: "failed", scheduled_at: at(9, 20, 9) },
+    { id: "recent-fail", status: "failed", scheduled_at: at(10, 10, 16) },
+    { id: "later", status: "scheduled", scheduled_at: at(10, 12, 9) },
+    { id: "soon", status: "queued", scheduled_at: at(10, 11, 18) },
+    { id: "published", status: "published", scheduled_at: at(10, 11, 8) },
+    { id: "draft", status: "draft", scheduled_at: null },
+    { id: "yesterday", status: "scheduled", scheduled_at: at(10, 10, 8) },
+  ];
+  assert.deepEqual(
+    selectUpNext(posts, now).map((p) => p.id),
+    ["recent-fail", "soon", "later"],
+  );
+});
+
+test("selectUpNext keeps failures from crowding out upcoming posts", async () => {
+  const { selectUpNext } = await import("./upNext.js");
+  const now = new Date(2026, 10, 11, 12, 0);
+  const posts = [
+    ...Array.from({ length: 8 }, (_, i) => ({
+      id: `fail-${i}`,
+      status: "failed",
+      scheduled_at: at(10, 10, i + 1),
+    })),
+    { id: "next", status: "scheduled", scheduled_at: at(10, 11, 15) },
+  ];
+  const ids = selectUpNext(posts, now).map((p) => p.id);
+  assert.equal(ids.length, 3);
+  assert.equal(ids.filter((id) => id.startsWith("fail")).length, 2);
+  assert.equal(ids[ids.length - 1], "next");
+});
+
+test("selectUpNext shows only failures when nothing is upcoming", async () => {
+  const { selectUpNext } = await import("./upNext.js");
+  const now = new Date(2026, 10, 11, 12, 0);
+  const posts = Array.from({ length: 8 }, (_, i) => ({
+    id: `fail-${i}`,
+    status: "failed",
+    scheduled_at: at(10, 10, i + 1),
+  }));
+  assert.equal(selectUpNext(posts, now).length, 6);
+});

@@ -3,7 +3,18 @@
 from datetime import datetime, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Response,
+    UploadFile,
+    status,
+)
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
@@ -19,9 +30,13 @@ from app.models import (
 )
 from app.schemas.publish import (
     ApprovalDecision,
+    ApprovalHistoryRead,
+    BulkUploadResult,
     DraftActionResult,
     DraftQueueRequest,
     DraftScheduleRequest,
+    EvergreenPostRead,
+    EvergreenSettingsUpdate,
     InternalCommentCreate,
     InternalCommentRead,
     MediaAssetRead,
@@ -216,6 +231,35 @@ def list_approvals(
     )
 
 
+_HISTORY_FILTERS = {
+    "approved": ["approved"],
+    # The Rejected tab also lists drafts sent back for changes.
+    "rejected": ["rejected", "changes_requested"],
+    "changes_requested": ["changes_requested"],
+}
+
+
+@router.get("/approvals/history", response_model=list[ApprovalHistoryRead])
+def list_approval_history(
+    status_filter: str | None = Query(default=None, alias="status"),
+    limit: int = Query(default=100, ge=1, le=500),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Past decisions, newest first. ``status`` is approved, rejected, or changes_requested."""
+    from app.services.approval_history import list_history
+
+    decisions = None
+    if status_filter:
+        decisions = _HISTORY_FILTERS.get(status_filter.strip().lower())
+        if decisions is None:
+            raise HTTPException(
+                status_code=422,
+                detail="Choose approved, rejected, or changes_requested.",
+            )
+    return list_history(db, user.id, decisions, limit)
+
+
 @router.post("/approvals/{item_id}/decision", response_model=PublishItemRead)
 def decide_approval(
     item_id: UUID,
@@ -246,10 +290,14 @@ def decide_approval(
                 and scheduled_at <= now
             ):
                 due_ids.append(str(post.id))
+    decided_at = datetime.now(timezone.utc)
     item.approval.state = payload.decision
     item.approval.reviewer_id = user.id
     item.approval.comment = payload.comment
-    item.approval.decided_at = datetime.now(timezone.utc)
+    item.approval.decided_at = decided_at
+    from app.services.approval_history import record_decision
+
+    record_decision(db, item, user, payload.decision, payload.comment, decided_at)
     item.status = "approved" if payload.decision == "approved" else payload.decision
     db.commit()
     if due_ids:
@@ -409,3 +457,85 @@ def post_queue_allocate(
     return queue_slot_service.allocate_slots(
         db, user.id, payload.connected_account_ids, timezone_fallback=timezone or "UTC"
     )
+
+
+@router.get("/evergreen", response_model=list[EvergreenPostRead])
+def list_evergreen(
+    db: Session = Depends(get_db), user: User = Depends(get_current_user)
+):
+    """Published posts that can be re-shared, newest first, with their evergreen settings."""
+    from app.services.evergreen import describe
+
+    return describe(db, user.id)
+
+
+@router.put("/evergreen/{post_id}", response_model=EvergreenPostRead)
+def update_evergreen(
+    post_id: UUID,
+    payload: EvergreenSettingsUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Turn evergreen on or off for one post and set how often it may be re-shared."""
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+    from app.services.evergreen import describe, update_settings
+
+    post = posts_service.get_owned_post(db, post_id, user.id)
+    try:
+        ZoneInfo(payload.timezone)
+        tz_name = payload.timezone
+    except (ZoneInfoNotFoundError, ValueError):
+        tz_name = "UTC"
+    update_settings(db, post, payload.enabled, payload.interval_days, tz_name)
+    row = next((item for item in describe(db, user.id) if item["post_id"] == post.id), None)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Post not found")
+    return row
+
+
+@router.get("/bulk/template", include_in_schema=True)
+def bulk_template(
+    db: Session = Depends(get_db), user: User = Depends(get_current_user)
+) -> Response:
+    """CSV template: the header row and one example row for one of the user's channels."""
+    from app.services.bulk_csv import template_csv
+
+    accounts = list(
+        db.scalars(
+            select(ConnectedAccount)
+            .where(
+                ConnectedAccount.user_id == user.id,
+                ConnectedAccount.is_active.is_(True),
+            )
+            .order_by(ConnectedAccount.created_at)
+        ).all()
+    )
+    example = "facebook"
+    if accounts:
+        first = accounts[0]
+        same = [a for a in accounts if a.platform == first.platform]
+        example = first.platform if len(same) == 1 else first.account_name
+    return Response(
+        content=template_csv(example),
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": 'attachment; filename="socialcastly-bulk-template.csv"'
+        },
+    )
+
+
+@router.post("/bulk", response_model=BulkUploadResult)
+async def bulk_upload(
+    file: UploadFile = File(...),
+    timezone_name: str = Form(default="UTC", alias="timezone"),
+    dry_run: bool = Form(default=False),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Schedule posts from a CSV. Every row is checked first; one bad row means none are created."""
+    from app.services.bulk_csv import MAX_BYTES, import_csv
+
+    data = await file.read(MAX_BYTES + 1)
+    result = import_csv(db, user.id, data, timezone_name, dry_run=dry_run)
+    return result.as_dict(dry_run)

@@ -196,6 +196,11 @@ SCHEDULER_POLL_SECONDS = int(os.getenv("SCHEDULER_POLL_SECONDS", "30"))
 TOKEN_REFRESH_INTERVAL_SECONDS = int(
     os.getenv("TOKEN_REFRESH_INTERVAL_SECONDS", "3600")
 )
+# How often to pull comments and insights, and how far back published posts are visited.
+ENGAGEMENT_SYNC_INTERVAL_SECONDS = int(
+    os.getenv("ENGAGEMENT_SYNC_INTERVAL_SECONDS", "900")
+)
+ENGAGEMENT_SYNC_LOOKBACK_DAYS = int(os.getenv("ENGAGEMENT_SYNC_LOOKBACK_DAYS", "30"))
 # CORS_ALLOWED_ORIGINS wins. ALLOWED_ORIGINS remains the fallback name.
 CORS_ALLOWED_ORIGINS = resolve_cors_origins(
     os.getenv("CORS_ALLOWED_ORIGINS"),

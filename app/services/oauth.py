@@ -42,6 +42,16 @@ from app.integrations.platform_catalog import (
     platform_needs_destination_pick,
 )
 from app.services.accounts import create_pick_session, upsert_oauth_account
+from app.services.oauth_scopes import (
+    FACEBOOK_SCOPES,
+    INSTAGRAM_SCOPES,
+    LINKEDIN_SCOPES,
+    PINTEREST_SCOPES,
+    THREADS_SCOPES,
+    X_SCOPES,
+    YOUTUBE_SCOPES,
+    tiktok_scopes,
+)
 
 _STATE_TTL = timedelta(minutes=15)
 
@@ -97,13 +107,7 @@ def _providers() -> dict[str, _ProviderOAuth]:
             client_id=x_id,
             client_secret=x_secret,
             redirect_uri=config.prefer_https(config.X_REDIRECT_URI),
-            scopes=(
-                "tweet.read",
-                "tweet.write",
-                "users.read",
-                "media.write",
-                "offline.access",
-            ),
+            scopes=X_SCOPES,
             use_pkce=True,
             missing_env=tuple(
                 name
@@ -123,7 +127,7 @@ def _providers() -> dict[str, _ProviderOAuth]:
             client_secret=linkedin_secret,
             redirect_uri=config.prefer_https(config.LINKEDIN_REDIRECT_URI),
             # Organization scopes are optional: keep personal connect working without Marketing Developer Platform approval.
-            scopes=("openid", "profile", "email", "w_member_social"),
+            scopes=LINKEDIN_SCOPES,
             use_pkce=False,
             missing_env=tuple(
                 name
@@ -142,15 +146,7 @@ def _providers() -> dict[str, _ProviderOAuth]:
             client_id=instagram_id,
             client_secret=instagram_secret,
             redirect_uri=config.prefer_https(config.INSTAGRAM_REDIRECT_URI),
-            scopes=(
-                "instagram_basic",
-                "instagram_content_publish",
-                "instagram_manage_comments",
-                "instagram_manage_messages",
-                "pages_show_list",
-                "pages_read_engagement",
-                "business_management",
-            ),
+            scopes=INSTAGRAM_SCOPES,
             use_pkce=False,
             missing_env=tuple(
                 name
@@ -168,15 +164,7 @@ def _providers() -> dict[str, _ProviderOAuth]:
             client_id=facebook_id,
             client_secret=facebook_secret,
             redirect_uri=config.prefer_https(config.FACEBOOK_REDIRECT_URI),
-            scopes=(
-                "pages_show_list",
-                "pages_manage_posts",
-                "pages_read_engagement",
-                # POST /{post-id}/comments as the Page (first comment). pages_read_user_content is only
-                # needed to read/delete other people's comments, so it is not requested.
-                "pages_manage_engagement",
-                "business_management",
-            ),
+            scopes=FACEBOOK_SCOPES,
             use_pkce=False,
             missing_env=tuple(
                 name
@@ -194,11 +182,7 @@ def _providers() -> dict[str, _ProviderOAuth]:
             client_id=youtube_id,
             client_secret=youtube_secret,
             redirect_uri=config.prefer_https(config.YOUTUBE_REDIRECT_URI),
-            scopes=(
-                "https://www.googleapis.com/auth/youtube.force-ssl",
-                "https://www.googleapis.com/auth/youtube.upload",
-                "https://www.googleapis.com/auth/youtube.readonly",
-            ),
+            scopes=YOUTUBE_SCOPES,
             use_pkce=True,
             missing_env=tuple(
                 name
@@ -216,12 +200,7 @@ def _providers() -> dict[str, _ProviderOAuth]:
             client_id=tiktok_key,
             client_secret=tiktok_secret,
             redirect_uri=tiktok_redirect,
-            scopes=(
-                "user.info.basic",
-                "user.info.profile",
-                "video.publish",
-                "video.upload",
-            ),
+            scopes=tiktok_scopes(),
             # Hex SHA-256 PKCE is applied in start_oauth; RFC 7636 base64url would be rejected.
             use_pkce=False,
             missing_env=tuple(
@@ -241,13 +220,7 @@ def _providers() -> dict[str, _ProviderOAuth]:
             client_id=pinterest_id,
             client_secret=pinterest_secret,
             redirect_uri=config.prefer_https(config.PINTEREST_REDIRECT_URI),
-            scopes=(
-                "boards:read",
-                "boards:write",
-                "pins:read",
-                "pins:write",
-                "user_accounts:read",
-            ),
+            scopes=PINTEREST_SCOPES,
             use_pkce=False,
             missing_env=tuple(
                 name
@@ -266,11 +239,7 @@ def _providers() -> dict[str, _ProviderOAuth]:
             client_id=threads_id,
             client_secret=threads_secret,
             redirect_uri=config.prefer_https(config.THREADS_REDIRECT_URI),
-            scopes=(
-                "threads_basic",
-                "threads_content_publish",
-                "threads_manage_replies",
-            ),
+            scopes=THREADS_SCOPES,
             use_pkce=False,
             missing_env=tuple(
                 name

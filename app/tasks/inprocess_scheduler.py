@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 
 STALE_PUBLISHING_SECONDS = 15 * 60
 _last_token_refresh_at: datetime | None = None
+_last_engagement_sync_at: datetime | None = None
 
 
 def scheduler_mode() -> str:
@@ -122,6 +123,33 @@ def maybe_refresh_expiring_tokens(now: datetime | None = None) -> int:
     return refreshed
 
 
+def maybe_sync_engagement(now: datetime | None = None) -> int:
+    """Run the comment and insight sweep at the same interval as Celery beat."""
+    global _last_engagement_sync_at
+    from app.core.config import ENGAGEMENT_SYNC_INTERVAL_SECONDS
+    from app.tasks.sync_engagement import sweep_engagement
+
+    current = now or datetime.now(timezone.utc)
+    interval = timedelta(seconds=ENGAGEMENT_SYNC_INTERVAL_SECONDS)
+    if (
+        _last_engagement_sync_at is not None
+        and current - _last_engagement_sync_at < interval
+    ):
+        return 0
+    _last_engagement_sync_at = current
+    try:
+        counts = sweep_engagement()
+    except Exception as exc:
+        logger.info(
+            "Background engagement sync outcome=error error_type=%s",
+            type(exc).__name__,
+        )
+        return 0
+    if not isinstance(counts, dict):
+        return 0
+    return int(counts.get("posts_synced", 0))
+
+
 def run_due_posts_once(use_celery: bool | None = None) -> int:
     """Publish (or enqueue) every due post once. Returns how many were handled."""
     from app.tasks.publish_post import publish_post_task
@@ -135,6 +163,7 @@ def run_due_posts_once(use_celery: bool | None = None) -> int:
         return int(dispatch_due_posts.run())
 
     maybe_refresh_expiring_tokens()
+    maybe_sync_engagement()
     db = SessionLocal()
     try:
         now = datetime.now(timezone.utc)

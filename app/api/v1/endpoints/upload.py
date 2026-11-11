@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_db
+from app.integrations.media_urls import hosted_media_url
 from app.models import MediaAsset, User
 from app.schemas.publish import MediaUploadResponse
 
@@ -98,7 +99,7 @@ async def upload_media(
     finally:
         await file.close()
 
-    public_url = f"/static/uploads/{filename}"
+    public_url = hosted_media_url(filename)
     asset = MediaAsset(
         owner_id=current_user.id,
         filename=Path(file.filename or filename).name,

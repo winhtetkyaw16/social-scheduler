@@ -1,12 +1,9 @@
 """Instagram API publisher adapter."""
 
-import ipaddress
 import logging
 import os
 import time
-from urllib.parse import urlparse, urlunparse
 
-from app.core.config import PUBLIC_BASE_URL
 from app.core.exceptions import ProviderConfigurationError
 from app.integrations.base import (
     ProviderPublishResult,
@@ -14,56 +11,19 @@ from app.integrations.base import (
     provider_delete,
     provider_request,
 )
-from app.integrations.media_urls import guess_media_kind
+from app.integrations.media_urls import guess_media_kind, public_media_url
 from app.services.post_formats import POST, REEL, STORY
 
 logger = logging.getLogger(__name__)
 
-_LOCAL_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0", "::1", "host.docker.internal"}
-
-
-def _host_is_public(hostname: str | None) -> bool:
-    if not hostname:
-        return False
-    host = hostname.strip().lower().rstrip(".")
-    if host in _LOCAL_HOSTS or host.endswith(".local") or host.endswith(".localhost"):
-        return False
-    try:
-        address = ipaddress.ip_address(host)
-    except ValueError:
-        return True
-    return not (
-        address.is_private
-        or address.is_loopback
-        or address.is_link_local
-        or address.is_reserved
-        or address.is_multicast
-        or address.is_unspecified
-    )
-
 
 def instagram_image_url(url: str) -> str:
-    """Return an image URL Instagram's servers can fetch, or explain why they cannot.
+    """Return a media URL Instagram's servers can fetch.
 
-    Relative upload paths and URLs on this app's ``/static/uploads`` path are
-    rewritten onto ``PUBLIC_BASE_URL`` when that origin is publicly reachable.
+    Relative ``/media`` and ``/static/uploads`` paths are rewritten by
+    ``public_media_url`` onto ``PUBLIC_BASE_URL``.
     """
-    candidate = url.strip()
-    public_base = (os.getenv("PUBLIC_BASE_URL") or PUBLIC_BASE_URL or "").rstrip("/")
-    if candidate.startswith("/") and public_base:
-        candidate = f"{public_base}{candidate}"
-    parsed = urlparse(candidate)
-    if parsed.path.startswith("/static/uploads/") and public_base:
-        base = urlparse(public_base)
-        if _host_is_public(base.hostname):
-            parsed = parsed._replace(scheme=base.scheme, netloc=base.netloc)
-            candidate = urlunparse(parsed)
-    if parsed.scheme not in {"http", "https"} or not _host_is_public(parsed.hostname):
-        raise ProviderConfigurationError(
-            "Instagram requires a publicly fetchable media URL (photos and videos). Set PUBLIC_BASE_URL to a public "
-            "https origin, or attach an image that is already on a public URL."
-        )
-    return candidate
+    return public_media_url(url, platform="Instagram")
 
 
 # Container polling (Meta: video/carousel containers must reach FINISHED before media_publish).

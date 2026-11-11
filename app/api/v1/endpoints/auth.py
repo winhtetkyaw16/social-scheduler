@@ -2,11 +2,12 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
+from app.core.cookies import set_refresh_cookie
 from app.core.security import refresh_token_subject
 from app.models import User
 from app.schemas.auth import RefreshRequest, Token, UserCreate, UserLogin, UserOut
@@ -41,23 +42,45 @@ def _authenticate(email: str, password: str, db: Session) -> Token:
     return Token(**issue_token_pair(user))
 
 
+def _with_refresh_cookie(token: Token, response: Response, request: Request) -> Token:
+    """Attach the refresh token as an HttpOnly cookie. Secure when the site is https."""
+    set_refresh_cookie(response, token.refresh_token, request)
+    return token
+
+
 @router.post("/login", response_model=Token)
-def login(payload: UserLogin, db: Session = Depends(get_db)) -> Token:
+def login(
+    payload: UserLogin,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+) -> Token:
     """Verify credentials and return a signed bearer access token."""
-    return _authenticate(str(payload.email), payload.password, db)
+    return _with_refresh_cookie(
+        _authenticate(str(payload.email), payload.password, db), response, request
+    )
 
 
 @router.post("/token", response_model=Token, include_in_schema=False)
 def oauth_token(
+    request: Request,
+    response: Response,
     form: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
 ) -> Token:
     """Keep the OAuth2 password-form endpoint used by OAuth2PasswordBearer docs."""
-    return _authenticate(form.username, form.password, db)
+    return _with_refresh_cookie(
+        _authenticate(form.username, form.password, db), response, request
+    )
 
 
 @router.post("/refresh", response_model=Token)
-def refresh(payload: RefreshRequest, db: Session = Depends(get_db)) -> Token:
+def refresh(
+    payload: RefreshRequest,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+) -> Token:
     """Exchange a refresh token for a new access token and refresh token."""
     try:
         user_id = UUID(refresh_token_subject(payload.refresh_token))
@@ -74,4 +97,4 @@ def refresh(payload: RefreshRequest, db: Session = Depends(get_db)) -> Token:
             detail="Invalid refresh token",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    return Token(**issue_token_pair(user))
+    return _with_refresh_cookie(Token(**issue_token_pair(user)), response, request)

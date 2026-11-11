@@ -120,12 +120,11 @@ import {
   States as ScStates,
 } from "./sc/Pages.jsx";
 import { Avatar as ScAvatar, Ch as ScCh } from "./sc/ui.jsx";
+import { resolveApiBase, resolveApiOrigin } from "./apiBase.js";
+import { showsAppShell } from "./sessionGate.js";
 
-const API_BASE = (import.meta.env.VITE_API_BASE || `${window.location.origin}/api/v1`).replace(
-  /\/$/,
-  "",
-);
-const API_ORIGIN = API_BASE.replace(/\/api\/v1\/?$/, "");
+const API_BASE = resolveApiBase(import.meta.env);
+const API_ORIGIN = resolveApiOrigin(API_BASE, window.location.origin);
 const TOKEN_KEY = "social_studio_access_token";
 const REFRESH_KEY = "social_studio_refresh_token";
 const OAUTH_RETURN_TAB_KEY = "social_studio_oauth_return_tab";
@@ -762,11 +761,21 @@ function AuthScreen({
                   />
                   <span>
                     I agree to the{" "}
-                    <a href="#terms" style={{ color: "var(--primary)", fontWeight: 600 }}>
+                    <a
+                      href="/terms"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ color: "var(--primary)", fontWeight: 600 }}
+                    >
                       Terms of Service
                     </a>{" "}
                     and{" "}
-                    <a href="#privacy" style={{ color: "var(--primary)", fontWeight: 600 }}>
+                    <a
+                      href="/privacy"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ color: "var(--primary)", fontWeight: 600 }}
+                    >
                       Privacy Policy
                     </a>
                     .
@@ -3144,8 +3153,9 @@ function App() {
     window.scrollTo(0, 0);
   };
 
-  if ((!isLoggedIn || !token) && !authView) return <Landing dark={dark} onAuth={openAuth} />;
-  if (!isLoggedIn || !token)
+  if (!showsAppShell(isLoggedIn, token) && !authView)
+    return <Landing dark={dark} onAuth={openAuth} />;
+  if (!showsAppShell(isLoggedIn, token))
     return (
       <>
         <AuthScreen

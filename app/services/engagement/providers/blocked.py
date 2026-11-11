@@ -13,17 +13,11 @@ from app.services.engagement.base import (
 )
 from app.services.engagement.http import request_json
 from app.services.engagement.parsing import as_int
+from app.services.engagement.copy import comments_unavailable, insights_unavailable
 from app.services.oauth_scopes import TIKTOK_VIDEO_LIST_SCOPE, tiktok_video_list_enabled
 
-LINKEDIN_REASON = (
-    "LinkedIn's Community Management API isn't approved for this app. "
-    "Comments and post analytics need that product, and member comment read is restricted."
-)
-TIKTOK_COMMENT_REASON = "TikTok has no comment-text API for posting apps."
-TIKTOK_INSIGHTS_OFF = (
-    "TikTok video counts need video.list, which is not enabled in the TikTok console. "
-    "Leave TIKTOK_ENABLE_VIDEO_LIST off until that scope is approved."
-)
+# Product copy only. The technical reason (Community Management is not approved,
+# and TikTok has no comment-text API for posting apps) stays in this comment and the PR.
 
 QUERY_URL = "https://open.tiktokapis.com/v2/video/query/"
 _FIELDS = "id,like_count,comment_count,share_count,view_count"
@@ -37,9 +31,9 @@ class LinkedInEngagement(EngagementProvider):
     def __init__(self) -> None:
         self.capabilities = EngagementCapabilities(
             reasons={
-                CAPABILITY_COMMENTS_READ: LINKEDIN_REASON,
-                CAPABILITY_COMMENT_REPLY: LINKEDIN_REASON,
-                CAPABILITY_INSIGHTS: LINKEDIN_REASON,
+                CAPABILITY_COMMENTS_READ: comments_unavailable("linkedin"),
+                CAPABILITY_COMMENT_REPLY: comments_unavailable("linkedin"),
+                CAPABILITY_INSIGHTS: insights_unavailable("linkedin"),
             }
         )
 
@@ -52,22 +46,19 @@ class TikTokEngagement(EngagementProvider):
     def __init__(self) -> None:
         enabled = tiktok_video_list_enabled()
         reasons = {
-            CAPABILITY_COMMENTS_READ: TIKTOK_COMMENT_REASON,
-            CAPABILITY_COMMENT_REPLY: TIKTOK_COMMENT_REASON,
+            CAPABILITY_COMMENTS_READ: comments_unavailable("tiktok"),
+            CAPABILITY_COMMENT_REPLY: comments_unavailable("tiktok"),
         }
         required: dict[str, tuple[str, ...]] = {}
         if enabled:
             required[CAPABILITY_INSIGHTS] = (TIKTOK_VIDEO_LIST_SCOPE,)
         else:
-            reasons[CAPABILITY_INSIGHTS] = TIKTOK_INSIGHTS_OFF
+            # video.list is not enabled in the TikTok console. The flag stays off.
+            reasons[CAPABILITY_INSIGHTS] = insights_unavailable("tiktok")
         self.capabilities = EngagementCapabilities(
             supports_insights=enabled,
             required_scopes=required,
             reasons=reasons,
-            notes=(
-                "video.list is requested only when TIKTOK_ENABLE_VIDEO_LIST is true. "
-                "That flag is off by default so connect keeps working."
-            ),
         )
 
     def fetch_insights(self, account, post) -> ProviderInsights:

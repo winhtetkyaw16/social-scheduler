@@ -63,10 +63,6 @@ class XEngagement(EngagementProvider):
             CAPABILITY_INSIGHTS: ("tweet.read",),
             CAPABILITY_HIDE_REPLY: ("tweet.moderate.write",),
         },
-        notes=(
-            "Reads, replies, and hides need X API credits. "
-            "A 402 or credits error is reported as credits needed."
-        ),
     )
 
     def fetch_comments(self, account, post, since=None) -> list[ProviderComment]:

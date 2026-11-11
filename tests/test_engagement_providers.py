@@ -315,7 +315,7 @@ def test_threads_replies_and_insights(monkeypatch):
     assert insights.likes == 2
 
 
-def test_x_search_reply_metrics_hide_and_402(monkeypatch, client, auth_headers):
+def test_x_search_reply_metrics_hide_and_402(monkeypatch, client, auth_headers, caplog):
     script = _Script(
         [
             _ok(
@@ -388,12 +388,14 @@ def test_x_search_reply_metrics_hide_and_402(monkeypatch, client, auth_headers):
         )
 
     monkeypatch.setattr("app.services.engagement.http.httpx.request", credits)
+    caplog.set_level("INFO", logger="app.services.engagement.http")
     try:
         provider.fetch_comments(account, _post("root-tweet"))
     except CreditsRequired as exc:
-        assert "credits" in exc.message.lower()
+        assert exc.message == "Comments from X aren't available in SocialCastly yet"
+        assert any("credit" in record.getMessage().lower() for record in caplog.records)
     else:
-        raise AssertionError("402 should be a credits error")
+        raise AssertionError("402 should be a plain unavailable message")
 
     headers, _ = auth_headers
     from tests.test_engagement import _connect, _published, _user_id
@@ -403,7 +405,8 @@ def test_x_search_reply_metrics_hide_and_402(monkeypatch, client, auth_headers):
     post_id = _published(user_id, account_id)
     response = client.post(f"/api/v1/posts/{post_id}/engagement/sync", headers=headers)
     assert response.status_code == 402, response.text
-    assert "credits" in response.json()["detail"].lower()
+    assert response.json()["detail"] == "Comments from X aren't available in SocialCastly yet"
+    assert response.json()["code"] == "x_unavailable"
     db = SessionLocal()
     try:
         stored = db.get(ConnectedAccount, account_id)
@@ -572,3 +575,69 @@ def test_expired_token_sets_needs_reconnect(monkeypatch, client, auth_headers):
         assert stored.needs_reconnect is True
     finally:
         db.close()
+
+
+def test_user_facing_copy_avoids_internal_words(client, auth_headers):
+    """Product sentences never say credit, API, permission, or scope."""
+    import re
+    from pathlib import Path
+
+    from app.services.engagement.copy import (
+        comments_unavailable,
+        hide_unavailable,
+        insights_unavailable,
+        reconnect_for_comments,
+    )
+    from app.services.engagement.registry import get_engagement_provider, supported_networks
+    from tests.test_engagement import _add_comment, _connect, _published, _user_id
+
+    banned = re.compile(r"credit|api|permission|scope", re.I)
+    texts: list[str] = []
+    for name in supported_networks():
+        caps = get_engagement_provider(name).capabilities
+        texts.extend(
+            [
+                comments_unavailable(name),
+                insights_unavailable(name),
+                hide_unavailable(name),
+                reconnect_for_comments(name),
+                caps.notes or "",
+            ]
+        )
+        texts.extend(str(value) for value in (caps.reasons or {}).values())
+
+    headers, _ = auth_headers
+    user_id = _user_id(headers)
+    matrix = client.get("/api/v1/engagement/capabilities", headers=headers)
+    assert matrix.status_code == 200, matrix.text
+    body = matrix.json()
+    for network in body["networks"]:
+        texts.append(network["label"])
+        texts.append(network.get("notes") or "")
+        texts.extend(network.get("reasons", {}).values())
+    for account in body["accounts"]:
+        texts.append(account.get("message") or "")
+        texts.append(account.get("reconnect_reason") or "")
+
+    linkedin_id = _connect(client, headers, "linkedin")
+    linkedin_post = _published(user_id, linkedin_id)
+    linkedin_comment = _add_comment(
+        linkedin_post, linkedin_id, text="Hi", network="linkedin", minutes_ago=1
+    )
+    blocked = client.post(
+        f"/api/v1/comments/{linkedin_comment}/reply",
+        headers=headers,
+        json={"text": "Hello"},
+    )
+    texts.append(blocked.json()["detail"])
+    assert blocked.json()["detail"] == comments_unavailable("linkedin")
+
+    client_source = Path("frontend/src/api/engagement.js").read_text()
+    texts.append(client_source)
+
+    for text in texts:
+        assert not banned.search(text), text
+    assert comments_unavailable("x") == "Comments from X aren't available in SocialCastly yet"
+    assert insights_unavailable("tiktok") == (
+        "Insights from TikTok aren't available in SocialCastly yet"
+    )

@@ -27,6 +27,7 @@ from app.core.logging import configure_logging
 from app.db.bootstrap import ensure_database_schema
 from app.db.session import engine
 from app.integrations.media_urls import hosted_media_filename
+from app.services.engagement.base import CreditsRequired
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 FRONTEND_ROOT = PROJECT_ROOT / "frontend"
@@ -179,6 +180,15 @@ def serve_frontend_paths(full_path: str) -> FileResponse:
     ):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
     return _frontend_index()
+
+
+@app.exception_handler(CreditsRequired)
+async def handle_x_unavailable(_request: Request, exc: CreditsRequired) -> JSONResponse:
+    """Plain sentence for the product. The provider's credits text stays in the log."""
+    return JSONResponse(
+        status_code=402,
+        content={"detail": exc.message, "code": "x_unavailable"},
+    )
 
 
 @app.exception_handler(SQLAlchemyError)

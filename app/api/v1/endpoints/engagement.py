@@ -32,6 +32,12 @@ from app.services.engagement.base import (
     ProviderAuthError,
     ReconnectRequired,
 )
+from app.services.engagement.copy import (
+    comments_unavailable,
+    hide_unavailable,
+    insights_unavailable,
+    reconnect_for_comments,
+)
 from app.services.engagement.http import auth_message
 from app.services.engagement.inbox import (
     capability_matrix,
@@ -44,19 +50,22 @@ from app.services.engagement.inbox import (
 )
 from app.services.engagement.sync import store_own_reply, sync_one_post
 from app.services.engagement.tokens import prepare_account
-from app.services.error_messages import network_name
 from app.services.posts import get_owned_post
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-def _unsupported(provider, capability: str, action: str) -> HTTPException:
-    name = network_name(provider.network)
-    detail = f"{name} does not support {action} yet."
+def _unsupported(provider, capability: str) -> HTTPException:
     reason = (provider.capabilities.reasons or {}).get(capability)
     if reason:
-        detail = f"{detail} {reason}"
+        detail = reason
+    elif capability == "insights":
+        detail = insights_unavailable(provider.network)
+    elif capability == "hide_reply":
+        detail = hide_unavailable(provider.network)
+    else:
+        detail = comments_unavailable(provider.network)
     return HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail=detail)
 
 
@@ -216,15 +225,15 @@ def reply_to_comment(
     account = comment.social_account or post.connected_account
     provider = registry.get_engagement_provider(comment.network or getattr(account, "platform", ""))
     if not provider.capabilities.supports_comment_reply:
-        raise _unsupported(provider, "comment_reply", "replying to comments")
+        raise _unsupported(provider, "comment_reply")
     try:
         prepare_account(db, account)
         result = provider.reply_to_comment(account, comment, payload.text.strip())
         child = store_own_reply(db, comment, account, post, payload.text.strip(), result)
     except NotSupported:
-        raise _unsupported(provider, "comment_reply", "replying to comments") from None
-    except CreditsRequired as exc:
-        raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail=exc.message) from None
+        raise _unsupported(provider, "comment_reply") from None
+    except CreditsRequired:
+        raise
     except ReconnectRequired as exc:
         _remember_auth_failure(db, account, exc)
         detail = exc.message if not isinstance(exc, ProviderAuthError) else auth_message(account, exc.kind)
@@ -262,7 +271,7 @@ def hide_comment(
     account = comment.social_account or post.connected_account
     provider = registry.get_engagement_provider(comment.network or getattr(account, "platform", ""))
     if not provider.capabilities.supports_hide_reply:
-        raise _unsupported(provider, "hide_reply", "hiding replies")
+        raise _unsupported(provider, "hide_reply")
     missing = [
         scope
         for scope in provider.capabilities.scopes_for("hide_reply")
@@ -271,15 +280,15 @@ def hide_comment(
     if missing:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Reconnect needed for new permissions",
+            detail=reconnect_for_comments(getattr(account, "platform", None)),
         )
     try:
         prepare_account(db, account)
         provider.hide_reply(account, comment, payload.hidden)
     except NotSupported:
-        raise _unsupported(provider, "hide_reply", "hiding replies") from None
-    except CreditsRequired as exc:
-        raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail=exc.message) from None
+        raise _unsupported(provider, "hide_reply") from None
+    except CreditsRequired:
+        raise
     except ReconnectRequired as exc:
         _remember_auth_failure(db, account, exc)
         detail = exc.message if not isinstance(exc, ProviderAuthError) else auth_message(account, exc.kind)
@@ -342,8 +351,8 @@ def sync_post_engagement(
         )
     try:
         return sync_one_post(db, post)
-    except CreditsRequired as exc:
-        raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail=exc.message) from None
+    except CreditsRequired:
+        raise
     except ReconnectRequired as exc:
         account = post.connected_account
         _remember_auth_failure(db, account, exc)

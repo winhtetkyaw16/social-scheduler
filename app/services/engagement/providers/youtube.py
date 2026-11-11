@@ -76,10 +76,6 @@ class YouTubeEngagement(EngagementProvider):
             CAPABILITY_INSIGHTS: (YOUTUBE_ANALYTICS, YOUTUBE_FORCE_SSL),
         },
         insights_fallback_scopes=(YOUTUBE_FORCE_SSL, YOUTUBE_READONLY),
-        notes=(
-            "Insights use YouTube Analytics when yt-analytics.readonly was granted. "
-            "Otherwise they use Data API video statistics."
-        ),
     )
 
     def fetch_comments(self, account, post, since=None) -> list[ProviderComment]:

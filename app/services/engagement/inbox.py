@@ -21,11 +21,11 @@ from app.services.engagement.base import (
 )
 from app.services.engagement.parsing import granted_scopes
 from app.services.oauth_scopes import YOUTUBE_ANALYTICS
+from app.services.engagement.copy import reconnect_for_comments
 from app.services.engagement.tokens import reconnect_message
 from app.services.error_messages import network_name
 
 INBOX_STATUSES = ("unread", "unreplied", "replied", "all")
-PERMISSIONS_MESSAGE = "Reconnect needed for new permissions"
 
 
 def _count(db: Session, stmt) -> int:
@@ -329,7 +329,7 @@ def capability_matrix(db: Session, user_id: UUID) -> dict:
         if needs_reconnect:
             message = reconnect_message(account)
         elif reconnect_for_permissions:
-            message = PERMISSIONS_MESSAGE
+            message = reconnect_for_comments(account.platform)
         else:
             message = None
         account_rows.append(

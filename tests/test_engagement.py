@@ -353,9 +353,19 @@ def test_registry_capability_matrix():
             caps.supports_hide_reply,
         ) == flags, name
     linkedin = get_engagement_provider("linkedin").capabilities
-    assert "Community Management" in linkedin.reasons["comments_read"]
+    assert linkedin.reasons["comments_read"] == (
+        "Comments from LinkedIn aren't available in SocialCastly yet"
+    )
+    assert linkedin.reasons["insights"] == (
+        "Insights from LinkedIn aren't available in SocialCastly yet"
+    )
     tiktok = get_engagement_provider("tiktok").capabilities
-    assert "comment-text" in tiktok.reasons["comments_read"]
+    assert tiktok.reasons["comments_read"] == (
+        "Comments from TikTok aren't available in SocialCastly yet"
+    )
+    assert tiktok.reasons["insights"] == (
+        "Insights from TikTok aren't available in SocialCastly yet"
+    )
     assert get_engagement_provider("Twitter").network == "x"
 
 
@@ -802,7 +812,9 @@ def test_reply_is_gated_then_stores_our_reply(client, auth_headers, monkeypatch)
         json={"text": "On it"},
     )
     assert blocked.status_code == 501, blocked.text
-    assert "Community Management" in blocked.json()["detail"]
+    assert blocked.json()["detail"] == (
+        "Comments from LinkedIn aren't available in SocialCastly yet"
+    )
 
     provider = FakeProvider("facebook")
     _install(monkeypatch, {"facebook": provider})
@@ -901,15 +913,19 @@ def test_insights_and_manual_sync(client, auth_headers, monkeypatch):
     by_network = {row["network"]: row for row in matrix["networks"]}
     assert set(by_network) == set(supported_networks())
     assert by_network["linkedin"]["supports_comments_read"] is False
-    assert "Community Management" in by_network["linkedin"]["reasons"]["comments_read"]
-    assert "comment-text" in by_network["tiktok"]["reasons"]["comments_read"]
+    assert by_network["linkedin"]["reasons"]["comments_read"] == (
+        "Comments from LinkedIn aren't available in SocialCastly yet"
+    )
+    assert by_network["tiktok"]["reasons"]["comments_read"] == (
+        "Comments from TikTok aren't available in SocialCastly yet"
+    )
     facebook = next(row for row in matrix["accounts"] if row["account_id"] == str(account_id))
     assert facebook["supports_comment_reply"] is True
     assert facebook["can_reply"] is True
     assert facebook["can_read_comments"] is False
     assert facebook["can_read_insights"] is False
     assert facebook["reconnect_for_permissions"] is True
-    assert facebook["message"] == "Reconnect needed for new permissions"
+    assert facebook["message"] == "Reconnect your Facebook account to see comments and insights"
     assert "pages_read_engagement" in facebook["missing_scopes"]["comments_read"]
 
 

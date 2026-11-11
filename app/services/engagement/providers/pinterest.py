@@ -13,12 +13,11 @@ from app.services.engagement.base import (
     EngagementProvider,
     ProviderInsights,
 )
+from app.services.engagement.copy import comments_unavailable
 from app.services.engagement.http import request_json
 from app.services.engagement.parsing import as_int
 
-_COMMENT_REASON = (
-    "Pinterest API v5 has no Pin comments endpoint. Analytics can return comment counts only."
-)
+# v5 has no comments endpoint. Analytics return counts only.
 _METRICS = (
     "IMPRESSION",
     "OUTBOUND_CLICK",
@@ -55,10 +54,9 @@ class PinterestEngagement(EngagementProvider):
             CAPABILITY_INSIGHTS: ("pins:read", "boards:read"),
         },
         reasons={
-            CAPABILITY_COMMENTS_READ: _COMMENT_REASON,
-            CAPABILITY_COMMENT_REPLY: _COMMENT_REASON,
+            CAPABILITY_COMMENTS_READ: comments_unavailable("pinterest"),
+            CAPABILITY_COMMENT_REPLY: comments_unavailable("pinterest"),
         },
-        notes="Uses the existing pins:read and boards:read scopes. No new Pinterest scope.",
     )
 
     def fetch_insights(self, account, post) -> ProviderInsights:

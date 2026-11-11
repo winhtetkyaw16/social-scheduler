@@ -14,7 +14,7 @@ import httpx
 
 from app.integrations.base import ProviderHTTPError, provider_error_summary
 from app.services.engagement.base import CreditsRequired, ProviderAuthError
-from app.services.error_messages import network_name
+from app.services.engagement.copy import comments_unavailable, reconnect_for_comments
 from app.services.token_refresh import reconnect_copy
 
 logger = logging.getLogger(__name__)
@@ -48,8 +48,7 @@ def auth_message(account, kind: str) -> str:
     """Plain-language reconnect copy. No provider error body."""
     platform = getattr(account, "platform", None)
     if kind == "permission":
-        name = network_name(platform)
-        return f"Reconnect {name} and allow the new comment and insights permissions."
+        return reconnect_for_comments(platform)
     return reconnect_copy(platform, expired=True)
 
 
@@ -164,10 +163,14 @@ def _is_credits(response: httpx.Response, blob: str) -> bool:
 def _classified(response: httpx.Response) -> Exception:
     blob = _blob(response)
     if _is_credits(response, blob):
-        return CreditsRequired(
-            "This network needs API credits before SocialCastly can read or reply. "
-            "Add credits, then try again."
+        # Provider text stays in the log. The product shows a plain sentence.
+        logger.info(
+            "Engagement provider outcome=x_unavailable code=%s http=%s detail=%s",
+            "x_unavailable",
+            response.status_code,
+            provider_error_summary(response),
         )
+        return CreditsRequired(comments_unavailable("x"))
     code = _graph_code(response)
     if response.status_code == 401 or code in _GRAPH_AUTH_CODES:
         return ProviderAuthError("expired", kind="expired")

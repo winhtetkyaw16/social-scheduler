@@ -2,7 +2,7 @@
 .scd .c2{--g:linear-gradient(135deg,#4F46E5,#7C3AED);--gt:#fff}
 .scd.dark .c2,.dark .c2,[data-theme=dark] .c2{--g:linear-gradient(135deg,#4F46E5,#7C3AED);--gt:#fff}
 .scd .c2 .c2-head{display:flex;align-items:center;justify-content:space-between}
-.scd .c2 .c2-grid{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:20px;align-items:start}
+.scd .c2 .c2-grid{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:24px;align-items:start}
 .scd .c2 .c2-form{padding:0;display:flex;flex-direction:column;min-width:0}
 .scd .c2 .c2-body{padding:16px 16px 18px;display:flex;flex-direction:column;gap:14px}
 .scd .c2 .c2-chips{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
@@ -14,7 +14,7 @@
 .scd .c2 .c2-title{width:100%;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--text);padding:9px 12px;font-size:14px}
 .scd .c2 .ed{border:1px solid var(--border);border-radius:12px;background:var(--surface)}
 .scd .c2 .ed:focus-within{border-color:var(--border-strong)}
-.scd .c2 textarea{width:100%;border:0;outline:0;resize:vertical;background:transparent;color:var(--text);font:inherit;font-size:15px;line-height:1.55;padding:16px;min-height:150px;box-shadow:none}
+.scd .c2 textarea{width:100%;border:0;outline:0;resize:none;background:transparent;color:var(--text);font:inherit;font-size:var(--fs-sm);line-height:1.55;padding:16px;min-height:160px;box-shadow:none}
 .scd .c2 textarea::placeholder{color:var(--text-3)}
 .scd .c2 .tb{display:flex;align-items:center;gap:2px;padding:6px 8px;border-top:1px solid var(--border)}
 .scd .c2 .tb .btn{color:var(--text-2)}
@@ -104,13 +104,12 @@
 .scd .c2 .c2-pseg button.on{background:var(--surface);color:var(--text);font-weight:600;box-shadow:var(--shadow-sm,0 1px 2px rgba(15,23,42,.08))}
 .scd .c2 .c2-pseg button:focus-visible{outline:2px solid var(--text-3);outline-offset:1px}
 html.dark .scd .c2 .c2-pseg button.on,[data-theme=dark] .scd .c2 .c2-pseg button.on{background:var(--surface-3,var(--surface));box-shadow:0 1px 2px rgba(0,0,0,.4),inset 0 0 0 1px rgba(255,255,255,.08)}
-.scd .c2 .c2-pdet{width:264px;display:flex;justify-content:flex-start;min-width:0}
+.scd .c2 .c2-pdet{width:auto;display:flex;justify-content:flex-start;min-width:0}
 .scd .c2 .c2-pdet .when{white-space:nowrap}
 .scd .c2 .c2-pinfo{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text-3);white-space:nowrap}
 .scd .c2 .c2-pinfo .ico{width:15px;height:15px;flex:none}
 .scd .c2 .c2-plink{color:var(--text);font-weight:600;text-decoration:underline;cursor:pointer;margin-left:4px}
 .scd .c2 .c2-pbtn{min-width:128px;justify-content:center;background:linear-gradient(135deg,#4F46E5,#7C3AED);color:#fff;border:0}
-html.dark .scd .c2 .c2-pbtn,[data-theme=dark] .scd .c2 .c2-pbtn{background:linear-gradient(135deg,#818CF8,#A78BFA);color:#0B1120}
 .scd .c2 .c2-pbtn:disabled{opacity:.55;cursor:not-allowed}
 /* Tight (two rows): control + picker on top; Save draft + primary below, right-aligned */
 @media (max-width: 1280px) and (min-width: 641px){
@@ -387,3 +386,20 @@ html.dark .scd .c2 .c2-pbtn,[data-theme=dark] .scd .c2 .c2-pbtn{background:linea
 
 /* Blocked = visibly disabled at every width (button state and hint both come from publishBlock). */
 .scd .c2 .c2-pbar.fix-first .c2-pbtn,.scd .c2 .c2-pbtn:disabled{background:var(--surface);color:var(--muted,#6b7280);border:1px solid var(--border);opacity:1;cursor:not-allowed;box-shadow:none}
+
+/* Empty preview: a full-height neutral frame instead of a small card */
+.scd .c2 .c2-pv-empty{display:grid;place-items:center;min-height:480px;padding:24px;text-align:center;border:1px dashed var(--border-strong);border-radius:var(--r-lg)}
+/* Publish bar: one row from 1360px up (Discard, Save draft, mode, time, action).
+   If the time still doesn't fit, it shortens with an ellipsis instead of wrapping. */
+@media (min-width: 1360px){
+  .scd .c2 .c2-pbar{flex-wrap:nowrap;gap:8px;padding:16px 12px}
+  .scd .c2 .c2-pbar.fix-first{flex-wrap:wrap}
+  .scd .c2 .c2-pdiscard{padding:0 8px;flex:none}
+  .scd .c2 .c2-pdraft{padding:0 12px;flex:none}
+  .scd .c2 .c2-pctl{gap:8px;flex:0 1 auto;min-width:0}
+  .scd .c2 .c2-pseg button{padding:5px 8px}
+  .scd .c2 .c2-pdet,.scd .c2 .c2-when-wrap{min-width:0;max-width:100%;display:flex}
+  .scd .c2 .c2-pdet .when{gap:6px;padding:0 8px;min-width:0;max-width:100%}
+  .scd .c2 .c2-when-text,.scd .c2 .c2-pinfo{min-width:0;overflow:hidden;text-overflow:ellipsis}
+  .scd .c2 .c2-pbtn{min-width:0;padding:0 16px;flex:none}
+}

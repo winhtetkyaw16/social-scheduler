@@ -6,13 +6,22 @@ from app.core.config import (
     CELERY_BROKER_URL,
     CELERY_RESULT_BACKEND,
     SCHEDULER_POLL_SECONDS,
+    TOKEN_REFRESH_INTERVAL_SECONDS,
 )
+
+# Evergreen re-shares are checked less often than due posts (default every 5 minutes).
+EVERGREEN_POLL_SECONDS = 300.0
 
 celery_app = Celery(
     "social_scheduler",
     broker=CELERY_BROKER_URL,
     backend=CELERY_RESULT_BACKEND,
-    include=["app.tasks.publish_post", "app.tasks.dispatch_due_posts"],
+    include=[
+        "app.tasks.publish_post",
+        "app.tasks.dispatch_due_posts",
+        "app.tasks.refresh_tokens",
+        "app.tasks.evergreen",
+    ],
 )
 celery_app.conf.update(
     task_serializer="json",
@@ -41,6 +50,14 @@ celery_app.conf.update(
         "dispatch-due-posts": {
             "task": "app.tasks.dispatch_due_posts.dispatch_due_posts",
             "schedule": SCHEDULER_POLL_SECONDS,
-        }
+        },
+        "refresh-expiring-tokens": {
+            "task": "app.tasks.refresh_tokens.refresh_expiring_tokens",
+            "schedule": TOKEN_REFRESH_INTERVAL_SECONDS,
+        },
+        "requeue-evergreen": {
+            "task": "app.tasks.evergreen.requeue_evergreen",
+            "schedule": EVERGREEN_POLL_SECONDS,
+        },
     },
 )

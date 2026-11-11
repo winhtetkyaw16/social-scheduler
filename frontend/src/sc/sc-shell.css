@@ -1,16 +1,18 @@
 /* SocialCastly design shell: responsive behaviour for the m-* mobile designs */
 .scd.sc-app-root { min-height: 100vh; background: var(--bg); color: var(--text); }
 .scd .sc-sidebar { position: sticky; top: 0; height: 100vh; overflow-y: auto; }
+/* The sidebar is sticky and one screen tall; paint its column on the grid too so the
+   surface and divider run the full page height when the content is longer. */
+.scd .app { background: linear-gradient(to right, var(--surface) calc(var(--sidebar-w) - 1px), var(--border) calc(var(--sidebar-w) - 1px) var(--sidebar-w), transparent var(--sidebar-w)); }
 .scd .sc-mtab, .scd .sc-m-brand, .scd .sc-more { display: none; }
 .scd .sc-search { min-width: 320px; cursor: default; }
 @media (max-width: 1023px) {
-  .scd .app { grid-template-columns: 1fr; }
+  .scd .app { grid-template-columns: 1fr; background: none; }
   .scd .sc-sidebar, .scd .sc-search, .scd .sc-hide-m { display: none !important; }
   .scd .sc-m-brand { display: inline-flex; align-items: center; }
   .scd .topbar { padding: 0 16px; height: 56px; }
   .scd .content { padding: 16px 16px 96px; gap: 16px; }
   .scd .page-head { flex-direction: column; align-items: stretch; gap: 12px; }
-  .scd .page-head h1 { font-size: 22px; }
   .scd .content .grid.g2, .scd .content .grid.g3, .scd .content .grid[style] { grid-template-columns: 1fr !important; }
   .scd .content .grid.g4 { grid-template-columns: 1fr 1fr; }
   .scd .content .grid.media-grid { grid-template-columns: repeat(3, 1fr) !important; }
@@ -24,12 +26,11 @@
   .scd .sc-mtab { display: grid; position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; }
   .scd .sc-more { display: block; position: fixed; right: 12px; bottom: 84px; width: 240px; z-index: 45; padding: 8px; box-shadow: var(--shadow-lg, 0 12px 32px rgba(0,0,0,.18)); }
   .scd .cal .cell { min-height: 64px; }
-  .scd .cal .chip { font-size: 10px; }
+  .scd .cal .chip { font-size: 12px; }
 }
 @media (max-width: 560px) {
   .scd .content .grid.g4 { grid-template-columns: 1fr 1fr; gap: 10px; }
   .scd .content .grid.media-grid { grid-template-columns: repeat(2, 1fr) !important; }
-  .scd .stat .v { font-size: 24px; }
 }
 .scd .cal { grid-template-columns: repeat(7, minmax(0, 1fr)); }
 .scd .cal .chip { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
@@ -45,8 +46,8 @@
   .scd .sc-auth-mobile-logo { display: inline-flex; }
 }
 /* rehosted composer/modal primitives (design tokens only) */
-.scd .sc-h2{font-size:15px;font-weight:600;color:var(--text)}
-.scd .sc-eyebrow{text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+.scd .sc-h2{font-size:var(--fs-md);font-weight:600;color:var(--text)}
+.scd .sc-eyebrow{font-weight:500}
 .scd .sc-pill{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;border:1px solid var(--border);background:var(--surface);color:var(--text-2);font-size:var(--fs-sm);font-weight:500;cursor:pointer}
 .scd .sc-pill:hover{background:var(--surface-2)}
 .scd .sc-pill.sc-pill-on,.scd .sc-pill-on{border-color:var(--primary);background:var(--primary-soft);color:var(--primary)}
@@ -59,14 +60,14 @@
 .scd .sc-drop-ico{display:grid;width:30px;height:30px;place-items:center;border-radius:10px;background:var(--primary-soft);color:var(--primary)}
 .scd .media-thumb{position:relative;aspect-ratio:1;min-width:0}
 .scd .media-remove{position:absolute;top:4px;right:4px;display:grid;width:22px;height:22px;place-items:center;border:0;border-radius:7px;background:rgba(17,24,39,.8);color:#fff}
-.scd .media-name{position:absolute;right:3px;bottom:3px;left:3px;overflow:hidden;border-radius:5px;background:rgba(15,23,42,.8);padding:3px;color:#fff;font-size:8px;text-overflow:ellipsis;white-space:nowrap}
+.scd .media-name{position:absolute;right:3px;bottom:3px;left:3px;overflow:hidden;border-radius:5px;background:rgba(15,23,42,.8);padding:3px;color:#fff;font-size:12px;text-overflow:ellipsis;white-space:nowrap}
 .scd .preview-stage{display:grid;min-height:320px;place-items:center;padding:12px;border:1px solid var(--border);border-radius:var(--r-lg);background:var(--surface-2)}
 .scd .preview-stage-desktop{min-height:280px}
 .scd .channel-icon{display:grid;min-width:17px;place-items:center;color:var(--text-3)}
 .scd .channel-state-dot{width:6px;height:6px;border-radius:50%;background:var(--success)}
 
 /* Calendar post popover (design: screens/calendar-post-popover.html) */
-.scd .pop{width:320px;background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow-lg);padding:14px;display:flex;flex-direction:column;gap:10px;color:var(--text);text-align:left;white-space:normal;outline:none}
+.scd .pop{width:320px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--shadow-lg);padding:14px;display:flex;flex-direction:column;gap:10px;color:var(--text);text-align:left;white-space:normal;outline:none}
 .scd .pp-head{display:flex;align-items:center;gap:8px}
 .scd .pp-head .ch{width:22px;height:22px;font-size:9px;flex:none}
 .scd .pp-ch{flex:1;min-width:0;font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -119,7 +120,6 @@
 .scd .pop .pp-confirm .btn-danger{background:none;color:#B4646A;border:1px solid var(--border);box-shadow:none}
 html.dark .scd .pop .pp-confirm .btn-danger,[data-theme=dark] .scd .pop .pp-confirm .btn-danger{color:#E3A0A5}
 .scd .pop .btn-primary{background:linear-gradient(135deg,#4F46E5,#7C3AED);color:#FFFFFF;border:0}
-html.dark .scd .pop .btn-primary,[data-theme=dark] .scd .pop .btn-primary{background:linear-gradient(135deg,#818CF8,#A78BFA);color:#0B1120;border:0}
 .scd .cal .chip.failed,.scd .week .ev.failed{background:var(--surface-2)}
 .scd .cal .chip.sel{outline-color:var(--text)}
 
@@ -191,8 +191,7 @@ html.dark .with-ch .cht.ch-badge,.dark .with-ch .cht.ch-badge,html.dark .cht.av-
 .scd .sc-del-preview{gap:12px;margin-top:10px;padding:12px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface-2);align-items:flex-start}
 .scd .sc-clamp2{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}
 .scd .sc-del-foot{justify-content:flex-end;gap:8px;padding:16px 24px;border-top:1px solid var(--border)}
-.scd .sc-del-modal .btn-danger{background:var(--error);color:#fff;border-color:transparent;box-shadow:none;background-image:none}
-html.dark .scd .sc-del-modal .btn-danger,[data-theme=dark] .scd .sc-del-modal .btn-danger{color:#0B1120}
+.scd .sc-del-modal .btn-danger{background:#DC2626;color:#fff;border-color:transparent;box-shadow:none;background-image:none;font-weight:500}
 .scd .sc-spin{width:14px;height:14px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:sc-spin .7s linear infinite}
 @keyframes sc-spin{to{transform:rotate(360deg)}}
 @media (max-width:640px){
@@ -225,7 +224,6 @@ html.dark .scd .sc-del-modal .btn-danger,[data-theme=dark] .scd .sc-del-modal .b
 .scd .fe .fe-del:hover{background:color-mix(in srgb,var(--error) 8%,transparent)}
 .scd .fe .btn-ghost{background:none;border:0;box-shadow:none;color:var(--text-2)}
 .scd .fe .btn-grad{background:linear-gradient(135deg,#4F46E5,#7C3AED);color:#fff;border:0}
-html.dark .scd .fe .btn-grad,[data-theme=dark] .scd .fe .btn-grad,.dark .scd .fe .btn-grad{background:linear-gradient(135deg,#818CF8,#A78BFA);color:#0B1120}
 .scd .fe .btn-grad:disabled{opacity:.55}
 .scd .fe .fe-foot-m{flex-direction:column;align-items:stretch;gap:10px;padding:16px 18px 24px}
 .scd .fe .fe-foot-m .btn{justify-content:center;height:44px;width:100%}
@@ -243,3 +241,64 @@ html.dark .scd .fe .btn-grad,[data-theme=dark] .scd .fe .btn-grad,.dark .scd .fe
 .scd.sc-modal-layer{position:relative;z-index:60;background:transparent;height:0}
 /* modal backdrops: block touch scroll-through without moving the page */
 .scd .modal-wrap.sc-modal-wrap,.scd .modal-wrap.sc-modal-wrap .modal{overscroll-behavior:contain}
+
+/* Analytics: "Posts published over time" line chart (Impressions-over-time style) */
+.scd .sc-legend-swatch{display:inline-block;width:8px;height:8px;border-radius:2px}
+.scd .sc-chart{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px}
+.scd .sc-chart-y{position:relative;height:256px;font-size:12px;line-height:16px;color:var(--text-3);text-align:right;font-variant-numeric:tabular-nums}
+.scd .sc-chart-y span{position:absolute;right:0;transform:translateY(-50%);white-space:nowrap}
+.scd .sc-chart-plot{min-width:0}
+.scd .sc-chart-plot svg{display:block;width:100%;height:256px;overflow:visible}
+.scd .sc-chart-grid{stroke:#E5E7EB;stroke-width:1}
+html.dark .scd .sc-chart-grid{stroke:#1F2937}
+.scd .sc-chart-x{position:relative;height:24px;margin-top:8px;font-size:12px;color:var(--text-3)}
+.scd .sc-chart-x span{position:absolute;top:0;transform:translateX(-50%);white-space:nowrap}
+.scd .sc-chart-x span:first-child{transform:none}
+.scd .sc-chart-x span:last-child{transform:translateX(-100%)}
+
+/* Settings: read-only profile details as label / value rows */
+.scd .sc-kv{display:grid;grid-template-columns:160px minmax(0,1fr);gap:12px 16px;margin:0;font-size:var(--fs-sm)}
+.scd .sc-kv dt{color:var(--text-2)}
+.scd .sc-kv dd{margin:0;color:var(--text)}
+/* Media library: when empty, the dropzone is the empty state */
+.scd .dropzone.sc-drop-empty{padding:48px 24px;gap:8px}
+
+/* Queue: one-line times ("7:00 PM") */
+.scd .post .time.sc-time-1l{width:80px;font-size:var(--fs-sm);font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap}
+/* Queue settings: posting-slots grid (day x time checkboxes) */
+.scd .sc-slots{width:100%;border-collapse:collapse;font-size:var(--fs-sm)}
+.scd .sc-slots thead th{background:var(--surface-2);color:var(--text-2);font-size:var(--fs-xs);font-weight:500;padding:8px 0;text-align:center}
+.scd .sc-slots thead th:first-child{border-radius:var(--r-md) 0 0 var(--r-md)}
+.scd .sc-slots thead th:last-child{border-radius:0 var(--r-md) var(--r-md) 0}
+.scd .sc-slots tbody th{text-align:left;font-weight:500;color:var(--text);padding:12px 8px 12px 0;white-space:nowrap;font-variant-numeric:tabular-nums}
+.scd .sc-slots tbody td{text-align:center;padding:12px 0}
+.scd .sc-slots tbody tr+tr th,.scd .sc-slots tbody tr+tr td{border-top:1px solid var(--border)}
+.scd .sc-slot-check{width:16px;height:16px;border-radius:4px;accent-color:var(--primary);cursor:pointer;vertical-align:middle}
+
+/* Search field with a leading icon (Drafts) */
+.scd .sc-search-input{position:relative;display:block}
+.scd .sc-search-input>svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text-3);pointer-events:none}
+.scd .sc-search-input>.input{padding-left:36px}
+/* Drafts grid cards */
+.scd .sc-draft{overflow:visible;display:flex;flex-direction:column}
+.scd .sc-draft-media{display:grid;place-items:center;width:100%;height:128px;object-fit:cover;background:var(--surface-2);border-radius:var(--r-lg) var(--r-lg) 0 0}
+/* Approvals feedback box */
+.scd textarea.input.sc-feedback{min-height:80px;padding:12px;font-size:var(--fs-sm);line-height:20px}
+/* Queue settings: Evergreen */
+.scd button.toggle{border:0;padding:0;cursor:pointer}
+.scd button.toggle:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.scd button.toggle:disabled{opacity:.6;cursor:default}
+.scd .sc-evergreen-list{list-style:none;margin:0;padding:0;border:1px solid var(--border);border-radius:var(--r-md);max-height:320px;overflow:auto}
+.scd .sc-evergreen-row{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border)}
+.scd .sc-evergreen-row:last-child{border-bottom:0}
+.scd .sc-evergreen-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)}
+.scd .sc-evergreen-every{width:136px;flex:none}
+.scd .sc-evergreen-empty{gap:8px;padding:16px;border:1px dashed var(--border);border-radius:var(--r-md)}
+/* Queue settings: Bulk upload */
+.scd .dropzone.sc-bulk-drop{padding:24px;gap:6px}
+.scd .sc-bulk-result{display:flex;align-items:flex-start;gap:12px;padding:16px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface)}
+.scd .sc-bulk-icon{flex:none;margin-top:2px}
+.scd .sc-bulk-icon.err{color:var(--error)}
+.scd .sc-bulk-icon.ok{color:var(--success)}
+.scd .sc-bulk-errors{margin:8px 0 0;padding-left:18px;display:flex;flex-direction:column;gap:4px;max-height:240px;overflow:auto;color:var(--text)}
+.scd .sc-bulk-errors li::marker{color:var(--text-3)}

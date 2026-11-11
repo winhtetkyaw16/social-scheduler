@@ -119,6 +119,8 @@ def classify_error(
     key = (platform or "").lower()
     code_l = (code or "").lower()
     text = f"{code or ''} {message or ''}".lower()
+    if code_l == CONNECTION:
+        return CONNECTION
     status = _status(message or "")
     media = list(media_urls) if media_urls is not None else None
 
@@ -416,6 +418,21 @@ def _reconnect(network_label: str) -> list[dict[str, str]]:
     ]
 
 
+def _plain_reconnect_banner(message: str | None) -> str | None:
+    """Use a stored reconnect sentence when it has no codes or provider jargon."""
+    text = sanitize_raw(message)
+    if not text:
+        return None
+    lowered = text.lower()
+    if any(word in lowered for word in BANNED_WORDS):
+        return None
+    if any(
+        token in lowered for token in ("invalid_grant", "error code", "http ", "oauth")
+    ):
+        return None
+    return text if text.endswith(".") else f"{text}."
+
+
 def friendly_error(
     code: str | None,
     message: str | None,
@@ -611,6 +628,10 @@ def friendly_error(
     }
     if category in copy:
         banner, what_happened, what_to_do, actions = copy[category]
+        if category == CONNECTION and (code or "").lower() == CONNECTION:
+            plain = _plain_reconnect_banner(message)
+            if plain:
+                banner = plain
         # When the platform itself answered with an error, show its (sanitised) reason too.
         if raw and (
             (is_http_provider_code(code) and category == PLATFORM_DOWN)

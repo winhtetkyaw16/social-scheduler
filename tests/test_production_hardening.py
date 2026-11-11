@@ -198,6 +198,15 @@ def test_every_non_public_api_route_requires_auth(client):
     assert ("GET", "/api/v1/accounts") in protected
     assert ("GET", "/api/v1/posts") in protected
     assert ("POST", "/api/v1/upload") in protected
+    # Added on main after this branch started (approvals history, Evergreen, Bulk CSV).
+    for route in (
+        ("GET", "/api/v1/publish/approvals/history"),
+        ("GET", "/api/v1/publish/evergreen"),
+        ("PUT", "/api/v1/publish/evergreen/{post_id}"),
+        ("GET", "/api/v1/publish/bulk/template"),
+        ("POST", "/api/v1/publish/bulk"),
+    ):
+        assert route in protected, route
     assert ("GET", "/api/v1/health") in public
     assert ("GET", "/api/v1/accounts/{platform}/callback") in public
     assert ("POST", "/api/v1/auth/login") in public

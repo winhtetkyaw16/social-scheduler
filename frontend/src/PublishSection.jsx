@@ -1,5 +1,5 @@
 // Calendar, queue, and post detail for scheduled, queued, and published posts.
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Ch,
   meta,
@@ -26,9 +26,11 @@ import {
   friendlyError,
 } from "./sc/PostActions.jsx";
 import { AccountAvatar } from "./ManageAccounts.jsx";
+import { BulkUploadCard, EvergreenCard } from "./sc/QueueExtras.jsx";
 import { groupQueuePosts } from "./queueOrder.js";
 import { savedPostBlock } from "./fixPlan.js";
 import {
+  AlertCircle,
   Archive,
   ArrowLeft,
   ArrowRight,
@@ -61,6 +63,7 @@ import {
   ThumbsUp,
   Timer,
   Trash2,
+  Upload,
   UploadCloud,
   Video,
   X,
@@ -101,15 +104,22 @@ const DEFAULT_QUEUE_SLOTS = [
   ),
   ...[5, 6].flatMap((weekday) => ["10:00", "16:00"].map((time_local) => ({ weekday, time_local }))),
 ];
+// "09:00" -> "9:00 AM" for the posting-slots grid.
+function slotTimeLabel(timeLocal) {
+  const [h, m] = String(timeLocal || "0:00")
+    .split(":")
+    .map(Number);
+  return `${h % 12 || 12}:${String(m || 0).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`;
+}
 const hideBrokenImg = (event) => {
   event.currentTarget.style.display = "none";
 };
-const card =
-  "rounded-3xl border border-slate-200/80 bg-white/85 shadow-[0_12px_36px_rgba(21,32,66,.045)] backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/80";
+// Shared class strings for the Tailwind-styled parts of this file (match the .scd card/btn rules).
+const card = "rounded-xl border border-line bg-surface";
 const button =
-  "inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800";
+  "inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-line bg-surface px-4 text-sm font-medium text-ink transition-colors hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50";
 const primary =
-  "inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 via-purple-600 to-blue-600 px-4 py-2.5 text-xs font-bold text-white shadow-lg shadow-indigo-500/20 transition hover:-translate-y-0.5 hover:shadow-indigo-500/30 disabled:opacity-50";
+  "inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-primary-grad px-4 text-sm font-medium text-white transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:brightness-110";
 
 function dateKey(value) {
   const date = new Date(value);
@@ -831,7 +841,9 @@ function MonthCalendar({
                           className={`ev ${platformMeta.ev} ${post.status === "failed" ? "failed" : ""}`}
                           style={{
                             cursor: canDragPost(post) ? "grab" : "pointer",
-                            ...(platformMeta.ev ? null : { borderColor: chColor(account?.platform) }),
+                            ...(platformMeta.ev
+                              ? null
+                              : { borderColor: chColor(account?.platform) }),
                           }}
                         >
                           <div className="row" style={{ gap: 6 }}>
@@ -869,9 +881,6 @@ function MonthCalendar({
           ))}
         </div>
       )}
-      <p className="xs subtle">
-        Click a day to compose · drag a post to another day to reschedule · click a post to open it
-      </p>
       {dayDetail?.date instanceof Date && (
         <RenderErrorBoundary scope="Day schedule" compact>
           <DayPopover
@@ -891,6 +900,67 @@ function MonthCalendar({
             onDuplicate={onDuplicatePost}
           />
         </RenderErrorBoundary>
+      )}
+    </div>
+  );
+}
+
+// "⋯" menu on a draft card: Add to queue and Delete.
+function DraftMenu({ busy, disabled, canQueue, onQueue, onDelete }) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return undefined;
+    const close = () => setOpen(false);
+    window.addEventListener("click", close);
+    return () => window.removeEventListener("click", close);
+  }, [open]);
+  return (
+    <div style={{ position: "relative" }}>
+      <button
+        type="button"
+        className="btn btn-ghost btn-sm btn-icon"
+        aria-label="More actions"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        disabled={disabled}
+        onClick={(event) => {
+          event.stopPropagation();
+          setOpen((value) => !value);
+        }}
+      >
+        {busy ? <LoaderCircle size={16} className="animate-spin" /> : <MoreHorizontal size={16} />}
+      </button>
+      {open && (
+        <div className="pp-menu" role="menu" style={{ top: 36, bottom: "auto" }}>
+          <a
+            role="menuitem"
+            href="#"
+            aria-disabled={!canQueue}
+            title={canQueue ? "Add to next queue slot" : "Save to workspace first"}
+            style={canQueue ? null : { opacity: 0.5, pointerEvents: "none" }}
+            onClick={(event) => {
+              event.preventDefault();
+              setOpen(false);
+              onQueue();
+            }}
+          >
+            <Timer size={15} />
+            Add to queue
+          </a>
+          <a
+            role="menuitem"
+            href="#"
+            className="danger"
+            onClick={(event) => {
+              event.preventDefault();
+              setOpen(false);
+              onDelete();
+            }}
+          >
+            <Trash2 size={15} />
+            Delete
+          </a>
+        </div>
       )}
     </div>
   );
@@ -1068,45 +1138,29 @@ function DraftsView({
   }
   return (
     <div className="col" style={{ gap: 24 }}>
-      <PageHead
-        title="Drafts"
-        sub={`${visibleDrafts.length} draft${visibleDrafts.length === 1 ? "" : "s"} saved — edit, schedule, queue, or delete.`}
-      >
-        <div className="search" style={{ width: 220 }}>
-          <svg className="ico" viewBox="0 0 24 24">
-            <circle cx="11" cy="11" r="7" />
-            <path d="M21 21l-4.3-4.3" />
-          </svg>
+      <PageHead title="Drafts" sub="Ideas and work in progress. Nothing here will publish.">
+        <label className="sc-search-input" style={{ width: 256 }}>
+          <Search size={16} aria-hidden="true" />
           <input
+            className="input"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search drafts"
-            style={{
-              border: 0,
-              background: "transparent",
-              outline: "none",
-              width: "100%",
-              color: "inherit",
-              font: "inherit",
-            }}
+            aria-label="Search drafts"
           />
-        </div>
+        </label>
         <button
           type="button"
-          className="btn btn-secondary"
+          className="btn btn-primary"
           onClick={() => void createDraft()}
           disabled={!!busyId}
         >
           {busyId === "new" ? (
-            <LoaderCircle className="animate-spin" size={14} />
+            <LoaderCircle className="animate-spin" size={16} />
           ) : (
-            <Plus size={14} />
+            <Plus size={16} />
           )}
           New draft
-        </button>
-        <button type="button" className="btn btn-primary" onClick={() => onCreatePost?.()}>
-          <Plus size={14} />
-          Open composer
         </button>
       </PageHead>
       {error && (
@@ -1132,103 +1186,59 @@ function DraftsView({
             const busy = busyId === draft.id;
             const plats = draftPlatforms(draft);
             return (
-              <div key={draft.id} className="card" style={{ overflow: "hidden" }}>
+              <div key={draft.id} className="card sc-draft">
                 {draft.media_urls?.[0] ? (
                   <img
                     src={draft.media_urls[0]}
                     alt=""
-                    style={{ height: 120, width: "100%", objectFit: "cover", display: "block" }}
+                    className="sc-draft-media"
                     onError={hideBrokenImg}
                   />
                 ) : (
-                  <div
-                    style={{
-                      height: 120,
-                      display: "grid",
-                      placeItems: "center",
-                      background: "var(--surface-2)",
-                    }}
-                    className="xs subtle"
-                  >
-                    Text only
-                  </div>
+                  <div className="sc-draft-media xs subtle">Text only</div>
                 )}
-                <div className="card-pad col" style={{ gap: 10 }}>
-                  <b
-                    className="sm"
-                    style={{
-                      display: "-webkit-box",
-                      WebkitLineClamp: 2,
-                      WebkitBoxOrient: "vertical",
-                      overflow: "hidden",
-                    }}
-                  >
+                <div className="card-pad col" style={{ gap: 12 }}>
+                  <div className="sm sc-clamp2" style={{ fontWeight: 500 }}>
                     {draft.content || "Untitled draft"}
-                  </b>
+                  </div>
                   <div className="row" style={{ gap: 4 }}>
                     {plats.length ? (
                       plats.map((pl) => <Ch key={pl} platform={pl} />)
                     ) : (
                       <span className="xs subtle">{accountSummary(draft)}</span>
                     )}
-                    <span
-                      className="badge nodot"
-                      style={{ marginLeft: "auto", textTransform: "capitalize" }}
-                    >
-                      {String(draft.status || "draft").replaceAll("_", " ")}
+                    <span className="xs subtle" style={{ marginLeft: "auto", textAlign: "right" }}>
+                      {localOnly
+                        ? "Saved in this session"
+                        : `Edited ${new Date(draft.updated_at || draft.created_at || Date.now()).toLocaleString([], { month: "short", day: "numeric" })}`}
+                      {authorName ? ` · ${authorName}` : ""}
                     </span>
                   </div>
-                  <div className="xs subtle">
-                    {localOnly
-                      ? "Saved in this session"
-                      : `Edited ${new Date(draft.updated_at || draft.created_at || Date.now()).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`}
-                    {authorName ? ` · ${authorName}` : ""}
-                  </div>
-                  <div className="row" style={{ gap: 6 }}>
+                  <div className="row" style={{ gap: 8 }}>
                     <button
                       type="button"
                       className="btn btn-secondary btn-sm grow"
                       disabled={!!busyId}
                       onClick={() => onOpenDraft?.(draft)}
                     >
-                      <Pencil size={13} />
                       Edit
                     </button>
                     <button
                       type="button"
-                      className="btn btn-primary btn-sm grow"
+                      className="btn btn-ghost btn-sm"
                       disabled={!!busyId || localOnly}
                       title={localOnly ? "Save to workspace first" : "Schedule at an exact time"}
                       onClick={() => openSchedule(draft)}
                     >
-                      <CalendarDays size={13} />
                       Schedule
                     </button>
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm btn-icon"
-                      disabled={!!busyId || localOnly}
-                      title={localOnly ? "Save to workspace first" : "Add to next queue slot"}
-                      aria-label="Add to queue"
-                      onClick={() => void addToQueue(draft)}
-                    >
-                      {busy ? (
-                        <LoaderCircle size={13} className="animate-spin" />
-                      ) : (
-                        <Timer size={13} />
-                      )}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm btn-icon"
-                      style={{ color: "var(--error)" }}
-                      title="Delete draft"
-                      aria-label="Delete draft"
+                    <DraftMenu
+                      busy={busy}
                       disabled={!!busyId}
-                      onClick={() => void removeDraft(draft.id)}
-                    >
-                      <Trash2 size={13} />
-                    </button>
+                      canQueue={!localOnly}
+                      onQueue={() => void addToQueue(draft)}
+                      onDelete={() => void removeDraft(draft.id)}
+                    />
                   </div>
                 </div>
               </div>
@@ -1241,8 +1251,6 @@ function DraftsView({
             art="📝"
             title={query ? "No drafts match" : "No drafts yet"}
             text="Save unfinished ideas from the composer. They stay in your workspace until you schedule, queue, or delete them."
-            action="Create a post"
-            onAction={() => onCreatePost?.()}
           />
         </div>
       )}
@@ -1262,7 +1270,7 @@ function DraftsView({
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <h3 className=" text-lg font-extrabold">Schedule draft</h3>
+                    <h3 className=" text-lg font-semibold">Schedule draft</h3>
                     <p className="mt-1 text-xs text-slate-500">
                       Pick an exact time. Each selected channel gets its own scheduled post.
                     </p>
@@ -1276,7 +1284,7 @@ function DraftsView({
                     <X size={14} />
                   </button>
                 </div>
-                <label className="mt-4 block text-[11px] font-bold text-slate-500">
+                <label className="mt-4 block text-xs font-bold text-slate-500">
                   Date and time
                   <input
                     type="datetime-local"
@@ -1285,7 +1293,7 @@ function DraftsView({
                     className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-950"
                   />
                 </label>
-                <p className="mt-2 text-[10px] text-slate-400">
+                <p className="mt-2 text-xs text-slate-400">
                   Timezone: your browser local time ({tz})
                 </p>
                 <div className="mt-5 flex justify-end gap-2">
@@ -1384,10 +1392,8 @@ function LibraryView({ request, onUseAsset }) {
     <section className={`${card} p-5 sm:p-6`}>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <span className="text-[10px] font-extrabold uppercase tracking-[.16em] text-indigo-500">
-            Workspace assets
-          </span>
-          <h2 className="mt-1  text-xl font-extrabold">Content library</h2>
+          <span className="text-xs font-semibold text-ink-2">Workspace assets</span>
+          <h2 className="mt-1  text-xl font-semibold">Content library</h2>
           <p className="mt-1 text-xs text-slate-500">
             Upload, organize, and reuse your media across posts.
           </p>
@@ -1421,7 +1427,7 @@ function LibraryView({ request, onUseAsset }) {
               type="button"
               key={item}
               onClick={() => setKind(item)}
-              className={`rounded-lg px-3 py-1.5 text-[10px] font-bold capitalize ${kind === item ? "bg-white text-indigo-700 shadow-sm dark:bg-slate-700 dark:text-white" : "text-slate-500"}`}
+              className={`rounded-lg px-3 py-1.5 text-xs font-bold capitalize ${kind === item ? "bg-white text-indigo-700 shadow-sm dark:bg-slate-700 dark:text-white" : "text-slate-500"}`}
             >
               {item === "all" ? "All media" : item}
             </button>
@@ -1478,7 +1484,7 @@ function LibraryView({ request, onUseAsset }) {
                   <p className="truncate text-xs font-bold" title={asset.filename}>
                     {asset.filename}
                   </p>
-                  <p className="mt-1 text-[10px] text-slate-400">
+                  <p className="mt-1 text-xs text-slate-400">
                     {(asset.size_bytes / (1024 * 1024)).toFixed(1)} MB ·{" "}
                     {new Date(asset.created_at).toLocaleDateString()}
                   </p>
@@ -1487,13 +1493,13 @@ function LibraryView({ request, onUseAsset }) {
                     value={tags[asset.id] || ""}
                     onChange={(event) => updateTag(asset.id, event.target.value)}
                     placeholder="Add a tag"
-                    className="mt-2 w-full rounded-lg border border-slate-200 bg-transparent px-2 py-1.5 text-[10px] outline-none focus:border-indigo-400 dark:border-slate-700"
+                    className="mt-2 w-full rounded-lg border border-slate-200 bg-transparent px-2 py-1.5 text-xs outline-none focus:border-indigo-400 dark:border-slate-700"
                   />
                   <div className="mt-2 flex gap-2">
                     <button
                       type="button"
                       onClick={() => onUseAsset?.(asset)}
-                      className={`${primary} min-w-0 flex-1 !px-2 !py-2 !text-[10px]`}
+                      className={`${primary} min-w-0 flex-1 !px-2 !py-2 !text-xs`}
                     >
                       <Plus size={12} />
                       Use in composer
@@ -1538,11 +1544,29 @@ function ApprovalsView({ request, onRefresh, accounts = [] }) {
   const [busy, setBusy] = useState("");
   const [selectedId, setSelectedId] = useState("");
   const [comment, setComment] = useState("");
-  async function refresh() {
+  // Pending comes from /publish/approvals; Approved and Rejected come from the saved
+  // decision history (newest first). Rejected also lists drafts sent back for changes.
+  const [tab, setTab] = useState("pending");
+  const [history, setHistory] = useState([]);
+  async function refresh(activeTab = tab) {
     setLoading(true);
     try {
-      const result = await request("/publish/approvals");
-      setItems(Array.isArray(result) ? result.filter(Boolean) : []);
+      if (activeTab === "pending") {
+        const result = await request("/publish/approvals");
+        setItems(Array.isArray(result) ? result.filter(Boolean) : []);
+      } else {
+        const [pending, result] = await Promise.all([
+          request("/publish/approvals"),
+          request(`/publish/approvals/history?status=${activeTab}`),
+        ]);
+        setItems(Array.isArray(pending) ? pending.filter(Boolean) : []);
+        setHistory(
+          (Array.isArray(result) ? result.filter(Boolean) : []).map((row) => ({
+            ...row,
+            metadata_json: row.item_metadata || {},
+          })),
+        );
+      }
       setError("");
     } catch (e) {
       setError(e.message);
@@ -1551,8 +1575,8 @@ function ApprovalsView({ request, onRefresh, accounts = [] }) {
     }
   }
   useEffect(() => {
-    void refresh();
-  }, [request]);
+    void refresh(tab);
+  }, [request, tab]);
   async function decide(id, decision) {
     setBusy(id);
     try {
@@ -1569,7 +1593,17 @@ function ApprovalsView({ request, onRefresh, accounts = [] }) {
       setBusy("");
     }
   }
-  const selected = items.find((i) => i.id === selectedId) || items[0];
+  const tabItems = tab === "pending" ? items : history;
+  const selected = tabItems.find((i) => i.id === selectedId) || tabItems[0];
+  const isPending = tab === "pending";
+  const decisionBadge = (item) =>
+    item.decision === "approved" ? (
+      <span className="badge b-success">Approved</span>
+    ) : item.decision === "rejected" ? (
+      <span className="badge b-error">Rejected</span>
+    ) : (
+      <span className="badge b-warning">Changes requested</span>
+    );
   const platsOf = (item) => {
     const ids = Array.isArray(item?.metadata_json?.selectedIds)
       ? item.metadata_json.selectedIds
@@ -1590,9 +1624,16 @@ function ApprovalsView({ request, onRefresh, accounts = [] }) {
     <div className="col" style={{ gap: 24 }}>
       <PageHead title="Approvals" sub="Review drafts from your team before they're scheduled.">
         <Seg
-          value="pending"
-          onChange={() => {}}
-          options={[["pending", `Pending (${items.length})`]]}
+          value={tab}
+          onChange={(value) => {
+            setTab(value);
+            setSelectedId("");
+          }}
+          options={[
+            ["pending", `Pending (${items.length})`],
+            ["approved", "Approved"],
+            ["rejected", "Rejected"],
+          ]}
         />
       </PageHead>
       {error && (
@@ -1605,12 +1646,18 @@ function ApprovalsView({ request, onRefresh, accounts = [] }) {
           <div className="skel" style={{ height: 56 }} />
           <div className="skel" style={{ height: 56 }} />
         </div>
-      ) : !items.length ? (
+      ) : !tabItems.length ? (
         <div className="card">
           <Empty
             art="✅"
-            title="Nothing waiting for review"
-            text="When someone submits a draft for approval it shows up here."
+            title={isPending ? "Nothing waiting for review" : `Nothing ${tab} yet`}
+            text={
+              isPending
+                ? "When someone submits a draft for approval it shows up here."
+                : tab === "approved"
+                  ? "Drafts you approve show up here, newest first."
+                  : "Drafts you reject or send back for changes show up here, newest first."
+            }
           />
         </div>
       ) : (
@@ -1618,15 +1665,15 @@ function ApprovalsView({ request, onRefresh, accounts = [] }) {
           className="grid"
           style={{ gridTemplateColumns: "minmax(0,1fr) minmax(0,1.3fr)", alignItems: "start" }}
         >
-          <div className="card">
-            {items.map((item) => (
+          <div className="card" style={{ overflow: "hidden" }}>
+            {tabItems.map((item) => (
               <div
                 key={item.id}
                 className="post"
                 role="button"
                 style={{
                   cursor: "pointer",
-                  background: selected?.id === item.id ? "var(--primary-soft)" : undefined,
+                  background: selected?.id === item.id ? "var(--surface-2)" : undefined,
                 }}
                 onClick={() => setSelectedId(item.id)}
               >
@@ -1643,12 +1690,16 @@ function ApprovalsView({ request, onRefresh, accounts = [] }) {
                 )}
                 <div className="body">
                   <b className="sm">{titleOf(item)}</b>
-                  <div className="xs subtle">Submitted {ago(item.updated_at)}</div>
-                  <div className="row" style={{ gap: 4, marginTop: 6 }}>
+                  <div className="xs subtle">
+                    {isPending
+                      ? `Submitted ${ago(item.updated_at)}`
+                      : `Decided ${ago(item.decided_at)}${item.reviewer_name ? ` by ${item.reviewer_name}` : ""}`}
+                  </div>
+                  <div className="row" style={{ gap: 4, marginTop: 8 }}>
                     {platsOf(item).map((pl) => (
                       <Ch key={pl} platform={pl} />
                     ))}
-                    <span className="badge b-warning">Pending</span>
+                    {isPending ? <span className="badge">Pending</span> : decisionBadge(item)}
                   </div>
                 </div>
               </div>
@@ -1660,7 +1711,9 @@ function ApprovalsView({ request, onRefresh, accounts = [] }) {
                 <div>
                   <b>{titleOf(selected)}</b>
                   <div className="xs subtle">
-                    Submitted {ago(selected.updated_at)}
+                    {isPending
+                      ? `Submitted ${ago(selected.updated_at)}`
+                      : `Decided ${ago(selected.decided_at)}${selected.reviewer_name ? ` by ${selected.reviewer_name}` : ""}`}
                     {selected.scheduled_at ? ` · for ${ago(selected.scheduled_at)}` : ""}
                     {platsOf(selected).length
                       ? ` · ${platsOf(selected)
@@ -1669,10 +1722,14 @@ function ApprovalsView({ request, onRefresh, accounts = [] }) {
                       : ""}
                   </div>
                 </div>
-                <span className="badge b-warning">Pending review</span>
+                {isPending ? (
+                  <span className="badge">Pending review</span>
+                ) : (
+                  decisionBadge(selected)
+                )}
               </div>
-              <div style={{ padding: 20 }} className="col">
-                <div className="pv">
+              <div style={{ padding: 20, gap: 16 }} className="col">
+                <div className="pv" style={{ borderRadius: 8, padding: 16 }}>
                   <p style={{ whiteSpace: "pre-wrap" }}>{selected.content || "Untitled post"}</p>
                   {selected.media_urls?.[0] && (
                     <img
@@ -1684,49 +1741,67 @@ function ApprovalsView({ request, onRefresh, accounts = [] }) {
                     />
                   )}
                 </div>
-                <label className="label" htmlFor="approval-comment">
-                  Feedback
-                </label>
-                <textarea
-                  id="approval-comment"
-                  className="input"
-                  rows="2"
-                  placeholder="Leave feedback (sent with your decision)…"
-                  value={comment}
-                  onChange={(e) => setComment(e.target.value)}
-                  style={{ height: "auto", padding: 10 }}
-                />
-                <div className="row" style={{ justifyContent: "flex-end" }}>
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    disabled={!!busy}
-                    onClick={() => void decide(selected.id, "changes_requested")}
-                  >
-                    Request changes
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-danger"
-                    disabled={!!busy}
-                    onClick={() => void decide(selected.id, "rejected")}
-                  >
-                    Reject
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    disabled={!!busy}
-                    onClick={() => void decide(selected.id, "approved")}
-                  >
-                    {busy === selected.id ? (
-                      <LoaderCircle size={14} className="animate-spin" />
-                    ) : (
-                      <Check size={14} />
-                    )}
-                    Approve & schedule
-                  </button>
-                </div>
+                {(selected.approval?.comment || selected.comment) && (
+                  <div className="col" style={{ gap: 8 }}>
+                    <h3 className="sm" style={{ fontWeight: 600 }}>
+                      {isPending ? "Comments" : "Feedback"}
+                    </h3>
+                    <p className="sm" style={{ whiteSpace: "pre-wrap" }}>
+                      {selected.approval?.comment || selected.comment}
+                    </p>
+                  </div>
+                )}
+                {isPending && (
+                  <>
+                    <label
+                      className="label"
+                      htmlFor="approval-comment"
+                      style={{ marginBottom: -8 }}
+                    >
+                      Feedback
+                    </label>
+                    <textarea
+                      id="approval-comment"
+                      className="input sc-feedback"
+                      rows="3"
+                      placeholder="Leave feedback (sent with your decision)…"
+                      value={comment}
+                      onChange={(e) => setComment(e.target.value)}
+                    />
+                    <div className="row" style={{ justifyContent: "flex-end", gap: 8 }}>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        disabled={!!busy}
+                        onClick={() => void decide(selected.id, "changes_requested")}
+                      >
+                        Request changes
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        style={{ color: "var(--error)" }}
+                        disabled={!!busy}
+                        onClick={() => void decide(selected.id, "rejected")}
+                      >
+                        Reject
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        disabled={!!busy}
+                        onClick={() => void decide(selected.id, "approved")}
+                      >
+                        {busy === selected.id ? (
+                          <LoaderCircle size={14} className="animate-spin" />
+                        ) : (
+                          <Check size={14} />
+                        )}
+                        Approve & schedule
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           )}
@@ -1742,7 +1817,7 @@ function EmptyState({ icon: Icon, title, text, action, onClick }) {
       <span className="grid h-12 w-12 place-items-center rounded-2xl bg-indigo-50 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300">
         <Icon size={20} />
       </span>
-      <h3 className="mt-4 text-sm font-extrabold">{title}</h3>
+      <h3 className="mt-4 text-sm font-semibold">{title}</h3>
       <p className="mt-1 max-w-sm text-xs leading-5 text-slate-500">{text}</p>
       {action && (
         <button className={`${primary} mt-4`} onClick={onClick}>
@@ -1768,6 +1843,7 @@ function QueueView({
   const [qTab, setQTab] = useState(initialTab || "scheduled");
   const [chanFilter, setChanFilter] = useState("all");
   const [showSettings, setShowSettings] = useState(false);
+  const pickBulkFile = useRef(null);
   const [retrying, setRetrying] = useState("");
   const safeAccounts = Array.isArray(accounts)
     ? accounts.filter((item) => item?.is_active !== false)
@@ -1784,7 +1860,6 @@ function QueueView({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [draftWeekday, setDraftWeekday] = useState(0);
   const [draftTime, setDraftTime] = useState("09:00");
   const [usingDefaults, setUsingDefaults] = useState(false);
 
@@ -1820,20 +1895,29 @@ function QueueView({
     void loadAll(platform);
   }, [platform]);
 
-  function addSlot() {
-    const key = `${draftWeekday}-${draftTime}`;
-    if (slots.some((slot) => `${slot.weekday}-${slot.time_local}` === key)) return;
-    setSlots((current) =>
-      [...current, { weekday: draftWeekday, time_local: draftTime }].sort(
-        (a, b) => a.weekday - b.weekday || a.time_local.localeCompare(b.time_local),
-      ),
-    );
-  }
-
   function removeSlot(weekday, time_local) {
     setSlots((current) =>
       current.filter((slot) => !(slot.weekday === weekday && slot.time_local === time_local)),
     );
+  }
+
+  // Posting-slots grid: one row per time, one checkbox per weekday.
+  const [extraTimes, setExtraTimes] = useState([]);
+  const slotTimes = [...new Set([...slots.map((slot) => slot.time_local), ...extraTimes])].sort();
+  const hasSlot = (weekday, timeLocal) =>
+    slots.some((slot) => slot.weekday === weekday && slot.time_local === timeLocal);
+  function toggleSlot(weekday, timeLocal) {
+    if (hasSlot(weekday, timeLocal)) removeSlot(weekday, timeLocal);
+    else
+      setSlots((current) =>
+        [...current, { weekday, time_local: timeLocal }].sort(
+          (a, b) => a.weekday - b.weekday || a.time_local.localeCompare(b.time_local),
+        ),
+      );
+  }
+  function addSlotTime() {
+    if (!draftTime || slotTimes.includes(draftTime)) return;
+    setExtraTimes((current) => [...current, draftTime]);
   }
 
   async function saveSlots() {
@@ -1880,7 +1964,8 @@ function QueueView({
     failed: ["failed"],
   };
   const chanPosts = safePostsQ.filter(
-    (post) => chanFilter === "all" || accById.get(post.connected_account_id)?.platform === chanFilter,
+    (post) =>
+      chanFilter === "all" || accById.get(post.connected_account_id)?.platform === chanFilter,
   );
   const countFor = (t) => chanPosts.filter((p) => tabStatus[t].includes(p.status)).length;
   const tabPosts = chanPosts.filter((p) => tabStatus[qTab].includes(p.status));
@@ -1921,30 +2006,61 @@ function QueueView({
 
   return (
     <div className="col" style={{ gap: 24 }}>
-      <PageHead title="Queue" sub="Everything scheduled to go out, grouped by day.">
-        <Seg
-          value={chanFilter}
-          onChange={setChanFilter}
-          options={[["all", "All channels"], ...allPlatforms.map((p) => [p, meta(p).label])]}
-        />
-        <button
-          type="button"
-          className={`btn ${showSettings ? "btn-primary" : "btn-secondary"}`}
-          onClick={() => setShowSettings((v) => !v)}
+      {showSettings ? (
+        <PageHead
+          title="Queue settings"
+          sub="Posts you add to the queue go into the next free time."
         >
-          Queue settings
-        </button>
-      </PageHead>
-      <Tabs
-        value={qTab}
-        onChange={setQTab}
-        options={[
-          ["scheduled", "Scheduled", countFor("scheduled")],
-          ["queued", "Queued", countFor("queued")],
-          ["published", "Published", countFor("published")],
-          ["failed", "Failed", countFor("failed")],
-        ]}
-      />
+          <button type="button" className="btn btn-ghost" onClick={() => setShowSettings(false)}>
+            <ArrowLeft size={16} />
+            Back to queue
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => {
+              document.getElementById("bulk-upload")?.scrollIntoView({ behavior: "smooth" });
+              pickBulkFile.current?.();
+            }}
+          >
+            <Upload size={16} />
+            Bulk upload CSV
+          </button>
+        </PageHead>
+      ) : (
+        <PageHead title="Queue" sub="Everything scheduled to go out, grouped by day.">
+          <select
+            className="select"
+            style={{ width: 192 }}
+            aria-label="Filter by channel"
+            value={chanFilter}
+            onChange={(event) => setChanFilter(event.target.value)}
+          >
+            {[["all", "All channels"], ...allPlatforms.map((p) => [p, meta(p).label])].map(
+              ([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ),
+            )}
+          </select>
+          <button type="button" className="btn btn-secondary" onClick={() => setShowSettings(true)}>
+            Queue settings
+          </button>
+        </PageHead>
+      )}
+      {!showSettings && (
+        <Tabs
+          value={qTab}
+          onChange={setQTab}
+          options={[
+            ["scheduled", "Scheduled", countFor("scheduled")],
+            ["queued", "Queued", countFor("queued")],
+            ["published", "Published", countFor("published")],
+            ["failed", "Failed", countFor("failed")],
+          ]}
+        />
+      )}
       {error && !showSettings && (
         <div role="alert" className="alert error sm">
           {error}
@@ -1983,20 +2099,24 @@ function QueueView({
                 const timeLabel = when ? fmtTime(when) : "";
                 return (
                   <div key={p.id} className="post">
-                    <div className="time">
-                      {timeLabel.replace(/\s?(AM|PM)/i, "")}
-                      <span>{(timeLabel.match(/AM|PM/i) || [""])[0]}</span>
-                    </div>
+                    <div className="time sc-time-1l">{timeLabel}</div>
                     <ScAccountAvatar account={acc} size={36} />
                     <div className="body">
                       <div className="row" style={{ gap: 8, marginBottom: 4 }}>
                         <b className="sm">{acc?.account_name || acc?.platform || "Account"}</b>
                         <StatusBadge status={p.status} post={p} />
+                        {p.post_metadata?.evergreen_source_id && (
+                          <span className="badge nodot">Evergreen</span>
+                        )}
                       </div>
                       <div className="txt">{p.content || "Untitled post"}</div>
                       {p.status === "failed" && (
-                        <div className="xs" style={{ color: "var(--error)", marginTop: 6 }}>
-                          ⚠ {failedBannerText(p, acc)}
+                        <div
+                          className="row xs"
+                          style={{ gap: 4, color: "var(--error)", marginTop: 8 }}
+                        >
+                          <AlertCircle size={14} aria-hidden="true" style={{ flex: "none" }} />
+                          {failedBannerText(p, acc)}
                         </div>
                       )}
                     </div>
@@ -2038,132 +2158,143 @@ function QueueView({
           ))
         ))}
       {showSettings && (
-        <section className="space-y-4">
-          <div className={`${card} p-5 sm:p-6`}>
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <span className="text-[10px] font-extrabold uppercase tracking-[.16em] text-indigo-500">
-                  Queue settings
-                </span>
-                <h2 className="mt-1  text-xl font-extrabold">Weekly posting slots</h2>
-                <p className="mt-1 max-w-xl text-xs leading-5 text-slate-500">
-                  Define when each channel can publish. Composer → Next queue places posts into the
-                  next free slot.
-                </p>
+        <section className="flex flex-col gap-6">
+          {error && <p className="text-xs text-danger">{error}</p>}
+          <div className="grid gap-6 lg:grid-cols-2">
+            <div className={`${card} p-5`}>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2>Posting slots</h2>
+                {platforms.length > 1 && (
+                  <select
+                    className="select"
+                    style={{ width: 160 }}
+                    aria-label="Channel"
+                    value={platform}
+                    onChange={(event) => setPlatform(event.target.value)}
+                  >
+                    {platforms.map((item) => (
+                      <option key={item} value={item}>
+                        {meta(item).label}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
-              <button type="button" className={primary} onClick={() => onCreatePost?.()}>
-                <Plus size={14} />
-                Create post
-              </button>
-            </div>
-            <div className="mt-4 flex flex-wrap gap-2">
-              {platforms.length ? (
-                platforms.map((item) => (
-                  <button
-                    key={item}
-                    type="button"
-                    onClick={() => setPlatform(item)}
-                    className={`rounded-xl px-3 py-2 text-[11px] font-bold capitalize transition ${platform === item ? "bg-indigo-600 text-white" : "border border-slate-200 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300"}`}
-                  >
-                    {item}
-                  </button>
-                ))
+              {platforms.length === 0 ? (
+                <p className="mt-4 text-sm text-ink-2">Connect an account to set posting slots.</p>
               ) : (
-                <p className="text-xs text-slate-500">
-                  Connect an account to configure queue slots.
-                </p>
+                <>
+                  <p className="mt-1 text-xs text-ink-2">
+                    {platforms.length === 1 ? `${meta(platform).label} · ` : ""}
+                    Times are in {timezone}.
+                  </p>
+                  {usingDefaults && (
+                    <p className="mt-3 text-xs text-ink-2">
+                      Suggested times: Mon–Fri at 9:00 AM, 12:30 PM and 5:00 PM. Save to use them.
+                    </p>
+                  )}
+                  {loading ? (
+                    <p className="py-8 text-center text-xs text-ink-3">Loading slots…</p>
+                  ) : (
+                    <table className="sc-slots mt-4">
+                      <thead>
+                        <tr>
+                          <th aria-label="Time" />
+                          {WEEKDAY_LABELS.map((label) => (
+                            <th key={label} title={label}>
+                              {label.slice(0, 1)}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {slotTimes.length === 0 ? (
+                          <tr>
+                            <td colSpan={8} className="py-6 text-center text-xs text-ink-3">
+                              No slots yet. Add a time below.
+                            </td>
+                          </tr>
+                        ) : (
+                          slotTimes.map((timeLocal) => (
+                            <tr key={timeLocal}>
+                              <th scope="row">{slotTimeLabel(timeLocal)}</th>
+                              {WEEKDAY_LABELS.map((label, weekday) => {
+                                const on = hasSlot(weekday, timeLocal);
+                                return (
+                                  <td key={label}>
+                                    <input
+                                      type="checkbox"
+                                      className="sc-slot-check"
+                                      checked={on}
+                                      aria-label={`${label} ${slotTimeLabel(timeLocal)}`}
+                                      onChange={() => toggleSlot(weekday, timeLocal)}
+                                    />
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  )}
+                  <div className="mt-4 flex flex-wrap items-center gap-2">
+                    <input
+                      type="time"
+                      value={draftTime}
+                      onChange={(event) => setDraftTime(event.target.value)}
+                      className="input"
+                      style={{ width: 128 }}
+                      aria-label="New slot time"
+                    />
+                    <button type="button" className="btn btn-ghost" onClick={addSlotTime}>
+                      <Plus size={16} />
+                      Add slot
+                    </button>
+                  </div>
+                  <div className="mt-5 flex flex-wrap items-center justify-end gap-2 border-t border-line pt-4">
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      onClick={() => setSlots(DEFAULT_QUEUE_SLOTS.map((row) => ({ ...row })))}
+                    >
+                      Reset to suggested
+                    </button>
+                    <button
+                      type="button"
+                      disabled={saving || !platform}
+                      className="btn btn-primary"
+                      onClick={() => void saveSlots()}
+                    >
+                      {saving ? (
+                        <LoaderCircle size={14} className="animate-spin" />
+                      ) : (
+                        <Check size={14} />
+                      )}
+                      Save slots
+                    </button>
+                  </div>
+                </>
               )}
             </div>
-            {usingDefaults && (
-              <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-semibold text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
-                Showing Buffer-like defaults (Mon–Fri 9:00 / 12:30 / 17:00). Save to keep them for{" "}
-                {platform || "this channel"}.
-              </p>
-            )}
-            {error && <p className="mt-3 text-xs font-semibold text-rose-600">{error}</p>}
-            <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto_auto] sm:items-end">
-              <label className="text-[11px] font-bold text-slate-500">
-                Timezone
-                <input
-                  value={timezone}
-                  onChange={(event) => setTimezone(event.target.value)}
-                  className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-950"
-                />
-              </label>
-              <label className="text-[11px] font-bold text-slate-500">
-                Weekday
-                <select
-                  value={draftWeekday}
-                  onChange={(event) => setDraftWeekday(Number(event.target.value))}
-                  className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950"
-                >
-                  {WEEKDAY_LABELS.map((label, index) => (
-                    <option key={label} value={index}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="text-[11px] font-bold text-slate-500">
-                Time
-                <input
-                  type="time"
-                  value={draftTime}
-                  onChange={(event) => setDraftTime(event.target.value)}
-                  className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950"
-                />
-              </label>
-            </div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <button type="button" className={button} onClick={addSlot}>
-                <Plus size={13} />
-                Add slot
-              </button>
-              <button
-                type="button"
-                className={button}
-                onClick={() => setSlots(DEFAULT_QUEUE_SLOTS.map((row) => ({ ...row })))}
-              >
-                Reset defaults
-              </button>
-              <button
-                type="button"
-                disabled={saving || !platform}
-                className={primary}
-                onClick={() => void saveSlots()}
-              >
-                {saving ? <LoaderCircle size={13} className="animate-spin" /> : <Check size={13} />}
-                Save {platform || "slots"}
-              </button>
-            </div>
-            <div className="mt-4 flex flex-wrap gap-2">
-              {loading ? (
-                <p className="text-xs text-slate-400">Loading slots…</p>
-              ) : slots.length ? (
-                slots.map((slot) => (
-                  <button
-                    key={`${slot.weekday}-${slot.time_local}`}
-                    type="button"
-                    onClick={() => removeSlot(slot.weekday, slot.time_local)}
-                    className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-bold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-                    title="Remove slot"
-                  >
-                    {WEEKDAY_LABELS[slot.weekday]} {slot.time_local}
-                    <X size={12} className="opacity-60" />
-                  </button>
-                ))
-              ) : (
-                <p className="text-xs text-slate-400">No slots yet. Add times above.</p>
-              )}
-            </div>
+            <EvergreenCard request={request} accounts={accounts} timezone={timezone} />
           </div>
-
-          <div className={`${card} p-5 sm:p-6`}>
+          <BulkUploadCard
+            request={request}
+            timezone={timezone}
+            pickRef={pickBulkFile}
+            onScheduled={async () => {
+              await onRefresh?.();
+              await loadAll(platform);
+            }}
+          />
+          <div className={`${card} p-5`}>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
-                <h3 className=" text-lg font-extrabold">Upcoming queue</h3>
-                <p className="text-xs text-slate-500">
-                  Next 14 days of slot assignments for {platform || "all channels"}.
+                <h2>Upcoming queue</h2>
+                <p className="mt-1 text-xs text-ink-2">
+                  Next 14 days of slot assignments for{" "}
+                  {platform ? meta(platform).label : "all channels"}.
                 </p>
               </div>
               <button type="button" className={button} onClick={() => void loadAll(platform)}>
@@ -2181,23 +2312,21 @@ function QueueView({
               ) : (
                 Object.entries(byDay).map(([day, items]) => (
                   <div key={day}>
-                    <h4 className="mb-2 text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
-                      {day}
-                    </h4>
+                    <h4 className="mb-2 text-xs font-semibold text-slate-400">{day}</h4>
                     <div className="space-y-2">
                       {items.map((item) => (
                         <article
                           key={`${item.connected_account_id}-${item.scheduled_at}`}
                           className={`flex flex-wrap items-center gap-3 rounded-2xl border px-3.5 py-3 ${item.filled ? "border-indigo-200 bg-indigo-50/60 dark:border-indigo-900 dark:bg-indigo-950/30" : "border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950/40"}`}
                         >
-                          <span className="min-w-16 text-sm font-extrabold tabular-nums">
+                          <span className="min-w-16 text-sm font-semibold tabular-nums">
                             {item.time_local}
                           </span>
                           <div className="min-w-0 flex-1">
                             <p className="text-xs font-bold capitalize">
                               {item.account_name || item.platform}
                             </p>
-                            <p className="truncate text-[11px] text-slate-500">
+                            <p className="truncate text-xs text-slate-500">
                               {item.filled
                                 ? item.post_excerpt || item.post_status || "Filled"
                                 : "Open slot"}
@@ -2206,7 +2335,7 @@ function QueueView({
                           {item.filled && item.post_id ? (
                             <button
                               type="button"
-                              className="text-[11px] font-bold text-indigo-600"
+                              className="text-xs font-bold text-indigo-600"
                               onClick={() => {
                                 const match = (Array.isArray(posts) ? posts : []).find(
                                   (post) => post.id === item.post_id,
@@ -2228,7 +2357,7 @@ function QueueView({
                           ) : (
                             <button
                               type="button"
-                              className="text-[11px] font-bold text-slate-500"
+                              className="text-xs font-bold text-slate-500"
                               onClick={() => onCreatePost?.(new Date(item.scheduled_at))}
                             >
                               Fill
@@ -2368,12 +2497,7 @@ export default function PublishSection({
     editPost(match);
   }, [initialOpenPostId, safePosts]); // eslint-disable-line react-hooks/exhaustive-deps
   const calendarHead = (
-    <PageHead title="Calendar" sub="Drag posts to reschedule. Click an empty day to create.">
-      <button type="button" onClick={() => onCreatePost?.()} className="btn btn-primary">
-        <Plus size={15} />
-        New post
-      </button>
-    </PageHead>
+    <PageHead title="Calendar" sub="Drag posts to reschedule. Click an empty day to create." />
   );
   const statusOnly = (
     <PublishFilterBar

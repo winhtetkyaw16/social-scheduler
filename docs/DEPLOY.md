@@ -21,6 +21,7 @@ FRONTEND_URL=https://socialcastly.com
 DATABASE_URL=postgresql+psycopg://APP_USER:REPLACE_WITH_DB_PASSWORD@127.0.0.1:5432/social_scheduler
 REDIS_URL=redis://127.0.0.1:6379/0
 CELERY_BROKER_URL=redis://127.0.0.1:6379/1
+TOKEN_REFRESH_INTERVAL_SECONDS=3600
 
 SECRET_KEY=REPLACE_WITH_AT_LEAST_32_RANDOM_CHARACTERS
 ACCESS_TOKEN_EXPIRE_MINUTES=30
@@ -197,7 +198,15 @@ These pages and files are public:
 - `GET /media/{filename}` and legacy `GET /static/uploads/{filename}`
 - `GET /static/build/*` (the studio's JavaScript and CSS, so the login page can load)
 
-Every other `/api/` route returns 401 without a bearer token. The studio shell (dashboard, composer, channels, calendar, queue, settings, and the other signed-in views) does not mount without a session token.
+Every other `/api/` route returns 401 without a bearer token, including the publish routes added for approvals history, Evergreen, and Bulk CSV:
+
+- `GET /api/v1/publish/approvals/history`
+- `GET /api/v1/publish/evergreen`
+- `PUT /api/v1/publish/evergreen/{post_id}`
+- `GET /api/v1/publish/bulk/template`
+- `POST /api/v1/publish/bulk`
+
+The studio shell (dashboard, composer, channels, calendar, queue, settings, and the other signed-in views) does not mount without a session token.
 
 ## What production hides
 

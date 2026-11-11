@@ -100,8 +100,30 @@ def save_destinations(
         parent_id = parent.id
     for dest_id in destination_ids:
         item = by_id[dest_id]
-        token_for_dest = item.get("access_token") or access_token
         dest_platform = str(item.get("platform") or session.platform).strip().lower()
+        page_token = item.get("access_token")
+        # A distinct Page token was minted from the long-lived user token already
+        # stored on this pick session, so the Page token does not expire.
+        uses_page_token = (
+            dest_platform in {"facebook", "instagram"}
+            and isinstance(page_token, str)
+            and bool(page_token)
+            and page_token != access_token
+        )
+        extra = {
+            key: value
+            for key, value in item.items()
+            if key not in {"id", "name", "account_type", "access_token", "platform"}
+        }
+        if uses_page_token:
+            token_for_dest = page_token
+            dest_refresh = None
+            dest_expires = None
+            extra["token_lifetime"] = "non_expiring"
+        else:
+            token_for_dest = page_token or access_token
+            dest_refresh = refresh
+            dest_expires = session.token_expires_at
         account = upsert_oauth_account(
             db,
             user_id,
@@ -112,14 +134,10 @@ def save_destinations(
             or default_account_type(dest_platform),
             parent_account_id=parent_id if dest_platform == session.platform else None,
             access_token=token_for_dest,
-            refresh_token=refresh,
-            token_expires_at=session.token_expires_at,
+            refresh_token=dest_refresh,
+            token_expires_at=dest_expires,
             scopes=list(session.scopes or []),
-            extra_metadata={
-                key: value
-                for key, value in item.items()
-                if key not in {"id", "name", "account_type", "access_token", "platform"}
-            },
+            extra_metadata=extra,
         )
         saved.append(account)
     delete_pick_session(db, session)

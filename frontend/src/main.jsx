@@ -1073,7 +1073,7 @@ function MediaDropzone({
         <span className="text-sm font-bold">
           {uploadBusy ? "Uploading your media…" : "Drop photos or videos here"}
         </span>
-        <span className="text-[11px] text-slate-500">
+        <span className="text-xs text-slate-500">
           or <span className="font-bold text-indigo-600">browse files</span> · up to 10 files
         </span>
       </div>
@@ -1241,7 +1241,7 @@ function WritingTools({ caption, setCaption }) {
       </div>
       {hashtagsOpen && (
         <div className="border-t border-slate-100 px-3 py-2 dark:border-slate-800">
-          <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+          <p className="mb-1.5 text-xs font-bold text-slate-400">
             Suggested hashtags · select to insert
           </p>
           <div className="flex flex-wrap gap-1.5">
@@ -1273,16 +1273,14 @@ function WritingTools({ caption, setCaption }) {
         }}
       />
       <div className="flex flex-wrap items-center gap-1.5 border-t border-slate-100 px-3 py-2 dark:border-slate-800">
-        <span className="mr-1 text-[9px] font-extrabold tracking-[.15em] text-slate-400">
-          INSERT
-        </span>
+        <span className="mr-1 text-xs font-semibold tracking-[.15em] text-slate-400">INSERT</span>
         {VARIABLES.map((variable) => (
           <button key={variable} type="button" onClick={() => insert(variable)} className="sc-pill">
             {variable}
           </button>
         ))}
         <span
-          className={`ml-auto text-[10px] font-semibold ${caption.length > MAX_CHARS - 200 ? "text-amber-600" : "text-slate-400"}`}
+          className={`ml-auto text-xs font-semibold ${caption.length > MAX_CHARS - 200 ? "text-amber-600" : "text-slate-400"}`}
         >
           {caption.length.toLocaleString()} / {MAX_CHARS.toLocaleString()}
         </span>
@@ -1347,7 +1345,7 @@ function QuickStudioDialogContent({
           <div className="flex items-start justify-between">
             <div>
               <span className="xs muted sc-eyebrow">QUICK CREATIVE TOOLS</span>
-              <h2 id="quick-studio-title" className="mt-1  text-xl font-extrabold">
+              <h2 id="quick-studio-title" className="mt-1  text-xl font-semibold">
                 {tool === "image" ? "Mini Canva / Image Editor" : "Video Studio"}
               </h2>
             </div>
@@ -1405,7 +1403,7 @@ function QuickStudioDialogContent({
                   <option value="contain">Fit entire image</option>
                 </select>
               </label>
-              <p className="text-[10px] leading-4 text-slate-500">
+              <p className="text-xs leading-4 text-slate-500">
                 Adjustments are a live preview. The original uploaded image remains unchanged.
               </p>
             </div>
@@ -1553,7 +1551,7 @@ function ConnectChannelPicker({ open, onClose, onPick, onRequestChannel }) {
           aria-labelledby="connect-picker-title"
         >
           <div className="flex items-start justify-between gap-3">
-            <h2 id="connect-picker-title" className=" text-xl font-extrabold tracking-tight">
+            <h2 id="connect-picker-title" className=" text-xl font-semibold tracking-tight">
               Connect a channel
             </h2>
             <button
@@ -1577,7 +1575,7 @@ function ConnectChannelPicker({ open, onClose, onPick, onRequestChannel }) {
                 <span className="mt-3 block text-sm font-bold text-slate-900 dark:text-slate-100">
                   {channel.label}
                 </span>
-                <span className="mt-0.5 block text-[11px] text-slate-500">
+                <span className="mt-0.5 block text-xs text-slate-500">
                   {hints[channel.id] || "Profile"}
                 </span>
               </button>
@@ -1589,7 +1587,7 @@ function ConnectChannelPicker({ open, onClose, onPick, onRequestChannel }) {
               <span className="mt-3 block text-sm font-bold text-slate-900 dark:text-slate-100">
                 Can&apos;t find it?
               </span>
-              <span className="mt-0.5 block text-[11px] text-slate-500">Request a channel</span>
+              <span className="mt-0.5 block text-xs text-slate-500">Request a channel</span>
             </button>
           </div>
         </div>
@@ -3264,10 +3262,8 @@ function App() {
     [
       "More",
       [
-        ["onboarding", "Get started", Sparkles],
         ["biolink", "Bio Link", Link2],
         ["community", "Community", MessagesSquare],
-        ["states", "UI states", Target],
       ],
     ],
   ];
@@ -3314,43 +3310,6 @@ function App() {
               </React.Fragment>
             ))}
           </nav>
-          <div className="nav-label">Channels</div>
-          <div className="col" style={{ gap: 8, padding: "0 10px" }}>
-            {activeChannels.length ? (
-              activeChannels.slice(0, 6).map((account) => (
-                <a
-                  key={account.id}
-                  href="#accounts"
-                  onClick={(event) => {
-                    event.preventDefault();
-                    goToTab("accounts");
-                  }}
-                  className="row"
-                  style={{ gap: 10 }}
-                >
-                  <span className="with-ch">
-                    <ScAvatar
-                      name={account.account_name || account.platform}
-                      size={26}
-                      src={account.avatar_url || undefined}
-                    />
-                    <ScCh platform={account.platform} />
-                  </span>
-                  <span
-                    className="sm muted grow"
-                    style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
-                  >
-                    {account.account_name || account.platform}
-                  </span>
-                </a>
-              ))
-            ) : (
-              <button type="button" className="btn btn-sm btn-secondary" onClick={() => connect()}>
-                <Plus size={14} />
-                Connect a channel
-              </button>
-            )}
-          </div>
           <div className="foot">
             <div
               className="card"
@@ -3363,7 +3322,6 @@ function App() {
                 >
                   {user.workspace_name || "My Workspace"}
                 </b>
-                <span className="badge b-primary nodot">Self-hosted</span>
               </div>
               <div className="xs muted" style={{ marginTop: 4 }}>
                 {activeChannels.length} channel{activeChannels.length === 1 ? "" : "s"} ·{" "}
@@ -3403,14 +3361,6 @@ function App() {
                 style={{ height: 26 }}
               />
             </span>
-            <div className="search sc-search">
-              <svg className="ico" viewBox="0 0 24 24">
-                <circle cx="11" cy="11" r="7" />
-                <path d="m20 20-3.5-3.5" />
-              </svg>
-              <span className="grow">Search posts, channels, media…</span>
-              <span className="kbd">⌘K</span>
-            </div>
             <div className="grow" />
             <button
               type="button"

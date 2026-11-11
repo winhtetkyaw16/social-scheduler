@@ -601,6 +601,10 @@ def _exchange_code(provider: _ProviderOAuth, code: str, verifier: str | None) ->
         elif provider.platform == "pinterest":
             auth = (provider.client_id, provider.client_secret)
             headers["Content-Type"] = "application/x-www-form-urlencoded"
+            # Apps created before 2025-09-25 only receive a continuous refresh
+            # token (60 days, refreshable) when this flag is set. Newer apps
+            # ignore it and already return a continuous refresh token.
+            data["continuous_refresh"] = "true"
         else:
             data["client_secret"] = provider.client_secret
     else:
@@ -631,6 +635,9 @@ def _exchange_code(provider: _ProviderOAuth, code: str, verifier: str | None) ->
         payload = _instagram_token(provider, payload)
     if provider.platform == "tiktok" and isinstance(payload.get("data"), dict):
         payload = payload["data"]
+    # Exchange for a long-lived user token before any Page lookup. Page tokens
+    # minted from a long-lived user token do not expire; short-lived user tokens
+    # would mint short-lived Page tokens.
     if provider.platform == "facebook":
         payload = _facebook_long_lived(provider, payload)
     if provider.platform == "threads":
@@ -664,7 +671,12 @@ def _exchange_code(provider: _ProviderOAuth, code: str, verifier: str | None) ->
 
 
 def _instagram_token(provider: _ProviderOAuth, payload: dict) -> dict:
-    """Facebook Login for Business token; try a long-lived exchange but tolerate system-user tokens."""
+    """Exchange the user token for a long-lived one before any Page token is read.
+
+    Page tokens returned by /me/accounts inherit the user token's lifetime.
+    A long-lived user token produces a non-expiring Page token. System-user
+    tokens are already long-lived, so a failed exchange is kept as-is.
+    """
     access_token = payload.get("access_token")
     if not isinstance(access_token, str) or not access_token:
         raise HTTPException(
@@ -1031,9 +1043,8 @@ def _threads_identity(access_token: str) -> dict:
     return identity
 
 
-# --- OAuth access-token refresh (refresh_token grant) -------------------------------------
+# --- OAuth access-token refresh (shared with the hourly sweep) ---------------------------
 
-_REFRESHABLE = {"x", "linkedin", "youtube", "tiktok", "pinterest"}
 REFRESH_LEEWAY_SECONDS = 5 * 60
 
 
@@ -1057,70 +1068,20 @@ def token_needs_refresh(account, leeway_seconds: int = REFRESH_LEEWAY_SECONDS) -
 
 
 def refresh_account_token(db: Session, account, *, force: bool = False) -> bool:
-    """Refresh a short-lived OAuth access token in place. Returns True when refreshed.
+    """Refresh a short-lived access token in place. Returns True when a new one was stored.
 
-    Never logs or returns token values. Raises HTTPException when the provider rejects it.
+    Uses the same per-account lock as the hourly sweep. Permanent provider
+    rejections are recorded on the account; this returns False instead of raising.
     """
-    if account.platform not in _REFRESHABLE or not account.refresh_token_ciphertext:
-        return False
-    if not force and not token_needs_refresh(account):
-        return False
-    provider = _providers().get(account.platform)
-    if provider is None or provider.missing_env:
-        return False
-    refresh_token = decrypt_token(account.refresh_token_ciphertext)
-    data: dict[str, str] = {
-        "grant_type": "refresh_token",
-        "refresh_token": refresh_token,
-    }
-    auth = None
-    if provider.auth_style == "tiktok":
-        data["client_key"] = provider.client_id
-        data["client_secret"] = provider.client_secret
-    elif provider.platform in ("x", "pinterest"):
-        data["client_id"] = provider.client_id
-        auth = (provider.client_id, provider.client_secret)
-    else:
-        data["client_id"] = provider.client_id
-        data["client_secret"] = provider.client_secret
-    try:
-        response = httpx.post(
-            provider.token_url,
-            data=data,
-            auth=auth,
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-            timeout=30.0,
-        )
-    except httpx.HTTPError as exc:
-        raise HTTPException(
-            status_code=502,
-            detail=f"Could not reach {account.platform} to refresh the token.",
-        ) from exc
-    if response.is_error:
-        raise HTTPException(
-            status_code=401,
-            detail=f"{account.platform} rejected the token refresh (HTTP {response.status_code}). Reconnect the account.",
-        )
-    payload = response.json()
-    if account.platform == "tiktok" and isinstance(payload.get("data"), dict):
-        payload = payload["data"]
-    access_token = payload.get("access_token")
-    if not isinstance(access_token, str) or not access_token:
-        raise HTTPException(
-            status_code=502,
-            detail=f"{account.platform} did not return a refreshed access token.",
-        )
-    account.access_token_ciphertext = encrypt_token(access_token)
-    new_refresh = payload.get("refresh_token")
-    if isinstance(new_refresh, str) and new_refresh:
-        account.refresh_token_ciphertext = encrypt_token(
-            new_refresh
-        )  # X rotates refresh tokens
-    expires_in = payload.get("expires_in")
-    account.token_expires_at = (
-        datetime.now(timezone.utc) + timedelta(seconds=int(expires_in))
-        if expires_in
-        else None
+    from app.services.token_refresh import (
+        PUBLISH_LEEWAY_SECONDS,
+        refresh_connected_account,
     )
-    db.commit()
-    return True
+
+    result = refresh_connected_account(
+        db,
+        account,
+        force=force,
+        window=None if force else timedelta(seconds=PUBLISH_LEEWAY_SECONDS),
+    )
+    return result.status == "refreshed"

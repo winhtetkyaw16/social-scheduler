@@ -117,11 +117,11 @@ function ChannelFileThumb({ file, onRemove, onEdit, onDragStart, onDragOver, onD
         />
       ) : (
         <div className="grid h-full place-items-center text-indigo-500">
-          {video ? <Video size={20} /> : <span className="text-[9px]">Preview</span>}
+          {video ? <Video size={20} /> : <span className="text-xs">Preview</span>}
         </div>
       )}
       {video && (
-        <span className="absolute bottom-1 left-1 rounded bg-black/65 px-1 py-0.5 text-[8px] font-bold text-white">
+        <span className="absolute bottom-1 left-1 rounded bg-black/65 px-1 py-0.5 text-xs font-bold text-white">
           VIDEO
         </span>
       )}
@@ -146,7 +146,7 @@ function ChannelFileThumb({ file, onRemove, onEdit, onDragStart, onDragOver, onD
       >
         <X size={12} />
       </button>
-      <span className="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/75 to-transparent px-1.5 pb-1 pt-4 text-[8px] text-white">
+      <span className="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/75 to-transparent px-1.5 pb-1 pt-4 text-xs text-white">
         {file?.name || "Attachment"}
       </span>
     </div>
@@ -157,7 +157,7 @@ export function ChannelFormatSelector({ account, format, automatic, onSelect }) 
   const options = formatOptions(account?.platform);
   const known = options.some((option) => option.value === format);
   return (
-    <label className="inline-flex shrink-0 items-center gap-1.5 text-[9px] font-bold text-slate-500">
+    <label className="inline-flex shrink-0 items-center gap-1.5 text-xs font-bold text-slate-500">
       <span className="sr-only">
         Publish format for {CHANNEL_UI[account?.platform]?.label || "channel"}
       </span>
@@ -165,7 +165,7 @@ export function ChannelFormatSelector({ account, format, automatic, onSelect }) 
         <select
           value={known ? format : format || options[0]?.value || "Post"}
           onChange={(event) => onSelect?.(event.target.value)}
-          className="max-w-[132px] appearance-none rounded-xl border border-slate-200/80 bg-white/90 py-2 pl-3 pr-8 text-[10px] font-bold text-slate-700 shadow-sm outline-none backdrop-blur-md transition focus:border-indigo-400 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-900/90 dark:text-slate-200"
+          className="max-w-[132px] appearance-none rounded-xl border border-slate-200/80 bg-white/90 py-2 pl-3 pr-8 text-xs font-bold text-slate-700 shadow-sm outline-none backdrop-blur-md transition focus:border-indigo-400 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-900/90 dark:text-slate-200"
         >
           {!known && format ? <option value={format}>{format} (not available)</option> : null}
           {options.map((option) => (
@@ -181,7 +181,7 @@ export function ChannelFormatSelector({ account, format, automatic, onSelect }) 
         />
       </span>
       <span
-        className={`hidden rounded-full px-1.5 py-0.5 text-[8px] font-extrabold sm:inline ${automatic ? "bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-300" : "bg-slate-100 text-slate-400 dark:bg-slate-800"}`}
+        className={`hidden rounded-full px-1.5 py-0.5 text-xs font-semibold sm:inline ${automatic ? "bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-300" : "bg-slate-100 text-slate-400 dark:bg-slate-800"}`}
       >
         {automatic ? "AUTO" : "CUSTOM"}
       </span>
@@ -195,11 +195,11 @@ function ChannelWarningNotice({ messages = [] }) {
     <div
       role="status"
       aria-live="polite"
-      className="mt-3 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50/90 px-3 py-2.5 text-[10px] leading-4 text-amber-800 dark:border-amber-800/70 dark:bg-amber-950/30 dark:text-amber-200"
+      className="mt-3 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50/90 px-3 py-2.5 text-xs leading-4 text-amber-800 dark:border-amber-800/70 dark:bg-amber-950/30 dark:text-amber-200"
     >
       <span aria-hidden="true">⚠</span>
       <div>
-        <p className="font-extrabold">Needs attention</p>
+        <p className="font-semibold">Needs attention</p>
         {messages.map((message, index) => (
           <p key={`${index}-${message}`}>{message}</p>
         ))}
@@ -275,11 +275,11 @@ export function PlatformSettingsPopover({ account, settings = {}, onChange, open
     if (open) onToggle?.();
   };
   const unsupported = UNSUPPORTED_FIELDS[platform] || [];
-  const labelClass = "block text-[9px] font-bold text-slate-500 dark:text-slate-400";
+  const labelClass = "block text-xs font-bold text-slate-500 dark:text-slate-400";
   const inputClass =
-    "mt-1 block w-full rounded-xl border border-slate-200/80 bg-white/90 px-3 py-2.5 text-[10px] font-medium text-slate-700 shadow-sm outline-none backdrop-blur-md transition placeholder:text-slate-400 focus:border-indigo-400 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-900/90 dark:text-slate-200";
+    "mt-1 block w-full rounded-xl border border-slate-200/80 bg-white/90 px-3 py-2.5 text-xs font-medium text-slate-700 shadow-sm outline-none backdrop-blur-md transition placeholder:text-slate-400 focus:border-indigo-400 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-900/90 dark:text-slate-200";
   const selectClass =
-    "block w-full appearance-none rounded-xl border border-slate-200/80 bg-white/90 py-2.5 pl-3 pr-9 text-[10px] font-medium text-slate-700 shadow-sm outline-none backdrop-blur-md transition focus:border-indigo-400 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-900/90 dark:text-slate-200";
+    "block w-full appearance-none rounded-xl border border-slate-200/80 bg-white/90 py-2.5 pl-3 pr-9 text-xs font-medium text-slate-700 shadow-sm outline-none backdrop-blur-md transition focus:border-indigo-400 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-900/90 dark:text-slate-200";
   const selectField = (title, key, options) => (
     <label key={key} className={labelClass}>
       {title}
@@ -323,7 +323,7 @@ export function PlatformSettingsPopover({ account, settings = {}, onChange, open
   const toggleField = (title, key) => (
     <label
       key={key}
-      className="flex cursor-pointer items-center justify-between gap-3 rounded-lg px-1 py-1.5 text-[10px] font-semibold text-slate-600 transition hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800/70"
+      className="flex cursor-pointer items-center justify-between gap-3 rounded-lg px-1 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800/70"
     >
       {title}
       <span className="relative inline-flex h-5 w-9 shrink-0 items-center">
@@ -533,7 +533,7 @@ export function PlatformSettingsPopover({ account, settings = {}, onChange, open
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={onToggle}
-        className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-[9px] font-bold shadow-sm backdrop-blur-md transition focus:outline-none focus:ring-4 focus:ring-indigo-500/10 ${open ? "border-indigo-300 bg-indigo-50/90 text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950/80 dark:text-indigo-200" : "border-slate-200/80 bg-white/90 text-slate-600 hover:border-indigo-300 hover:text-indigo-700 dark:border-slate-700 dark:bg-slate-900/90 dark:text-slate-300"}`}
+        className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-bold shadow-sm backdrop-blur-md transition focus:outline-none focus:ring-4 focus:ring-indigo-500/10 ${open ? "border-indigo-300 bg-indigo-50/90 text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950/80 dark:text-indigo-200" : "border-slate-200/80 bg-white/90 text-slate-600 hover:border-indigo-300 hover:text-indigo-700 dark:border-slate-700 dark:bg-slate-900/90 dark:text-slate-300"}`}
       >
         <Settings2 size={12} />
         Platform settings
@@ -557,10 +557,10 @@ export function PlatformSettingsPopover({ account, settings = {}, onChange, open
                 <BrandIcon platform={platform} />
               </span>
               <div className="min-w-0 flex-1">
-                <p className="text-[10px] font-extrabold text-slate-800 dark:text-white">
+                <p className="text-xs font-semibold text-slate-800 dark:text-white">
                   {CHANNEL_UI[platform]?.label || "Channel"} settings
                 </p>
-                <p className="truncate text-[9px] text-slate-400">
+                <p className="truncate text-xs text-slate-400">
                   {account?.account_name || "Connected account"}
                 </p>
               </div>
@@ -579,7 +579,7 @@ export function PlatformSettingsPopover({ account, settings = {}, onChange, open
                   key={title}
                   className="border-t border-slate-100 pt-2.5 first:border-0 first:pt-0 dark:border-slate-800"
                 >
-                  <h4 className="mb-1.5 flex items-center gap-1.5 text-[9px] font-extrabold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                  <h4 className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400">
                     <Icon size={12} className="text-indigo-500" />
                     {title}
                   </h4>
@@ -588,7 +588,7 @@ export function PlatformSettingsPopover({ account, settings = {}, onChange, open
               ))}
             </div>
             {unsupported.length > 0 && (
-              <p className="mt-3 rounded-lg bg-slate-50 px-2.5 py-2 text-[9px] leading-4 text-slate-500 dark:bg-slate-800/70 dark:text-slate-400">
+              <p className="mt-3 rounded-lg bg-slate-50 px-2.5 py-2 text-xs leading-4 text-slate-500 dark:bg-slate-800/70 dark:text-slate-400">
                 Not available through {CHANNEL_UI[platform]?.label || "this network"}'s publishing
                 API, so it's hidden here: {unsupported.join("; ")}. Set it in the app after posting.
               </p>
@@ -738,7 +738,7 @@ export default function ComposerChannelEditor({
             type="button"
             onClick={() => setMode("universal")}
             aria-pressed={mode === "universal"}
-            className={`rounded-lg px-3 py-1.5 text-[10px] font-bold transition ${mode === "universal" ? "bg-white text-indigo-700 shadow-sm dark:bg-slate-700 dark:text-white" : "text-slate-500"}`}
+            className={`rounded-lg px-3 py-1.5 text-xs font-bold transition ${mode === "universal" ? "bg-white text-indigo-700 shadow-sm dark:bg-slate-700 dark:text-white" : "text-slate-500"}`}
           >
             Universal
           </button>
@@ -746,7 +746,7 @@ export default function ComposerChannelEditor({
             type="button"
             onClick={() => setMode("custom")}
             aria-pressed={mode === "custom"}
-            className={`rounded-lg px-3 py-1.5 text-[10px] font-bold transition ${mode === "custom" ? "bg-white text-indigo-700 shadow-sm dark:bg-slate-700 dark:text-white" : "text-slate-500"}`}
+            className={`rounded-lg px-3 py-1.5 text-xs font-bold transition ${mode === "custom" ? "bg-white text-indigo-700 shadow-sm dark:bg-slate-700 dark:text-white" : "text-slate-500"}`}
           >
             Customize per channel
           </button>
@@ -777,8 +777,8 @@ export default function ComposerChannelEditor({
                   badgeScale={0.48}
                 />
                 <span className="min-w-0">
-                  <span className="block text-[10px] font-extrabold">{channel.label}</span>
-                  <span className="block max-w-32 truncate text-[9px] opacity-70">
+                  <span className="block text-xs font-semibold">{channel.label}</span>
+                  <span className="block max-w-32 truncate text-xs opacity-70">
                     {account.account_name || account.platform_account_id || "Connected account"}
                   </span>
                 </span>
@@ -790,10 +790,10 @@ export default function ComposerChannelEditor({
       {mode === "universal" ? (
         <div className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="text-[10px] font-semibold text-slate-500">
+            <span className="text-xs font-semibold text-slate-500">
               One caption and shared media will be used for every selected account.
             </span>
-            <span className="text-[10px] font-bold text-slate-400">
+            <span className="text-xs font-bold text-slate-400">
               {safeCaption.length.toLocaleString()} characters
             </span>
           </div>
@@ -802,9 +802,9 @@ export default function ComposerChannelEditor({
             <div
               role="status"
               aria-live="polite"
-              className="rounded-xl border border-amber-200 bg-amber-50/90 p-3 text-[10px] leading-4 text-amber-800 dark:border-amber-800/70 dark:bg-amber-950/30 dark:text-amber-200"
+              className="rounded-xl border border-amber-200 bg-amber-50/90 p-3 text-xs leading-4 text-amber-800 dark:border-amber-800/70 dark:bg-amber-950/30 dark:text-amber-200"
             >
-              <p className="mb-1 font-extrabold">Review channel requirements</p>
+              <p className="mb-1 font-semibold">Review channel requirements</p>
               <p>
                 {safeWarnings.every(({ message }) => message === "Add a caption for this channel.")
                   ? "Captions are required for all selected channels."
@@ -854,12 +854,12 @@ export default function ComposerChannelEditor({
                       badgeScale={0.48}
                     />
                     <div className="min-w-0 flex-1">
-                      <p className="text-xs font-extrabold">{channel.label}</p>
-                      <p className="truncate text-[10px] text-slate-500">
+                      <p className="text-xs font-semibold">{channel.label}</p>
+                      <p className="truncate text-xs text-slate-500">
                         {account.account_name || account.platform_account_id || "Connected account"}
                       </p>
                     </div>
-                    <span className="text-[10px] font-semibold text-slate-400">
+                    <span className="text-xs font-semibold text-slate-400">
                       {value.length.toLocaleString()}
                     </span>
                     <ChannelFormatSelector
@@ -871,10 +871,10 @@ export default function ComposerChannelEditor({
                   </header>
                   <div className="mb-2 flex items-center justify-between gap-3 rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 py-2 dark:border-slate-800 dark:bg-slate-900/50">
                     <div>
-                      <p className="text-[10px] font-semibold text-slate-700 dark:text-slate-200">
+                      <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">
                         Use universal caption
                       </p>
-                      <p className="mt-0.5 text-[9px] text-slate-400">
+                      <p className="mt-0.5 text-xs text-slate-400">
                         {inheritsUniversalCaption
                           ? "This account follows your shared caption."
                           : "Write a unique caption for this account."}
@@ -1004,7 +1004,7 @@ export default function ComposerChannelEditor({
                         )
                       }
                     />
-                    <span className="ml-auto text-[10px] font-semibold text-slate-400">
+                    <span className="ml-auto text-xs font-semibold text-slate-400">
                       {value.length.toLocaleString()} chars ·{" "}
                       {value.trim() ? value.trim().split(/\s+/).length : 0} words
                     </span>
@@ -1025,7 +1025,7 @@ export default function ComposerChannelEditor({
                     }}
                   />
                   <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 py-2 dark:border-slate-800 dark:bg-slate-900/50">
-                    <label className="inline-flex cursor-pointer select-none items-center gap-2.5 text-[10px] font-semibold text-slate-600 dark:text-slate-300">
+                    <label className="inline-flex cursor-pointer select-none items-center gap-2.5 text-xs font-semibold text-slate-600 dark:text-slate-300">
                       <span className="relative inline-flex h-5 w-9 shrink-0 items-center">
                         <input
                           type="checkbox"
@@ -1052,7 +1052,7 @@ export default function ComposerChannelEditor({
                       </span>
                       <span>Use shared media</span>
                     </label>
-                    <span className="text-[9px] text-slate-400">
+                    <span className="text-xs text-slate-400">
                       {inheritsSharedMedia
                         ? `${sharedMediaCount} shared item${sharedMediaCount === 1 ? "" : "s"} included`
                         : "Only channel media"}
@@ -1086,7 +1086,7 @@ export default function ComposerChannelEditor({
                     className={`mt-2 rounded-xl border border-dashed p-2 transition-colors ${draggingAccount === account.id ? "border-indigo-500 bg-indigo-50/80 ring-4 ring-indigo-500/10 dark:bg-indigo-950/40" : "border-slate-200/80 bg-slate-50/60 dark:border-slate-800 dark:bg-slate-900/30"}`}
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-slate-200 bg-white/90 px-3 py-2 text-[10px] font-bold text-slate-600 shadow-sm transition hover:border-indigo-300 hover:text-indigo-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+                      <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-slate-200 bg-white/90 px-3 py-2 text-xs font-bold text-slate-600 shadow-sm transition hover:border-indigo-300 hover:text-indigo-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
                         <span>Add channel media</span>
                         <input
                           type="file"
@@ -1099,7 +1099,7 @@ export default function ComposerChannelEditor({
                           className="sr-only"
                         />
                       </label>
-                      <span className="text-[10px] text-slate-400">
+                      <span className="text-xs text-slate-400">
                         {channelMediaCount
                           ? `${channelMediaCount} / 10 · ${inheritsSharedMedia ? "added to shared media" : "custom only"}`
                           : inheritsSharedMedia
@@ -1140,7 +1140,7 @@ export default function ComposerChannelEditor({
                             >
                               <X size={12} />
                             </button>
-                            <span className="absolute bottom-1 left-1 rounded bg-indigo-600/90 px-1 py-0.5 text-[8px] font-bold text-white">
+                            <span className="absolute bottom-1 left-1 rounded bg-indigo-600/90 px-1 py-0.5 text-xs font-bold text-white">
                               SAVED
                             </span>
                           </div>
@@ -1211,7 +1211,7 @@ export default function ComposerChannelEditor({
                               [account.id]: [],
                             }))
                           }
-                          className="col-span-3 text-left text-[9px] font-bold text-indigo-600 sm:col-span-4"
+                          className="col-span-3 text-left text-xs font-bold text-indigo-600 sm:col-span-4"
                         >
                           Clear channel media
                         </button>

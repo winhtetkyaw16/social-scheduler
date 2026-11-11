@@ -144,9 +144,17 @@ const failedSinceConnect = (account, posts) => {
 };
 function healthOf(account, posts) {
   if (account.is_active === false) return ["Paused", ""];
+  if (account.needs_reconnect) return ["Needs reconnect", "b-error"];
+  if (account.connection_warning) return ["Reconnect soon", "b-warning"];
   const exp = account.token_expires_at ? new Date(account.token_expires_at) : null;
-  if (exp && exp < new Date() && !account.has_refresh_token) return ["Token expired", "b-error"];
-  if (exp && !account.has_refresh_token && exp - Date.now() < 7 * DAY)
+  if (exp && exp < new Date() && !account.has_refresh_token && !("connection_warning" in account))
+    return ["Token expired", "b-error"];
+  if (
+    exp &&
+    !account.has_refresh_token &&
+    exp - Date.now() < 7 * DAY &&
+    !("connection_warning" in account)
+  )
     return [`Token expires in ${Math.max(1, Math.ceil((exp - Date.now()) / DAY))}d`, "b-warning"];
   const recentFail = failedSinceConnect(account, posts);
   if (recentFail) return ["Has failed posts", "b-error"];
@@ -519,7 +527,10 @@ export function Analytics({ posts, accounts }) {
     chartHeight = 200;
   const pts = (k) =>
     series
-      .map((s, i) => `${(i / Math.max(1, series.length - 1)) * chartWidth},${chartHeight - (s[k] / sMax) * (chartHeight - 20)}`)
+      .map(
+        (s, i) =>
+          `${(i / Math.max(1, series.length - 1)) * chartWidth},${chartHeight - (s[k] / sMax) * (chartHeight - 20)}`,
+      )
       .join(" ");
   const recent = published
     .slice()

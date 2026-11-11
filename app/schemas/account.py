@@ -10,6 +10,7 @@ from app.integrations.platform_catalog import (
     connectable_platform_names,
     publishable_platform_names,
 )
+from app.services.token_refresh import connection_warning
 
 
 def _can_publish(platform: str, account_type: str) -> bool:
@@ -116,6 +117,9 @@ class AccountRead(BaseModel):
     can_publish: bool = False
     created_at: datetime
     has_refresh_token: bool = False
+    needs_reconnect: bool = False
+    reconnect_reason: str | None = None
+    connection_warning: str | None = None
     extra_metadata: dict = Field(default_factory=dict)
     avatar_url: str | None = None
 
@@ -124,6 +128,7 @@ class AccountRead(BaseModel):
         platform = getattr(account, "platform", "") or ""
         account_type = getattr(account, "account_type", None) or "user"
         meta = getattr(account, "extra_metadata", None) or {}
+        reason = getattr(account, "reconnect_reason", None)
         return cls(
             id=account.id,
             platform=platform,
@@ -135,6 +140,11 @@ class AccountRead(BaseModel):
             token_expires_at=_utc(account.token_expires_at),
             scopes=list(account.scopes or []),
             has_refresh_token=bool(getattr(account, "refresh_token_ciphertext", None)),
+            needs_reconnect=bool(getattr(account, "needs_reconnect", False)),
+            reconnect_reason=(
+                reason if isinstance(reason, str) and reason.strip() else None
+            ),
+            connection_warning=connection_warning(account),
             is_active=bool(account.is_active),
             can_publish=_can_publish(platform, account_type),
             created_at=_utc(account.created_at),

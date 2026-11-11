@@ -1,4 +1,4 @@
-﻿"""In-process due-post scheduler used when Celery/Redis is not running.
+"""In-process due-post scheduler used when Celery/Redis is not running.
 
 Started from the FastAPI lifespan. Every ``INPROCESS_SCHEDULER_SECONDS`` it
 publishes due scheduled/queued posts directly (or hands them to Celery when
@@ -25,6 +25,7 @@ from app.models import ScheduledPost
 logger = logging.getLogger(__name__)
 
 STALE_PUBLISHING_SECONDS = 15 * 60
+_last_token_refresh_at: datetime | None = None
 
 
 def scheduler_mode() -> str:
@@ -95,6 +96,32 @@ def _fail_stale_publishing(db, now: datetime) -> None:
     db.commit()
 
 
+def maybe_refresh_expiring_tokens(now: datetime | None = None) -> int:
+    """Run the token sweep at the same interval as Celery beat, when beat is not in use."""
+    global _last_token_refresh_at
+    from app.core.config import TOKEN_REFRESH_INTERVAL_SECONDS
+    from app.tasks.refresh_tokens import sweep_expiring_tokens
+
+    current = now or datetime.now(timezone.utc)
+    interval = timedelta(seconds=TOKEN_REFRESH_INTERVAL_SECONDS)
+    if (
+        _last_token_refresh_at is not None
+        and current - _last_token_refresh_at < interval
+    ):
+        return 0
+    _last_token_refresh_at = current
+    try:
+        counts = sweep_expiring_tokens()
+    except Exception as exc:
+        logger.info(
+            "Background token refresh outcome=error error_type=%s",
+            type(exc).__name__,
+        )
+        return 0
+    refreshed = int(counts.get("refreshed", 0)) if isinstance(counts, dict) else 0
+    return refreshed
+
+
 def run_due_posts_once(use_celery: bool | None = None) -> int:
     """Publish (or enqueue) every due post once. Returns how many were handled."""
     from app.tasks.publish_post import publish_post_task
@@ -107,6 +134,7 @@ def run_due_posts_once(use_celery: bool | None = None) -> int:
 
         return int(dispatch_due_posts.run())
 
+    maybe_refresh_expiring_tokens()
     db = SessionLocal()
     try:
         now = datetime.now(timezone.utc)

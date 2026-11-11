@@ -162,6 +162,8 @@ def upsert_oauth_account(
     existing.token_expires_at = expires_at
     existing.scopes = [scope.strip() for scope in scopes]
     existing.is_active = True
+    existing.needs_reconnect = False
+    existing.reconnect_reason = None
     base_meta = (
         extra_metadata
         if extra_metadata is not None

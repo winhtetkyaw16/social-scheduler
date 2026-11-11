@@ -1,4 +1,4 @@
-﻿"""Social platform credentials and account state."""
+"""Social platform credentials and account state."""
 
 from __future__ import annotations
 
@@ -20,6 +20,9 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+)
+from sqlalchemy import (
+    false as sql_false,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import Uuid
@@ -57,6 +60,12 @@ class ConnectedAccount(UUIDPrimaryKey, Timestamped, Base):
     access_token_ciphertext: Mapped[str] = mapped_column(Text, nullable=False)
     refresh_token_ciphertext: Mapped[str | None] = mapped_column(Text)
     token_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Set only after a refresh token is rejected for good (revoked, invalid_grant).
+    # Cleared when the user connects the account again.
+    needs_reconnect: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=sql_false(), nullable=False
+    )
+    reconnect_reason: Mapped[str | None] = mapped_column(Text)
     scopes: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     extra_metadata: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)

@@ -82,7 +82,9 @@ def _providers() -> dict[str, _ProviderOAuth]:
     youtube_secret = os.getenv("YOUTUBE_CLIENT_SECRET", "") or ""
     tiktok_key = os.getenv("TIKTOK_CLIENT_KEY", "") or ""
     tiktok_secret = os.getenv("TIKTOK_CLIENT_SECRET", "") or ""
-    tiktok_redirect = os.getenv("TIKTOK_REDIRECT_URI") or config.TIKTOK_REDIRECT_URI
+    tiktok_redirect = config.prefer_https(
+        os.getenv("TIKTOK_REDIRECT_URI") or config.TIKTOK_REDIRECT_URI
+    )
     pinterest_id = os.getenv("PINTEREST_CLIENT_ID", "") or ""
     pinterest_secret = os.getenv("PINTEREST_CLIENT_SECRET", "") or ""
     threads_id = os.getenv("THREADS_CLIENT_ID", "") or ""
@@ -94,7 +96,7 @@ def _providers() -> dict[str, _ProviderOAuth]:
             token_url="https://api.x.com/2/oauth2/token",
             client_id=x_id,
             client_secret=x_secret,
-            redirect_uri=config.X_REDIRECT_URI,
+            redirect_uri=config.prefer_https(config.X_REDIRECT_URI),
             scopes=(
                 "tweet.read",
                 "tweet.write",
@@ -119,7 +121,7 @@ def _providers() -> dict[str, _ProviderOAuth]:
             token_url="https://www.linkedin.com/oauth/v2/accessToken",
             client_id=linkedin_id,
             client_secret=linkedin_secret,
-            redirect_uri=config.LINKEDIN_REDIRECT_URI,
+            redirect_uri=config.prefer_https(config.LINKEDIN_REDIRECT_URI),
             # Organization scopes are optional: keep personal connect working without Marketing Developer Platform approval.
             scopes=("openid", "profile", "email", "w_member_social"),
             use_pkce=False,
@@ -139,7 +141,7 @@ def _providers() -> dict[str, _ProviderOAuth]:
             token_url=f"{_meta_graph(config.INSTAGRAM_GRAPH_API_VERSION or 'v24.0')}/oauth/access_token",
             client_id=instagram_id,
             client_secret=instagram_secret,
-            redirect_uri=config.INSTAGRAM_REDIRECT_URI,
+            redirect_uri=config.prefer_https(config.INSTAGRAM_REDIRECT_URI),
             scopes=(
                 "instagram_basic",
                 "instagram_content_publish",
@@ -165,7 +167,7 @@ def _providers() -> dict[str, _ProviderOAuth]:
             token_url=f"{_meta_graph(config.FACEBOOK_GRAPH_API_VERSION)}/oauth/access_token",
             client_id=facebook_id,
             client_secret=facebook_secret,
-            redirect_uri=config.FACEBOOK_REDIRECT_URI,
+            redirect_uri=config.prefer_https(config.FACEBOOK_REDIRECT_URI),
             scopes=(
                 "pages_show_list",
                 "pages_manage_posts",
@@ -191,7 +193,7 @@ def _providers() -> dict[str, _ProviderOAuth]:
             token_url="https://oauth2.googleapis.com/token",
             client_id=youtube_id,
             client_secret=youtube_secret,
-            redirect_uri=config.YOUTUBE_REDIRECT_URI,
+            redirect_uri=config.prefer_https(config.YOUTUBE_REDIRECT_URI),
             scopes=(
                 "https://www.googleapis.com/auth/youtube.force-ssl",
                 "https://www.googleapis.com/auth/youtube.upload",
@@ -238,7 +240,7 @@ def _providers() -> dict[str, _ProviderOAuth]:
             token_url="https://api.pinterest.com/v5/oauth/token",
             client_id=pinterest_id,
             client_secret=pinterest_secret,
-            redirect_uri=config.PINTEREST_REDIRECT_URI,
+            redirect_uri=config.prefer_https(config.PINTEREST_REDIRECT_URI),
             scopes=(
                 "boards:read",
                 "boards:write",
@@ -263,7 +265,7 @@ def _providers() -> dict[str, _ProviderOAuth]:
             token_url="https://graph.threads.net/oauth/access_token",
             client_id=threads_id,
             client_secret=threads_secret,
-            redirect_uri=config.THREADS_REDIRECT_URI,
+            redirect_uri=config.prefer_https(config.THREADS_REDIRECT_URI),
             scopes=(
                 "threads_basic",
                 "threads_content_publish",

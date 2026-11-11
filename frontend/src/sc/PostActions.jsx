@@ -441,9 +441,9 @@ export function friendlyError(post, account) {
     return p === "x" || p === "twitter"
       ? mk(
           "x_credits_depleted",
-          "X API has no credits: add credits in the X developer console to post.",
-          'X refused the request with "payment required" (402 / CreditsDepleted): the X developer app this connection uses has no API credits left. Your post itself is fine and nothing was published.',
-          "Add credits (or a plan) for the app in the X developer console (console.x.com), then retry. You can also reschedule for later.",
+          "X isn't accepting posts right now. This isn't your fault — please try again later.",
+          "X turned this post away because SocialCastly's posting allowance on X has run out for now. Your post itself is fine and nothing was published.",
+          "Try again later, or reschedule the post for another time.",
           RETRY,
         )
       : mk(

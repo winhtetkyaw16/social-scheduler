@@ -10,20 +10,35 @@ export default {
       },
       // SocialCastly design tokens (see frontend/src/theme/tokens.css)
       colors: {
-        // Slate dark end tuned to the SocialCastly navy dark theme
+        // Legacy screens still use slate-*; map it onto the token greys so light and dark
+        // match tokens.css (bg #F9FAFB/#0B0F19, surface #FFF/#111827, border #E5E7EB/#1F2937).
         slate: {
-          50: "#F8FAFC",
-          100: "#F1F5F9",
-          200: "#E2E8F0",
-          300: "#CBD5E1",
-          400: "#94A3B8",
-          500: "#64748B",
-          600: "#475569",
-          700: "#334366",
-          800: "#1A2540",
-          900: "#111A2E",
-          950: "#0B1120",
+          50: "#F9FAFB",
+          100: "#F3F4F6",
+          200: "#E5E7EB",
+          300: "#D1D5DB",
+          400: "#9CA3AF",
+          500: "#6B7280",
+          600: "#4B5563",
+          700: "#374151",
+          800: "#1F2937",
+          900: "#111827",
+          950: "#0B0F19",
         },
+        // Short token names for new markup (same variables as the sc-* names below).
+        bg: "var(--bg)",
+        surface: { DEFAULT: "var(--surface)", 2: "var(--surface-2)" },
+        line: { DEFAULT: "var(--border)", strong: "var(--border-strong)" },
+        ink: { DEFAULT: "var(--text)", 2: "var(--text-2)", 3: "var(--text-3)" },
+        primary: {
+          DEFAULT: "var(--primary)",
+          2: "var(--primary-2)",
+          soft: "var(--primary-soft)",
+          "soft-text": "var(--primary-soft-text)",
+        },
+        danger: { DEFAULT: "var(--error)", soft: "var(--error-soft)" },
+        success: { DEFAULT: "var(--success)", soft: "var(--success-soft)" },
+        warning: { DEFAULT: "var(--warning)", soft: "var(--warning-soft)" },
         sc: {
           bg: "var(--bg)",
           surface: "var(--surface)",
@@ -56,8 +71,19 @@ export default {
           pinterest: "var(--ch-pinterest)",
         },
       },
-      borderRadius: { "sc-sm": "6px", "sc-md": "10px", "sc-lg": "14px", "sc-xl": "20px" },
-      spacing: { sidebar: "248px", topbar: "64px" },
+      backgroundImage: { "primary-grad": "var(--grad)" },
+      // Two radii only: 8px (buttons, inputs) and 12px (cards, modals).
+      borderRadius: {
+        lg: "8px",
+        xl: "12px",
+        "2xl": "12px",
+        "3xl": "12px",
+        "sc-sm": "8px",
+        "sc-md": "8px",
+        "sc-lg": "12px",
+        "sc-xl": "12px",
+      },
+      spacing: { sidebar: "256px", topbar: "64px" },
       boxShadow: {
         glow: "0 12px 40px rgba(79, 70, 229, .25)",
         "sc-sm": "var(--shadow-sm)",

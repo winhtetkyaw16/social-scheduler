@@ -1,5 +1,5 @@
 // Helpers for the Dashboard "Up next" card.
-// All posts are sorted simply newest first by their own time; no status split.
+// sortUpNext sorts newest first; selectUpNext picks and orders what the card shows.
 
 export function upNextTime(post) {
   return post?.scheduled_at || post?.published_at || post?.created_at || null;
@@ -54,4 +54,45 @@ export function upNextDateParts(value, now = new Date()) {
 export function upNextDateLabel(value, now = new Date()) {
   const { date, time } = upNextDateParts(value, now);
   return time ? `${date} \u00b7 ${time}` : date;
+}
+
+const LIVE_STATUSES = ["scheduled", "queued", "publishing"];
+
+// Dashboard "Up next": everything still going out, plus recent failures, in time order.
+// - Scheduled / queued / publishing posts from the start of today onwards (or with no time yet).
+// - Failed posts from the last `failedDays` days, at most `failedCap` of them when there is
+//   also something upcoming, so failures never push the real schedule off the card.
+// The result is sorted earliest first; posts without a time go last.
+export function selectUpNext(
+  posts,
+  now = new Date(),
+  { limit = 6, failedDays = 7, failedCap = 2 } = {},
+) {
+  const list = Array.isArray(posts) ? posts : [];
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const failedSince = now.getTime() - failedDays * 864e5;
+  const live = list.filter((post) => {
+    if (!LIVE_STATUSES.includes(post?.status)) return false;
+    const t = ms(post.scheduled_at);
+    return t === null || t >= startOfToday;
+  });
+  const failed = list.filter((post) => {
+    if (post?.status !== "failed") return false;
+    const t = ms(post.updated_at) ?? ms(post.scheduled_at) ?? ms(post.created_at);
+    return t !== null && t >= failedSince;
+  });
+  const earliestFirst = (items) =>
+    items
+      .map((p, i) => ({ p, i, t: ms(upNextTime(p)) }))
+      .sort((a, b) => {
+        if (a.t === null && b.t === null) return a.i - b.i;
+        if (a.t === null) return 1;
+        if (b.t === null) return -1;
+        return a.t - b.t || a.i - b.i;
+      })
+      .map((x) => x.p);
+  const keepFailed = live.length ? Math.min(failedCap, limit) : limit;
+  const newestFailed = sortUpNext(failed).slice(0, keepFailed);
+  const nextLive = earliestFirst(live).slice(0, limit - newestFailed.length);
+  return earliestFirst([...nextLive, ...newestFailed]);
 }

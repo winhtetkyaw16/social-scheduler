@@ -1,10 +1,10 @@
 """Contracts for drafts, library assets, and approval workflow."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class PublishItemCreate(BaseModel):
@@ -49,6 +49,32 @@ class ApprovalDecision(BaseModel):
 
     decision: str = Field(pattern="^(approved|changes_requested|rejected)$")
     comment: str | None = Field(default=None, max_length=2000)
+
+
+class ApprovalHistoryRead(BaseModel):
+    """One past approval decision with the post as it was reviewed."""
+
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    item_id: UUID | None
+    decision: str
+    comment: str | None
+    reviewer_id: UUID | None
+    reviewer_name: str
+    decided_at: datetime
+    content: str
+    media_urls: list[str]
+    post_format: str
+    scheduled_at: datetime | None
+    item_metadata: dict[str, Any]
+
+    @field_validator("decided_at", "scheduled_at", mode="before")
+    @classmethod
+    def attach_utc(cls, value: datetime | None) -> datetime | None:
+        """SQLite drops the offset; stored values are UTC."""
+        if isinstance(value, datetime) and value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value
 
 
 class MediaAssetRead(BaseModel):
@@ -110,3 +136,45 @@ class DraftActionResult(BaseModel):
     status: str
     scheduled_post_ids: list[UUID]
     scheduled_at: datetime | None = None
+
+
+class EvergreenSettingsUpdate(BaseModel):
+    """Turn evergreen re-sharing on or off for one post."""
+
+    enabled: bool
+    interval_days: int = Field(default=30, ge=1, le=365)
+    timezone: str = Field(default="UTC", min_length=1, max_length=64)
+
+
+class EvergreenPostRead(BaseModel):
+    """A published post that can be re-shared, with its evergreen state."""
+
+    post_id: UUID
+    connected_account_id: UUID
+    content: str
+    media_urls: list[str]
+    status: str
+    enabled: bool
+    interval_days: int
+    last_published_at: datetime | None
+    next_eligible_at: datetime | None
+    reshare_scheduled_at: datetime | None
+    times_reshared: int
+
+
+class BulkRowError(BaseModel):
+    """One plain-language problem, with the spreadsheet row (header is row 1)."""
+
+    row: int | None
+    message: str
+
+
+class BulkUploadResult(BaseModel):
+    """Outcome of a CSV upload. Posts are only created when there are no errors."""
+
+    rows: int
+    valid_rows: int
+    created: int
+    post_ids: list[UUID]
+    errors: list[BulkRowError]
+    dry_run: bool

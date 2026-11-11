@@ -320,7 +320,9 @@ export default function ComposerV2(props) {
       }
       if (kind === "shorten")
         return trimmed.length <= 280 ? trimmed : `${trimmed.slice(0, 279).replace(/\s+\S*$/, "")}…`;
-      return trimmed && !/^here[’']s the idea/i.test(trimmed) ? `Here’s the idea: ${trimmed}` : trimmed;
+      return trimmed && !/^here[’']s the idea/i.test(trimmed)
+        ? `Here’s the idea: ${trimmed}`
+        : trimmed;
     });
   }
   function addFiles(list) {
@@ -358,9 +360,6 @@ export default function ComposerV2(props) {
             disabled={busy}
           >
             Save draft
-          </button>
-          <button type="button" className="btn btn-ghost" onClick={onDiscard}>
-            Discard
           </button>
         </div>
       </div>
@@ -956,6 +955,7 @@ export default function ComposerV2(props) {
             request={request}
             selectedAccounts={selectedAccounts}
             onSetupQueue={onSetupQueue}
+            onDiscard={onDiscard}
           />
         </form>
         <aside className="c2-pv">
@@ -991,7 +991,7 @@ export default function ComposerV2(props) {
               )}
             </>
           ) : (
-            <div className="card card-pad sm muted">Select a channel to see a preview.</div>
+            <div className="c2-pv-empty sm muted">Select a channel to see a preview.</div>
           )}
         </aside>
       </div>

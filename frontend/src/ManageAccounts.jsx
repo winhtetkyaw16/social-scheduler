@@ -1,7 +1,17 @@
 // Connect, reconnect, and remove social accounts, and pick a destination after OAuth.
 import React, { useEffect, useMemo, useState } from "react";
 import { ChannelTile, PLATFORM_GLYPHS } from "./sc/ui.jsx";
-import { Check, Link2, LoaderCircle, Plus, RefreshCw, Unplug, X as XIcon } from "lucide-react";
+import {
+  Check,
+  Link2,
+  LoaderCircle,
+  MoreHorizontal,
+  Plus,
+  RefreshCw,
+  Trash2,
+  Unplug,
+  X as XIcon,
+} from "lucide-react";
 
 const TYPE_HINTS = {
   facebook:
@@ -10,10 +20,59 @@ const TYPE_HINTS = {
   x: "X user account.",
   linkedin: "Personal profile and Company/Organization Pages.",
   youtube: "YouTube Channel / Brand channel.",
-  tiktok: "Creator/Business for the Content Posting API.",
+  tiktok: "Creator or Business account.",
   pinterest: "User identity plus Boards as pin destinations.",
-  threads: "Threads profile (Meta Threads API). Publishing available once connected.",
+  threads: "Threads profile. Publishing available once connected.",
 };
+
+// "⋯" menu for a connected account row. items: [{ label, icon, danger?, onSelect }]
+function AccountRowMenu({ items, disabled }) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return undefined;
+    const close = () => setOpen(false);
+    window.addEventListener("click", close);
+    return () => window.removeEventListener("click", close);
+  }, [open]);
+  return (
+    <div style={{ position: "relative" }}>
+      <button
+        type="button"
+        className="btn btn-ghost btn-sm btn-icon"
+        aria-label="More actions"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        disabled={disabled}
+        onClick={(event) => {
+          event.stopPropagation();
+          setOpen((value) => !value);
+        }}
+      >
+        <MoreHorizontal size={16} />
+      </button>
+      {open && (
+        <div className="pp-menu" role="menu" style={{ top: 36, right: 0 }}>
+          {items.map(({ label, icon: Icon, danger, onSelect }) => (
+            <a
+              key={label}
+              role="menuitem"
+              href="#"
+              className={danger ? "danger" : undefined}
+              onClick={(event) => {
+                event.preventDefault();
+                setOpen(false);
+                onSelect();
+              }}
+            >
+              <Icon size={15} />
+              {label}
+            </a>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function BrandThumb({ channelId, ChannelBrandImage, size = 24 }) {
   if (typeof ChannelBrandImage === "function") {
@@ -21,7 +80,7 @@ function BrandThumb({ channelId, ChannelBrandImage, size = 24 }) {
   }
   return (
     <span
-      className="inline-flex items-center justify-center rounded-lg bg-slate-100 text-[10px] font-extrabold uppercase dark:bg-slate-800"
+      className="inline-flex items-center justify-center rounded-lg bg-slate-100 text-xs font-semibold uppercase dark:bg-slate-800"
       style={{ width: size, height: size }}
     >
       {(channelId || "?").slice(0, 2)}
@@ -100,7 +159,7 @@ export function AccountAvatar({
         />
       ) : (
         <span
-          className="grid h-full w-full place-items-center rounded-full bg-slate-200 font-extrabold text-slate-600 ring-1 ring-slate-200/80 dark:bg-slate-700 dark:text-slate-100 dark:ring-slate-600"
+          className="grid h-full w-full place-items-center rounded-full bg-slate-200 font-semibold text-slate-600 ring-1 ring-slate-200/80 dark:bg-slate-700 dark:text-slate-100 dark:ring-slate-600"
           style={{ fontSize: Math.max(11, Math.round(size * 0.36)) }}
         >
           {initial}
@@ -369,14 +428,17 @@ export default function ManageAccounts({
     if (account.connection_warning) return ["Reconnect soon", "b-warning"];
     const exp = account.token_expires_at ? new Date(account.token_expires_at) : null;
     if (exp && exp < new Date() && !account.has_refresh_token && !("connection_warning" in account))
-      return ["Token expired", "b-error"];
+      return ["Reconnect needed", "b-error"];
     if (
       exp &&
       !account.has_refresh_token &&
       exp - Date.now() < 7 * DAY &&
       !("connection_warning" in account)
     )
-      return [`Reconnect in ${Math.max(1, Math.ceil((exp - Date.now()) / DAY))} days`, "b-warning"];
+      return [
+        `Reconnect within ${Math.max(1, Math.ceil((exp - Date.now()) / DAY))} days`,
+        "b-warning",
+      ];
     if (failedSinceConnect(account, posts)) return ["Publish errors", "b-error"];
     return ["Healthy", "b-success"];
   };
@@ -470,6 +532,37 @@ export default function ManageAccounts({
                 const busy = busyId === account.id;
                 const typeLabel = account.account_type_label || account.account_type || "Account";
                 const [label, cls] = health(account);
+                const needsReauth =
+                  account.is_active && (cls === "b-error" || cls === "b-warning");
+                const reauth = () => onConnect?.(channel);
+                const menuItems = account.is_active
+                  ? [
+                      { label: "Reconnect", icon: RefreshCw, onSelect: reauth },
+                      {
+                        label: "Disconnect",
+                        icon: Unplug,
+                        onSelect: () => void run(account.id, "disconnect"),
+                      },
+                      {
+                        label: "Remove",
+                        icon: Trash2,
+                        danger: true,
+                        onSelect: () => void run(account.id, "remove"),
+                      },
+                    ]
+                  : [
+                      {
+                        label: "Reconnect",
+                        icon: RefreshCw,
+                        onSelect: () => void run(account.id, "reconnect"),
+                      },
+                      {
+                        label: "Remove",
+                        icon: Trash2,
+                        danger: true,
+                        onSelect: () => void run(account.id, "remove"),
+                      },
+                    ];
                 return (
                   <tr key={account.id}>
                     <td>
@@ -504,47 +597,22 @@ export default function ManageAccounts({
                       </div>
                     </td>
                     <td>
-                      <div className="row" style={{ justifyContent: "flex-end", gap: 6 }}>
+                      <div className="row" style={{ justifyContent: "flex-end", gap: 8 }}>
                         {busy && <LoaderCircle size={14} className="animate-spin" />}
-                        {account.is_active ? (
+                        {(needsReauth || !account.is_active) && (
                           <button
                             type="button"
                             disabled={busy}
                             className="btn btn-sm btn-secondary"
-                            onClick={() => void run(account.id, "disconnect")}
+                            onClick={
+                              account.is_active ? reauth : () => void run(account.id, "reconnect")
+                            }
                           >
-                            <Unplug size={13} />
-                            Disconnect
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            disabled={busy}
-                            className="btn btn-sm btn-secondary"
-                            onClick={() => void run(account.id, "reconnect")}
-                          >
-                            <RefreshCw size={13} />
+                            <RefreshCw size={14} />
                             Reconnect
                           </button>
                         )}
-                        <button
-                          type="button"
-                          disabled={busy}
-                          className="btn btn-sm btn-ghost"
-                          onClick={() => onConnect?.(channel)}
-                          title="Re-authorize this network"
-                        >
-                          Re-auth
-                        </button>
-                        <button
-                          type="button"
-                          disabled={busy}
-                          className="btn btn-sm btn-ghost"
-                          style={{ color: "var(--error)" }}
-                          onClick={() => void run(account.id, "remove")}
-                        >
-                          Remove
-                        </button>
+                        <AccountRowMenu items={menuItems} disabled={busy} />
                       </div>
                     </td>
                   </tr>
@@ -575,12 +643,12 @@ export default function ManageAccounts({
                     ? count
                       ? `${count} connected`
                       : desc[channel.id] || "Ready to connect"
-                    : "Connect only"}
+                    : "Can't post here yet"}
                 </div>
               </div>
               <button
                 type="button"
-                className={`btn btn-sm ${publishable ? "btn-primary" : "btn-secondary"}`}
+                className="btn btn-sm btn-secondary"
                 onClick={() => onConnect?.(channel)}
               >
                 Connect

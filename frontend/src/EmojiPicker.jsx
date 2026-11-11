@@ -134,7 +134,7 @@ export default function EmojiPicker({ open, anchorRef, recent = [], onSelect, on
 
       {!query && recent.length > 0 && (
         <div className="mt-2 border-b border-slate-100 pb-2 dark:border-slate-800">
-          <p className="mb-1 px-1 text-[9px] font-extrabold uppercase tracking-wider text-slate-400">
+          <p className="mb-1 px-1 text-xs font-semibold uppercase tracking-wider text-slate-400">
             Recently used
           </p>
           <div className="grid grid-cols-8 gap-0.5">
@@ -146,10 +146,10 @@ export default function EmojiPicker({ open, anchorRef, recent = [], onSelect, on
       )}
 
       <div className="mb-1 mt-2 flex items-center justify-between px-1">
-        <h3 className="text-[10px] font-extrabold text-slate-600 dark:text-slate-300">
+        <h3 className="text-xs font-semibold text-slate-600 dark:text-slate-300">
           {query ? "Search results" : activeCategory.label}
         </h3>
-        <span className="text-[9px] text-slate-400">{results.length}</span>
+        <span className="text-xs text-slate-400">{results.length}</span>
       </div>
       <div className="min-h-0 max-h-56 flex-1 overflow-y-auto overscroll-contain pr-0.5">
         {results.length ? (

@@ -22,6 +22,8 @@ DATABASE_URL=postgresql+psycopg://APP_USER:REPLACE_WITH_DB_PASSWORD@127.0.0.1:54
 REDIS_URL=redis://127.0.0.1:6379/0
 CELERY_BROKER_URL=redis://127.0.0.1:6379/1
 TOKEN_REFRESH_INTERVAL_SECONDS=3600
+ENGAGEMENT_SYNC_INTERVAL_SECONDS=900
+ENGAGEMENT_SYNC_LOOKBACK_DAYS=30
 
 SECRET_KEY=REPLACE_WITH_AT_LEAST_32_RANDOM_CHARACTERS
 ACCESS_TOKEN_EXPIRE_MINUTES=30
@@ -198,13 +200,23 @@ These pages and files are public:
 - `GET /media/{filename}` and legacy `GET /static/uploads/{filename}`
 - `GET /static/build/*` (the studio's JavaScript and CSS, so the login page can load)
 
-Every other `/api/` route returns 401 without a bearer token, including the publish routes added for approvals history, Evergreen, and Bulk CSV:
+`ENGAGEMENT_SYNC_INTERVAL_SECONDS` (default 900) is how often Celery beat, and the in-process scheduler when beat is not running, pulls comments and insights. `ENGAGEMENT_SYNC_LOOKBACK_DAYS` (default 30) limits that sweep to posts published in the last 30 days. No new OAuth scopes are required for this job. Every network currently reports that comments, replies, and insights are not supported until a later change wires the real APIs.
+
+Every other `/api/` route returns 401 without a bearer token, including the publish routes added for approvals history, Evergreen, and Bulk CSV, and the comments, inbox, and insights routes:
 
 - `GET /api/v1/publish/approvals/history`
 - `GET /api/v1/publish/evergreen`
 - `PUT /api/v1/publish/evergreen/{post_id}`
 - `GET /api/v1/publish/bulk/template`
 - `POST /api/v1/publish/bulk`
+- `GET /api/v1/posts/{post_id}/comments`
+- `GET /api/v1/posts/{post_id}/insights`
+- `POST /api/v1/posts/{post_id}/engagement/sync`
+- `GET /api/v1/inbox`
+- `POST /api/v1/comments/{comment_id}/reply`
+- `POST /api/v1/comments/{comment_id}/read`
+- `POST /api/v1/comments/read`
+- `GET /api/v1/engagement/capabilities`
 
 The studio shell (dashboard, composer, channels, calendar, queue, settings, and the other signed-in views) does not mount without a session token.
 

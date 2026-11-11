@@ -5,6 +5,7 @@ from celery import Celery
 from app.core.config import (
     CELERY_BROKER_URL,
     CELERY_RESULT_BACKEND,
+    ENGAGEMENT_SYNC_INTERVAL_SECONDS,
     SCHEDULER_POLL_SECONDS,
     TOKEN_REFRESH_INTERVAL_SECONDS,
 )
@@ -21,6 +22,7 @@ celery_app = Celery(
         "app.tasks.dispatch_due_posts",
         "app.tasks.refresh_tokens",
         "app.tasks.evergreen",
+        "app.tasks.sync_engagement",
     ],
 )
 celery_app.conf.update(
@@ -58,6 +60,10 @@ celery_app.conf.update(
         "requeue-evergreen": {
             "task": "app.tasks.evergreen.requeue_evergreen",
             "schedule": EVERGREEN_POLL_SECONDS,
+        },
+        "sync-post-engagement": {
+            "task": "app.tasks.sync_engagement.sync_engagement",
+            "schedule": ENGAGEMENT_SYNC_INTERVAL_SECONDS,
         },
     },
 )

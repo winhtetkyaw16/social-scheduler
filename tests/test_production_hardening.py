@@ -161,6 +161,7 @@ def _fill(path: str) -> str:
         .replace("{post_id}", "00000000-0000-0000-0000-000000000001")
         .replace("{item_id}", "00000000-0000-0000-0000-000000000001")
         .replace("{session_id}", "00000000-0000-0000-0000-000000000001")
+        .replace("{comment_id}", "00000000-0000-0000-0000-000000000001")
         .replace("{filename}", "photo.jpg")
     )
     assert "{" not in filled, path
@@ -205,6 +206,14 @@ def test_every_non_public_api_route_requires_auth(client):
         ("PUT", "/api/v1/publish/evergreen/{post_id}"),
         ("GET", "/api/v1/publish/bulk/template"),
         ("POST", "/api/v1/publish/bulk"),
+        ("GET", "/api/v1/posts/{post_id}/comments"),
+        ("GET", "/api/v1/posts/{post_id}/insights"),
+        ("POST", "/api/v1/posts/{post_id}/engagement/sync"),
+        ("GET", "/api/v1/inbox"),
+        ("POST", "/api/v1/comments/{comment_id}/reply"),
+        ("POST", "/api/v1/comments/{comment_id}/read"),
+        ("POST", "/api/v1/comments/read"),
+        ("GET", "/api/v1/engagement/capabilities"),
     ):
         assert route in protected, route
     assert ("GET", "/api/v1/health") in public

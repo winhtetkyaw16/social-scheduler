@@ -36,3 +36,11 @@ def ensure_database_schema(engine: Engine) -> None:
     Base.metadata.create_all(bind=engine)
     for column, ddl in _USER_COLUMN_PATCHES.items():
         _add_column_if_missing(engine, "users", column, ddl)
+    # create_all does not alter an existing connected_accounts table.
+    bool_ddl = (
+        "BOOLEAN NOT NULL DEFAULT FALSE"
+        if engine.dialect.name == "postgresql"
+        else "INTEGER NOT NULL DEFAULT 0"
+    )
+    _add_column_if_missing(engine, "connected_accounts", "needs_reconnect", bool_ddl)
+    _add_column_if_missing(engine, "connected_accounts", "reconnect_reason", "TEXT")

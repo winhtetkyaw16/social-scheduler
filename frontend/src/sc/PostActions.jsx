@@ -336,6 +336,22 @@ export function friendlyError(post, account) {
     { id: "reconnect", label: `Reconnect ${net}`, target: "accounts" },
     { id: "retry", label: "Retry now" },
   ];
+  if ((post.last_error_code || "").toLowerCase() === "connection_expired") {
+    const said = String(post.last_error_message || "").trim();
+    const safe =
+      said && !/invalid_grant|error code|oauth|http\s+\d/i.test(said) && said.length < 180;
+    return mk(
+      "connection_expired",
+      safe
+        ? said.endsWith(".")
+          ? said
+          : `${said}.`
+        : `Your ${net} connection has expired or was revoked.`,
+      `${net} no longer accepts SocialCastly's sign-in for this account.`,
+      `Reconnect your ${net} account in Accounts, then retry the post.`,
+      RECON,
+    );
+  }
   if (
     p === "youtube" &&
     has(

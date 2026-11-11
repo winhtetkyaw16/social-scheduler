@@ -1,7 +1,7 @@
-﻿"""Celery worker task that publishes one scheduled post with retry logging."""
+"""Celery worker task that publishes one scheduled post with retry logging."""
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from sqlalchemy import or_, select, update
@@ -44,6 +44,37 @@ def _ig_crop_kwargs(platform: str, metadata) -> dict:
     )
     crop.setdefault("format", meta.get("format"))
     return {"ig_crop": crop}
+
+
+def _fail_reconnect(db, post, reason: str, log=None) -> dict[str, str]:
+    """Stop a post with the plain reconnect reason. Not retried."""
+    now = datetime.now(timezone.utc)
+    text = (
+        reason
+        or "This account needs to be reconnected before scheduled posts can publish."
+    ).strip()
+    post.status = "failed"
+    post.last_error_code = "connection_expired"
+    post.last_error_message = text
+    if log is not None:
+        log.outcome = "failed"
+        log.finished_at = now
+        log.error_code = post.last_error_code
+        log.error_message = text
+    else:
+        db.add(
+            ExecutionLog(
+                scheduled_post_id=post.id,
+                attempt_number=post.attempt_count + 1,
+                outcome="skipped",
+                started_at=now,
+                finished_at=now,
+                error_code=post.last_error_code,
+                error_message=text,
+            )
+        )
+    db.commit()
+    return {"status": "failed", "error": "connection_expired"}
 
 
 def _settings_kwargs(metadata) -> dict:
@@ -98,6 +129,8 @@ def publish_post_task(post_id: str, post_format: str | None = None) -> dict[str,
             return {"status": "skipped"}
 
         account = post.connected_account
+        if getattr(account, "needs_reconnect", False):
+            return _fail_reconnect(db, post, account.reconnect_reason or "")
         if not account.is_active:
             post.status = "failed"
             post.last_error_code = "account_inactive"
@@ -202,19 +235,19 @@ def publish_post_task(post_id: str, post_format: str | None = None) -> dict[str,
         db.add(log)
         db.commit()
         try:
-            try:
-                from app.services.oauth import refresh_account_token
+            from app.services.token_refresh import (
+                PUBLISH_LEEWAY_SECONDS,
+                refresh_connected_account,
+            )
 
-                if refresh_account_token(db, account):
-                    db.refresh(account)
-            except (
-                Exception
-            ) as exc:  # fall through; publish will surface the auth error
-                logger.warning(
-                    "Token refresh failed for account %s: %s",
-                    account.id,
-                    getattr(exc, "detail", type(exc).__name__),
-                )
+            refresh_connected_account(
+                db,
+                account,
+                window=timedelta(seconds=PUBLISH_LEEWAY_SECONDS),
+            )
+            db.refresh(account)
+            if getattr(account, "needs_reconnect", False):
+                return _fail_reconnect(db, post, account.reconnect_reason or "", log)
             result = publish(
                 account.platform,
                 decrypt_token(account.access_token_ciphertext),

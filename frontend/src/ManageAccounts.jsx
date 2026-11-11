@@ -343,22 +343,44 @@ export default function ManageAccounts({
   };
 
   const DAY = 864e5;
+  const noticeFor = (account) => {
+    if (!account?.is_active) return "";
+    if (account.needs_reconnect) {
+      return (
+        account.reconnect_reason ||
+        account.connection_warning ||
+        "This account needs to be reconnected before scheduled posts can publish."
+      );
+    }
+    if (account.connection_warning) return account.connection_warning;
+    if ("connection_warning" in account) return "";
+    const exp = account.token_expires_at ? new Date(account.token_expires_at) : null;
+    if (exp && !account.has_refresh_token && exp - Date.now() < 7 * DAY) {
+      const when = exp.toLocaleDateString([], { month: "short", day: "numeric" });
+      const state = exp < new Date() ? "has expired" : `expires ${when}`;
+      const label = channelById[account.platform]?.label || account.platform;
+      return `${label} access ${state}. Reconnect to keep scheduled posts publishing.`;
+    }
+    return "";
+  };
   const health = (account) => {
     if (!account.is_active) return ["Disconnected", ""];
+    if (account.needs_reconnect) return ["Needs reconnect", "b-error"];
+    if (account.connection_warning) return ["Reconnect soon", "b-warning"];
     const exp = account.token_expires_at ? new Date(account.token_expires_at) : null;
-    if (exp && exp < new Date() && !account.has_refresh_token) return ["Token expired", "b-error"];
-    if (exp && !account.has_refresh_token && exp - Date.now() < 7 * DAY)
+    if (exp && exp < new Date() && !account.has_refresh_token && !("connection_warning" in account))
+      return ["Token expired", "b-error"];
+    if (
+      exp &&
+      !account.has_refresh_token &&
+      exp - Date.now() < 7 * DAY &&
+      !("connection_warning" in account)
+    )
       return [`Reconnect in ${Math.max(1, Math.ceil((exp - Date.now()) / DAY))} days`, "b-warning"];
     if (failedSinceConnect(account, posts)) return ["Publish errors", "b-error"];
     return ["Healthy", "b-success"];
   };
-  const expiring = sorted.filter(
-    (account) =>
-      account.is_active &&
-      !account.has_refresh_token &&
-      account.token_expires_at &&
-      new Date(account.token_expires_at) - Date.now() < 7 * DAY,
-  );
+  const expiring = sorted.filter((account) => noticeFor(account));
   const posts30 = (account) =>
     posts.filter(
       (post) =>
@@ -396,22 +418,13 @@ export default function ManageAccounts({
         </button>
       </div>
       {expiring.map((account) => (
-        <div key={account.id} className="alert warning">
+        <div key={account.id} className="alert warning" role="status">
           <svg className="ico" viewBox="0 0 24 24">
             <circle cx="12" cy="12" r="9" />
             <path d="M12 8v4M12 16h.01" />
           </svg>
           <div className="grow sm">
-            <b>
-              {channelById[account.platform]?.label || account.platform} access{" "}
-              {new Date(account.token_expires_at) < new Date() ? "expired" : "expires"}{" "}
-              {new Date(account.token_expires_at).toLocaleDateString([], {
-                month: "short",
-                day: "numeric",
-              })}
-              .
-            </b>{" "}
-            <span className="muted">Reconnect to keep scheduled posts publishing.</span>
+            <b>{noticeFor(account)}</b>
           </div>
           <button
             type="button"

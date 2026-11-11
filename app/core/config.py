@@ -91,6 +91,10 @@ CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", REDIS_URL)
 CELERY_RESULT_BACKEND = None
 POST_MAX_ATTEMPTS = int(os.getenv("POST_MAX_ATTEMPTS", "5"))
 SCHEDULER_POLL_SECONDS = int(os.getenv("SCHEDULER_POLL_SECONDS", "30"))
+# How often the proactive token refresh job runs. The safety window is separate.
+TOKEN_REFRESH_INTERVAL_SECONDS = int(
+    os.getenv("TOKEN_REFRESH_INTERVAL_SECONDS", "3600")
+)
 ALLOWED_ORIGINS = [
     value.strip()
     for value in os.getenv("ALLOWED_ORIGINS", "").split(",")

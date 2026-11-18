@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { NAV_GROUPS, navBadge, navItemHeight } from "./navModel.js";
+import { NAV_GROUPS, menuUnreadDot, navBadge, navItemHeight, unreadAfterMarkAllRead } from "./navModel.js";
 
 test("nav groups, order, and icons match the spec", () => {
   assert.deepEqual(
@@ -36,4 +36,16 @@ test("badges hide at zero, inbox is the strong text-colour badge, and 99+ caps",
   assert.equal(navItemHeight("desktop"), 36);
   assert.equal(navItemHeight("phone"), 40);
   assert.equal(navItemHeight("tablet"), 40);
+});
+
+test("inbox badge and the menu dot clear at zero and right after mark all read", () => {
+  assert.equal(navBadge("inbox", { inbox: 4 }).text, "4");
+  assert.equal(menuUnreadDot(4), true);
+  const cleared = unreadAfterMarkAllRead();
+  assert.equal(cleared, 0);
+  assert.equal(navBadge("inbox", { inbox: cleared }), null);
+  assert.equal(menuUnreadDot(cleared), false);
+  assert.equal(navBadge("inbox", { inbox: 0 }), null);
+  assert.equal(menuUnreadDot(0), false);
+  assert.equal(menuUnreadDot(null), false);
 });

@@ -38,6 +38,16 @@ export function navBadge(id, counts = {}) {
   return { text: n > 99 ? "99+" : String(n), strong: id === "inbox" };
 }
 
+/** The phone menu dot is only present while Inbox still has unread comments. */
+export function menuUnreadDot(unread) {
+  return Math.max(0, Number(unread) || 0) > 0;
+}
+
+/** Mark all read clears the sidebar badge and the menu dot immediately. */
+export function unreadAfterMarkAllRead() {
+  return 0;
+}
+
 /** Desktop items are 36px. The phone and tablet drawer uses 40px. */
 export function navItemHeight(tier) {
   return tier === "desktop" ? 36 : 40;

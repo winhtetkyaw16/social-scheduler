@@ -1706,6 +1706,7 @@ function App() {
     }
   });
   const detailHistory = useRef(false);
+  const unreadRequest = useRef(0);
   const [remember, setRemember] = useState(true);
   const toastTimer = useRef(null);
   const mediaUrls = useRef(new Map());
@@ -1725,14 +1726,21 @@ function App() {
     [authenticatedFetch],
   );
   const xEngagementEnabled = readXEnabled(import.meta.env);
-  const refreshInboxUnread = useCallback(() => {
+  const refreshInboxUnread = useCallback((next) => {
+    const seq = ++unreadRequest.current;
+    if (typeof next === "number" && Number.isFinite(next)) {
+      setInboxUnread(Math.max(0, next));
+    }
     if (!token) {
       setInboxUnread(0);
       return;
     }
     engagementClient
       .listInbox({ limit: 1 })
-      .then((page) => setInboxUnread(Number(page?.unread_count) || 0))
+      .then((page) => {
+        if (seq !== unreadRequest.current) return;
+        setInboxUnread(Math.max(0, Number(page?.unread_count) || 0));
+      })
       .catch(() => {});
   }, [engagementClient, token]);
   useEffect(() => {

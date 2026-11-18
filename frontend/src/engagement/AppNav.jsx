@@ -23,7 +23,7 @@ import {
   X,
 } from "lucide-react";
 import { Avatar } from "../sc/ui.jsx";
-import { NAV_GROUPS, navBadge } from "../navModel.js";
+import { NAV_GROUPS, menuUnreadDot, navBadge } from "../navModel.js";
 
 const ICONS = {
   home: Home,
@@ -139,7 +139,7 @@ export function AppTopbar({
     <header className="topbar snav-top">
       <button type="button" className="snav-icon snav-burger" aria-label="Open menu" onClick={onOpenMenu}>
         <Menu size={20} strokeWidth={2} />
-        {inboxUnread > 0 ? <span className="snav-dot" /> : null}
+        {menuUnreadDot(inboxUnread) ? <span className="snav-dot" /> : null}
       </button>
       <span className="snav-mlogo">
         <BrandLockup size="base" />

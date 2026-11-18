@@ -13,6 +13,7 @@ import {
   Trash2,
   TriangleAlert,
 } from "lucide-react";
+import { unreadAfterMarkAllRead } from "../navModel.js";
 import { Avatar, ChannelTile } from "../sc/ui.jsx";
 import { CommentBlock } from "./PostDetailDrawer.jsx";
 import {
@@ -157,6 +158,9 @@ export default function InboxPage({
       setTotal(Number(page?.total) || 0);
       setCounts(page?.counts || null);
       if (offset === 0) setMatrix(caps);
+      if (offset === 0 && !network && !accountId && !query) {
+        onActivity?.(Math.max(0, Number(page?.unread_count) || 0));
+      }
       setPhase("ready");
       setNow(new Date());
     } catch {
@@ -279,7 +283,8 @@ export default function InboxPage({
       });
       setItems((current) => current.map((row) => ({ ...row, read: true })));
       setCounts((current) => (current ? { ...current, unread: 0 } : current));
-      onActivity?.();
+      const clearsEveryUnread = !network && !accountId && !query && (status === "all" || status === "unread");
+      onActivity?.(clearsEveryUnread ? unreadAfterMarkAllRead() : undefined);
     } catch {
       tell(COPY.actionFailed);
     } finally {

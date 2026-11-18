@@ -316,6 +316,7 @@ def test_threads_replies_and_insights(monkeypatch):
 
 
 def test_x_search_reply_metrics_hide_and_402(monkeypatch, client, auth_headers, caplog):
+    monkeypatch.setenv("ENGAGEMENT_X_ENABLED", "true")
     script = _Script(
         [
             _ok(

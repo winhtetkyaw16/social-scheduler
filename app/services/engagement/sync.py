@@ -21,6 +21,7 @@ from app.models import ConnectedAccount, ScheduledPost
 from app.models.engagement import PostComment, PostInsightsSnapshot
 from app.services.engagement import registry
 from app.services.engagement.base import (
+    CAPABILITY_COMMENTS_READ,
     AccountUnavailable,
     CreditsRequired,
     NotSupported,
@@ -30,6 +31,7 @@ from app.services.engagement.base import (
     ProviderReply,
     ReconnectRequired,
 )
+from app.core.config import engagement_x_enabled
 from app.services.engagement.tokens import prepare_account
 
 logger = logging.getLogger(__name__)
@@ -310,6 +312,17 @@ def sync_posts(
         grouped[post.connected_account_id].append(post)
     for account_id, account_posts in grouped.items():
         account = db.get(ConnectedAccount, account_id)
+        if (
+            account is not None
+            and registry.canonical_network(account.platform) == "x"
+            and not engagement_x_enabled()
+        ):
+            summary["skipped"] += len(account_posts)
+            logger.info(
+                "Engagement sync skipped account=%s network=x outcome=disabled",
+                account_id,
+            )
+            continue
         try:
             prepare_account(db, account)
         except ReconnectRequired:
@@ -420,6 +433,12 @@ def sync_one_post(db: Session, post: ScheduledPost) -> dict:
     when the network supports insights.
     """
     account = db.get(ConnectedAccount, post.connected_account_id)
+    if (
+        account is not None
+        and registry.canonical_network(account.platform) == "x"
+        and not engagement_x_enabled()
+    ):
+        raise NotSupported("x", CAPABILITY_COMMENTS_READ)
     prepare_account(db, account)
     try:
         result = _sync_one_post(db, account, post, force_insights=True)

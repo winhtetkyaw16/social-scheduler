@@ -9,6 +9,7 @@ A 402 or credits error is ``CreditsRequired``, not a reconnect.
 
 from __future__ import annotations
 
+from app.core.config import engagement_x_enabled
 from app.services.engagement.base import (
     CAPABILITY_COMMENT_REPLY,
     CAPABILITY_COMMENTS_READ,
@@ -16,10 +17,12 @@ from app.services.engagement.base import (
     CAPABILITY_INSIGHTS,
     EngagementCapabilities,
     EngagementProvider,
+    NotSupported,
     ProviderComment,
     ProviderInsights,
     ProviderReply,
 )
+from app.services.engagement.copy import comments_unavailable, insights_unavailable
 from app.services.engagement.http import request_json
 from app.services.engagement.parsing import as_int, is_own_author, parse_time
 
@@ -48,24 +51,53 @@ def _parent_id(row: dict) -> str | None:
     return None
 
 
-class XEngagement(EngagementProvider):
-    """Read a post's replies, reply, hide a reply, and read public metrics."""
+_X_ENABLED = EngagementCapabilities(
+    supports_comments_read=True,
+    supports_comment_reply=True,
+    supports_insights=True,
+    supports_hide_reply=True,
+    required_scopes={
+        CAPABILITY_COMMENTS_READ: ("tweet.read",),
+        CAPABILITY_COMMENT_REPLY: ("tweet.write",),
+        CAPABILITY_INSIGHTS: ("tweet.read",),
+        CAPABILITY_HIDE_REPLY: ("tweet.moderate.write",),
+    },
+)
 
-    network = "x"
-    capabilities = EngagementCapabilities(
-        supports_comments_read=True,
-        supports_comment_reply=True,
-        supports_insights=True,
-        supports_hide_reply=True,
-        required_scopes={
-            CAPABILITY_COMMENTS_READ: ("tweet.read",),
-            CAPABILITY_COMMENT_REPLY: ("tweet.write",),
-            CAPABILITY_INSIGHTS: ("tweet.read",),
-            CAPABILITY_HIDE_REPLY: ("tweet.moderate.write",),
-        },
+
+def x_capabilities() -> EngagementCapabilities:
+    """Real X capabilities only while ``ENGAGEMENT_X_ENABLED`` is on."""
+    if engagement_x_enabled():
+        return _X_ENABLED
+    return EngagementCapabilities(
+        reasons={
+            CAPABILITY_COMMENTS_READ: comments_unavailable("x"),
+            CAPABILITY_COMMENT_REPLY: comments_unavailable("x"),
+            CAPABILITY_INSIGHTS: insights_unavailable("x"),
+            CAPABILITY_HIDE_REPLY: comments_unavailable("x"),
+        }
     )
 
+
+class XEngagement(EngagementProvider):
+    """Read a post's replies, reply, hide a reply, and read public metrics.
+
+    With the flag off, capabilities are all false and every call raises
+    ``NotSupported`` before any request leaves the process.
+    """
+
+    network = "x"
+
+    @property
+    def capabilities(self) -> EngagementCapabilities:
+        return x_capabilities()
+
+    def _require_enabled(self, capability: str) -> None:
+        if not engagement_x_enabled():
+            raise NotSupported(self.network, capability)
+
     def fetch_comments(self, account, post, since=None) -> list[ProviderComment]:
+        self._require_enabled(CAPABILITY_COMMENTS_READ)
         token = self.access_token(account)
         root_id = str(post.provider_post_id or "").strip()
         params = {
@@ -116,6 +148,7 @@ class XEngagement(EngagementProvider):
         return comments
 
     def reply_to_comment(self, account, comment, text: str) -> ProviderReply:
+        self._require_enabled(CAPABILITY_COMMENT_REPLY)
         token = self.access_token(account)
         body = request_json(
             "POST",
@@ -133,6 +166,7 @@ class XEngagement(EngagementProvider):
         return ProviderReply(provider_comment_id=reply_id, raw=body)
 
     def hide_reply(self, account, comment, hidden: bool) -> None:
+        self._require_enabled(CAPABILITY_HIDE_REPLY)
         token = self.access_token(account)
         tweet_id = str(comment.provider_comment_id or "").strip()
         request_json(
@@ -143,6 +177,7 @@ class XEngagement(EngagementProvider):
         )
 
     def fetch_insights(self, account, post) -> ProviderInsights:
+        self._require_enabled(CAPABILITY_INSIGHTS)
         token = self.access_token(account)
         tweet_id = str(post.provider_post_id or "").strip()
         body = request_json(

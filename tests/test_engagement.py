@@ -340,7 +340,7 @@ def test_registry_capability_matrix():
         "facebook": (True, True, True, False),
         "instagram": (True, True, True, False),
         "threads": (True, True, True, False),
-        "x": (True, True, True, True),
+        "x": (False, False, False, False),
         "linkedin": (False, False, False, False),
         "youtube": (True, True, True, False),
         "tiktok": (False, False, False, False),
@@ -369,6 +369,124 @@ def test_registry_capability_matrix():
         "Insights from TikTok aren't available in SocialCastly yet"
     )
     assert get_engagement_provider("Twitter").network == "x"
+    x_caps = get_engagement_provider("x").capabilities
+    assert x_caps.reasons["comments_read"] == (
+        "Comments from X aren't available in SocialCastly yet"
+    )
+    assert x_caps.reasons["comment_reply"] == (
+        "Comments from X aren't available in SocialCastly yet"
+    )
+    assert x_caps.reasons["insights"] == (
+        "Insights from X aren't available in SocialCastly yet"
+    )
+    assert x_caps.reasons["hide_reply"] == (
+        "Comments from X aren't available in SocialCastly yet"
+    )
+
+
+def test_x_engagement_is_refused_until_the_flag_is_on(client, auth_headers, monkeypatch):
+    """ENGAGEMENT_X_ENABLED defaults off. Calls and capabilities stay closed."""
+    from app.core.config import engagement_x_enabled
+    from app.services.engagement.providers.x import XEngagement
+    from app.services.engagement.registry import get_engagement_provider
+    from app.services.engagement.sync import sync_posts
+
+    monkeypatch.delenv("ENGAGEMENT_X_ENABLED", raising=False)
+    assert engagement_x_enabled() is False
+    for raw in ("", "false", "0", "no", "off"):
+        monkeypatch.setenv("ENGAGEMENT_X_ENABLED", raw)
+        assert engagement_x_enabled() is False, raw
+
+    provider = XEngagement()
+    with pytest.raises(NotSupported):
+        provider.fetch_comments(None, None)
+    with pytest.raises(NotSupported):
+        provider.reply_to_comment(None, None, "hi")
+    with pytest.raises(NotSupported):
+        provider.hide_reply(None, None, True)
+    with pytest.raises(NotSupported):
+        provider.fetch_insights(None, None)
+
+    headers, _ = auth_headers
+    user_id = _user_id(headers)
+    account_id = _connect(
+        client,
+        headers,
+        "x",
+        scopes=["tweet.read", "tweet.write", "tweet.moderate.write"],
+    )
+    post_id = _published(user_id, account_id)
+    comment_id = _add_comment(post_id, account_id, text="Hi", network="x", minutes_ago=5)
+    unavailable = "Comments from X aren't available in SocialCastly yet"
+
+    reply = client.post(
+        f"/api/v1/comments/{comment_id}/reply",
+        headers=headers,
+        json={"text": "Thanks"},
+    )
+    assert reply.status_code == 501, reply.text
+    assert reply.json()["detail"] == unavailable
+
+    hidden = client.post(
+        f"/api/v1/comments/{comment_id}/hide",
+        headers=headers,
+        json={"hidden": True},
+    )
+    assert hidden.status_code == 501, hidden.text
+    assert hidden.json()["detail"] == unavailable
+
+    refreshed = client.post(f"/api/v1/posts/{post_id}/engagement/sync", headers=headers)
+    assert refreshed.status_code == 501, refreshed.text
+    assert refreshed.json()["detail"] == unavailable
+
+    db = SessionLocal()
+    try:
+        post = db.get(ScheduledPost, post_id)
+        summary = sync_posts(db, [post], force_insights=True)
+    finally:
+        db.close()
+    assert summary["comments_upserted"] == 0
+    assert summary["insights_captured"] == 0
+    assert summary["errors"] == 0
+    assert summary["credits"] == 0
+    assert summary["skipped"] == 1
+
+    caps = client.get("/api/v1/engagement/capabilities", headers=headers)
+    assert caps.status_code == 200, caps.text
+    matrix = caps.json()
+    x_row = next(row for row in matrix["networks"] if row["network"] == "x")
+    assert x_row["supports_comments_read"] is False
+    assert x_row["supports_comment_reply"] is False
+    assert x_row["supports_insights"] is False
+    assert x_row["supports_hide_reply"] is False
+    assert x_row["reasons"]["comments_read"] == unavailable
+    assert x_row["reasons"]["insights"] == (
+        "Insights from X aren't available in SocialCastly yet"
+    )
+    account = next(row for row in matrix["accounts"] if row["account_id"] == str(account_id))
+    assert account["can_read_comments"] is False
+    assert account["can_reply"] is False
+    assert account["can_read_insights"] is False
+    assert account["can_hide_reply"] is False
+    assert account["supports_hide_reply"] is False
+
+    for raw in ("1", "true", "yes", "on", "TRUE"):
+        monkeypatch.setenv("ENGAGEMENT_X_ENABLED", raw)
+        assert engagement_x_enabled() is True, raw
+    enabled = get_engagement_provider("x").capabilities
+    assert (
+        enabled.supports_comments_read,
+        enabled.supports_comment_reply,
+        enabled.supports_insights,
+        enabled.supports_hide_reply,
+    ) == (True, True, True, True)
+    opened = client.get("/api/v1/engagement/capabilities", headers=headers)
+    opened_row = next(row for row in opened.json()["networks"] if row["network"] == "x")
+    assert opened_row["supports_comments_read"] is True
+    assert opened_row["supports_comment_reply"] is True
+    assert opened_row["supports_insights"] is True
+    assert opened_row["supports_hide_reply"] is True
+    assert opened_row["reasons"] == {}
 
 
 def test_alembic_head_is_the_engagement_revision():

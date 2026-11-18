@@ -372,6 +372,9 @@ def sync_post_engagement(
         )
     try:
         return sync_one_post(db, post)
+    except NotSupported as exc:
+        provider = registry.get_engagement_provider(exc.network)
+        raise _unsupported(provider, exc.capability) from None
     except CreditsRequired:
         raise
     except ReconnectRequired as exc:

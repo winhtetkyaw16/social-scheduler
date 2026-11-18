@@ -7,10 +7,10 @@ export function viewportTier(width) {
   return "desktop";
 }
 
-/** On a phone the inbox is a list until a comment is opened. Wider screens keep both panes. */
+/** Below the desktop width the inbox is a list until a comment is opened. */
 export function inboxPane(tier, detailOpen) {
-  if (tier === "phone") return detailOpen ? "detail" : "list";
-  return "both";
+  if (tier === "desktop") return "both";
+  return detailOpen ? "detail" : "list";
 }
 
 export const INSIGHTS_WAIT_MS = 3 * 60 * 60 * 1000;
@@ -776,6 +776,14 @@ export function commentedLine(item, accountLabel, now = new Date()) {
   const when = compact === "now" ? "just now" : `${compact} ago`;
   const who = accountLabel ? ` · ${accountLabel}` : "";
   return `Commented ${when} on ${networkName(item?.network)}${who}`;
+}
+
+/** Phone detail header: "7d ago on Facebook Page · @northwind.sample". */
+export function commenterMeta(item, accountLabel, now = new Date()) {
+  const compact = compactAge(item?.createdAt, now);
+  const when = compact === "now" ? "just now" : `${compact} ago`;
+  const who = accountLabel ? ` · ${accountLabel}` : "";
+  return `${when} on ${networkName(item?.network)}${who}`;
 }
 
 export function findThreadRoot(comments, id) {

@@ -21,6 +21,7 @@ import {
   atHandle,
   canonicalNetwork,
   commentedLine,
+  commenterMeta,
   compactAge,
   deleteConfirmCopy,
   displayHandle,
@@ -587,29 +588,30 @@ export default function InboxPage({
           <div className="card eng-inbox-detail">
             {selected && detailComment ? (
               <>
-                <div className="eng-mobile-bar">
-                  <button type="button" className="eng-back" onClick={backToList}>
+                <header className="eng-sheet-head">
+                  <button type="button" className="eng-back eng-back-auto" onClick={backToList}>
                     <ChevronLeft size={20} />
                     Inbox
                   </button>
-                  <span className="eng-mobile-spacer" />
-                  <a
-                    className="eng-iconbtn"
-                    href={safeHref(externalUrl(selected.network, selected.providerPostId))}
-                    target="_blank"
-                    rel="noreferrer"
-                    aria-label={`Open on ${viewOnName(selected.network)}`}
-                  >
-                    <ExternalLink size={18} />
-                  </a>
-                  <button
-                    type="button"
-                    className="eng-iconbtn"
-                    aria-label="More comment actions"
-                    onClick={() => setMenu((current) => (current === "detail" ? "" : "detail"))}
-                  >
-                    <MoreHorizontal size={18} />
-                  </button>
+                  <div className="eng-sheet-tools">
+                    <a
+                      className="eng-iconbtn"
+                      href={safeHref(externalUrl(selected.network, selected.providerPostId))}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label={`Open on ${viewOnName(selected.network)}`}
+                    >
+                      <ExternalLink size={18} />
+                    </a>
+                    <button
+                      type="button"
+                      className="eng-iconbtn"
+                      aria-label="More comment actions"
+                      onClick={() => setMenu((current) => (current === "detail" ? "" : "detail"))}
+                    >
+                      <MoreHorizontal size={18} />
+                    </button>
+                  </div>
                   {menu === "detail" ? (
                     <div className="eng-menu eng-menu-mobile" role="menu">
                       <button type="button" role="menuitem" onClick={() => void markUnread()}>
@@ -617,6 +619,16 @@ export default function InboxPage({
                       </button>
                     </div>
                   ) : null}
+                </header>
+                <div className="eng-commenter">
+                  <span className="eng-feed-avatar eng-feed-avatar-lg">
+                    <Avatar name={selected.authorName} size={40} src={selected.avatarUrl} />
+                    <Glyph network={selected.network} size={16} />
+                  </span>
+                  <div>
+                    <div className="eng-commenter-name">{selected.authorName}</div>
+                    <div className="eng-commenter-meta">{commenterMeta(selected, accountLabel, now)}</div>
+                  </div>
                 </div>
                 <div className="eng-detail-head">
                   <div className="eng-who">

@@ -376,7 +376,8 @@ test("375 and 390 are a phone inbox list until a comment is opened", () => {
   assert.equal(viewportTier(1440), "desktop");
   assert.equal(inboxPane("phone", false), "list");
   assert.equal(inboxPane("phone", true), "detail");
-  assert.equal(inboxPane("tablet", false), "both");
+  assert.equal(inboxPane("tablet", false), "list");
+  assert.equal(inboxPane("tablet", true), "detail");
   assert.equal(inboxPane("desktop", true), "both");
 });
 

@@ -186,6 +186,16 @@ export function compactAge(date, now = new Date()) {
   return `${Math.floor(hr / 24)}d`;
 }
 
+export function shortDay(date) {
+  const d = new Date(date);
+  if (Number.isNaN(d.getTime())) return "";
+  return new Intl.DateTimeFormat("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  }).format(d);
+}
+
 export function publishedLabel(date) {
   const d = new Date(date);
   if (Number.isNaN(d.getTime())) return "";
@@ -773,6 +783,8 @@ export function normalizeFeedItem(row) {
     kind: feedKind(row),
     accountName: row?.account_name || row?.accountName || "",
     postExcerpt: row?.post_excerpt || row?.postExcerpt || "",
+    postThumb: row?.post_thumb || row?.postThumb || "",
+    postPublishedAt: row?.post_published_at || row?.postPublishedAt || null,
     accountId: String(row?.social_account_id || row?.accountId || ""),
     providerPostId: row?.provider_post_id || row?.providerPostId || "",
   };

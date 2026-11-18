@@ -73,6 +73,8 @@ class InboxComment(CommentRead):
 
     account_name: str = ""
     post_excerpt: str = ""
+    post_thumb: str = ""
+    post_published_at: datetime | None = None
     kind: FeedKind = "comment"
 
 

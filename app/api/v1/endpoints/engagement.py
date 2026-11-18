@@ -137,11 +137,15 @@ def get_inbox(
         account = page["accounts"].get(row.social_account_id)
         post = page["posts"].get(row.post_id)
         content = (getattr(post, "content", "") or "").strip()
+        media = getattr(post, "media_urls", None) or []
+        published = getattr(post, "published_at", None) or getattr(post, "scheduled_at", None)
         items.append(
             InboxComment(
                 **base,
                 account_name=getattr(account, "account_name", "") or "",
-                post_excerpt=content[:140],
+                post_excerpt=content[:140] + ("…" if len(content) > 140 else ""),
+                post_thumb=str(media[0]) if media else "",
+                post_published_at=published,
                 kind="comment",
             )
         )

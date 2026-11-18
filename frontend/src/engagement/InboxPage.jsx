@@ -8,6 +8,7 @@ import {
   Inbox,
   MoreHorizontal,
   RefreshCw,
+  CircleDot,
   Search,
   Trash2,
   TriangleAlert,
@@ -38,6 +39,7 @@ import {
   presentThread,
   replyHint,
   replyPostedToast,
+  shortDay,
   sortRoots,
   viewOnName,
   viewportTier,
@@ -686,13 +688,14 @@ export default function InboxPage({
                     <div>
                       <b>
                         {selected.authorName}{" "}
-                        {selected.handle ? <span className="eng-handle">{selected.handle}</span> : null}
+                        {selected.handle ? <span className="eng-handle-muted">{selected.handle}</span> : null}
                       </b>
-                      <div className="eng-handle">{commentedLine(selected, accountLabel, now)}</div>
+                      <div className="eng-detail-meta">{commentedLine(selected, accountLabel, now)}</div>
                     </div>
                   </div>
                   <div className="eng-detail-actions">
                     <button type="button" className="btn btn-sm btn-secondary" onClick={() => void markUnread()}>
+                      <CircleDot size={14} />
                       Mark as unread
                     </button>
                     <a
@@ -709,11 +712,14 @@ export default function InboxPage({
                 <div className="eng-scroll">
                   <div className="eng-context-wrap">
                     <div className="eng-context">
-                      <div className="eng-context-thumb" />
-                      <div>
+                      {selected.postThumb ? (
+                        <img className="eng-context-thumb" src={selected.postThumb} alt="" />
+                      ) : null}
+                      <div className="eng-context-copy">
                         <div className="eng-handle eng-context-kicker">
                           <Glyph network={selected.network} size={12} />
                           Your post
+                          {shortDay(selected.postPublishedAt) ? ` · ${shortDay(selected.postPublishedAt)}` : ""}
                         </div>
                         <p>{selected.postExcerpt || "Your post"}</p>
                         <button type="button" className="eng-link" onClick={() => onOpenPost?.(selected.postId)}>

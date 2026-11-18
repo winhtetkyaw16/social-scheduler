@@ -175,7 +175,7 @@ export default function PostDetailDrawer({
   const [tier, setTier] = useState(() =>
     viewportTier(typeof window === "undefined" ? 1440 : window.innerWidth),
   );
-  const closeRef = useRef(null);
+  const panelRef = useRef(null);
   const selectedChipRef = useRef(null);
   const phone = tier === "phone";
 
@@ -278,7 +278,7 @@ export default function PostDetailDrawer({
   }, [commentsOn, tab]);
 
   useEffect(() => {
-    closeRef.current?.focus();
+    panelRef.current?.focus();
   }, [post?.id]);
 
   useEffect(() => {
@@ -467,13 +467,15 @@ export default function PostDetailDrawer({
         role="dialog"
         aria-modal="true"
         aria-labelledby="eng-drawer-title"
+        tabIndex={-1}
+        ref={panelRef}
         data-engagement="drawer"
         data-tab={tab}
         data-network={selectedTarget?.network || ""}
       >
         <header className={`eng-head${phone ? " eng-head-phone" : ""}`}>
           {phone ? (
-            <button type="button" className="eng-back" onClick={onClose} ref={closeRef}>
+            <button type="button" className="eng-back eng-back-auto" onClick={onClose}>
               <ChevronLeft size={20} />
               Back
             </button>
@@ -510,7 +512,6 @@ export default function PostDetailDrawer({
                 type="button"
                 className="eng-iconbtn"
                 aria-label="Close"
-                ref={closeRef}
                 onClick={onClose}
               >
                 <X size={18} />

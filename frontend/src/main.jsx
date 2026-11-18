@@ -122,6 +122,10 @@ import {
 import { Avatar as ScAvatar, Ch as ScCh } from "./sc/ui.jsx";
 import { resolveApiBase, resolveApiOrigin } from "./apiBase.js";
 import { showsAppShell } from "./sessionGate.js";
+import { createEngagementClient } from "./api/engagement.js";
+import { readXEnabled } from "./engagement/model.js";
+import PostDetailDrawer from "./engagement/PostDetailDrawer.jsx";
+import "./engagement/engagement.css";
 
 const API_BASE = resolveApiBase(import.meta.env);
 const API_ORIGIN = resolveApiOrigin(API_BASE, window.location.origin);
@@ -1687,6 +1691,14 @@ function App() {
   const [approvalItems, setApprovalItems] = useState([]);
   const [draftCount, setDraftCount] = useState(0);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [detailPostId, setDetailPostId] = useState(() => {
+    try {
+      return new URLSearchParams(window.location.search).get("post") || "";
+    } catch {
+      return "";
+    }
+  });
+  const detailHistory = useRef(false);
   const [remember, setRemember] = useState(true);
   const toastTimer = useRef(null);
   const mediaUrls = useRef(new Map());
@@ -1701,6 +1713,11 @@ function App() {
     (path, options = {}) => api(path, { ...options, token }),
     [token],
   );
+  const engagementClient = useMemo(
+    () => createEngagementClient(authenticatedFetch),
+    [authenticatedFetch],
+  );
+  const xEngagementEnabled = readXEnabled(import.meta.env);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", dark);
@@ -2318,6 +2335,30 @@ function App() {
       title: `${name} is coming soon`,
       message: "This workspace view will be available as the product grows.",
     });
+  }
+  function openPostDetails(post) {
+    const id = post?.id;
+    if (!id) return;
+    const url = new URL(window.location.href);
+    const existing = url.searchParams.get("post");
+    url.searchParams.set("post", id);
+    const next = url.pathname + url.search + url.hash;
+    if (existing !== id) {
+      window.history.pushState({ engagementPost: id }, "", next);
+      detailHistory.current = true;
+    }
+    setDetailPostId(id);
+  }
+  function closePostDetails() {
+    if (detailHistory.current) {
+      detailHistory.current = false;
+      window.history.back();
+      return;
+    }
+    const url = new URL(window.location.href);
+    url.searchParams.delete("post");
+    window.history.replaceState({}, "", url.pathname + url.search + url.hash);
+    setDetailPostId("");
   }
   function goToTab(rawTab, opts) {
     let tab = rawTab === "publish" ? "calendar" : rawTab === "insights" ? "analytics" : rawTab;
@@ -3068,6 +3109,15 @@ function App() {
     };
   }, []);
   useEffect(() => {
+    const syncPost = () => {
+      const id = new URLSearchParams(window.location.search).get("post") || "";
+      if (!id) detailHistory.current = false;
+      setDetailPostId(id);
+    };
+    window.addEventListener("popstate", syncPost);
+    return () => window.removeEventListener("popstate", syncPost);
+  }, []);
+  useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const connected = params.get("connected");
     const connectError = params.get("connect_error");
@@ -3436,7 +3486,7 @@ function App() {
                   openStudio={openStudio}
                   onRetryPost={retryQueuedPost}
                   request={authenticatedFetch}
-                  onOpenPost={(p) => goToTab("posts", { openPostId: p.id })}
+                  onOpenPost={(p) => openPostDetails(p)}
                   onPostDeleted={handlePostDeleted}
                 />
               </RenderErrorBoundary>
@@ -3463,6 +3513,8 @@ function App() {
                     void loadWorkspace(token);
                     void refreshNavCounts();
                   }}
+                  onOpenDetails={openPostDetails}
+                  openPostId={detailPostId}
                 />
               </RenderErrorBoundary>
             ) : activeTab === "analytics" ? (
@@ -3747,6 +3799,23 @@ function App() {
         error={connectError}
       />
       <Toast toast={toast} onClose={() => setToast(null)} />
+      {detailPostId ? (
+        <PostDetailDrawer
+          post={posts.find((item) => item.id === detailPostId) || null}
+          posts={posts}
+          accounts={accounts}
+          client={engagementClient}
+          xEnabled={xEngagementEnabled}
+          pendingPost={loadingAccounts && !posts.some((item) => item.id === detailPostId)}
+          onClose={closePostDetails}
+          onOpenInQueue={() => goToTab("queue")}
+          onReconnect={(account) => {
+            if (account?.platform) void connectAccount(account.platform);
+            else goToTab("accounts");
+          }}
+          notify={notify}
+        />
+      ) : null}
     </div>
   );
 }

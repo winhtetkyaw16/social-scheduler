@@ -1,0 +1,328 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import {
+  COPY,
+  buildInsightView,
+  buildTargets,
+  capabilityNote,
+  chipCount,
+  commentActions,
+  commentsMode,
+  commentsTabEnabled,
+  compactAge,
+  composerHint,
+  containsBannedWord,
+  countBadge,
+  deleteConfirmCopy,
+  displayMetric,
+  insightsEmptyBody,
+  longAge,
+  mapComment,
+  metricsFromSnapshot,
+  mutedCommentCopy,
+  mutedInsightCopy,
+  networkName,
+  noCommentsCopy,
+  normalizeThread,
+  pickCommentTarget,
+  pinCommentsCopy,
+  presentThread,
+  publishedLabel,
+  readXEnabled,
+  reconnectBanner,
+  refreshAllowed,
+  replyHint,
+  replyPostedToast,
+  showComposer,
+  sortRoots,
+  staticCopyList,
+  tabCommentCount,
+  turnOnBanner,
+  unreadCount,
+  viewOnName,
+  accountAccess,
+  inboxNetworkOptions,
+} from "./engagement/model.js";
+import { createEngagementClient } from "./api/engagement.js";
+
+const NOW = new Date("2026-11-10T11:00:00Z");
+
+test("network names and the X flag default off", () => {
+  assert.equal(networkName("facebook"), "Facebook Page");
+  assert.equal(networkName("twitter"), "X");
+  assert.equal(viewOnName("facebook"), "Facebook");
+  assert.equal(readXEnabled({}), false);
+  assert.equal(readXEnabled({ ENGAGEMENT_X_ENABLED: "false" }), false);
+  assert.equal(readXEnabled({ VITE_ENGAGEMENT_X_ENABLED: "true" }), true);
+  assert.equal(commentsMode("x"), "muted");
+  assert.equal(commentsMode("x", true), "list");
+  assert.equal(mutedCommentCopy("x"), COPY.commentsX);
+  assert.equal(mutedInsightCopy("x"), COPY.insightsX);
+  assert.equal(mutedCommentCopy("linkedin"), COPY.linkedIn);
+  assert.equal(mutedInsightCopy("linkedin"), COPY.linkedIn);
+});
+
+test("user-facing copy never mentions credits, APIs, permissions, or scopes", () => {
+  for (const line of staticCopyList()) assert.equal(containsBannedWord(line), false, line);
+  for (const network of ["instagram", "facebook", "threads", "youtube", "x", "linkedin", "tiktok"]) {
+    assert.equal(containsBannedWord(mutedCommentCopy(network)), false);
+    assert.equal(containsBannedWord(mutedInsightCopy(network)), false);
+    assert.equal(containsBannedWord(reconnectBanner(network, "@northwind.sample").body), false);
+    assert.equal(containsBannedWord(turnOnBanner(network).body), false);
+    assert.equal(containsBannedWord(capabilityNote(network, true)), false);
+  }
+  assert.equal(containsBannedWord("needs API credits and the scope"), true);
+});
+
+test("insight metrics use the spec table and never invent a zero", () => {
+  const ig = metricsFromSnapshot("instagram", {
+    impressions: 28410,
+    reach: 19880,
+    likes: 1204,
+    shares: 86,
+    saves: 312,
+  });
+  assert.equal(displayMetric("instagram", "views", ig.views).text, "28,410");
+  assert.equal(displayMetric("instagram", "likes", ig.likes).text, "1,204");
+  assert.equal(displayMetric("facebook", "saves", null).text, COPY.metricUnavailable);
+  assert.equal(displayMetric("facebook", "shares", null).text, "—");
+  assert.equal(displayMetric("threads", "reach", null).kind, "unavailable");
+  assert.equal(displayMetric("pinterest", "shares", null).kind, "unavailable");
+  assert.equal(displayMetric("pinterest", "saves", 126).text, "126");
+  const yt = metricsFromSnapshot("youtube", { video_views: 1148, likes: 65, shares: null });
+  assert.equal(yt.views, 1148);
+  assert.equal(displayMetric("youtube", "shares", yt.shares).text, "—");
+  assert.equal(displayMetric("tiktok", "views", 0).text, "0");
+});
+
+test("a brand-new post with no numbers uses the empty insights state", () => {
+  const targets = [
+    { key: "p1", network: "instagram", status: "published", failed: false, name: "Northwind" },
+  ];
+  const empty = buildInsightView({
+    targets,
+    snapshotsByPost: {},
+    publishedAt: new Date(NOW.getTime() - 20 * 60 * 1000),
+    now: NOW,
+  });
+  assert.equal(empty.kind, "empty");
+  assert.equal(empty.title, COPY.insightsEmptyTitle);
+  assert.match(empty.body, /20 minutes ago/);
+  assert.equal(insightsEmptyBody(new Date(NOW.getTime() - 20 * 60 * 1000), NOW).includes("20 minutes"), true);
+
+  const later = buildInsightView({
+    targets,
+    snapshotsByPost: {},
+    publishedAt: new Date(NOW.getTime() - 5 * 60 * 60 * 1000),
+    now: NOW,
+  });
+  assert.equal(later.kind, "cards");
+  assert.equal(later.cards[0].kind, "metrics");
+
+  const scheduled = buildInsightView({
+    targets: [{ key: "p1", network: "instagram", status: "scheduled", failed: false }],
+    snapshotsByPost: {},
+    now: NOW,
+  });
+  assert.equal(scheduled.kind, "not-out");
+  assert.equal(scheduled.message, COPY.insightsNotOut);
+  assert.equal(commentsTabEnabled(scheduled && [{ status: "scheduled" }]), false);
+  assert.equal(commentsTabEnabled(targets), true);
+});
+
+test("X and LinkedIn insight rows sit after networks that have data", () => {
+  const targets = [
+    { key: "x", network: "x", status: "published", failed: false },
+    { key: "ig", network: "instagram", status: "published", failed: false },
+    { key: "li", network: "linkedin", status: "published", failed: false },
+  ];
+  const view = buildInsightView({
+    targets,
+    snapshotsByPost: { ig: { likes: 4, impressions: 10, captured_at: "2026-11-10T09:00:00Z" } },
+    publishedAt: new Date(NOW.getTime() - 24 * 60 * 60 * 1000),
+    now: NOW,
+  });
+  assert.deepEqual(
+    view.cards.map((card) => card.target.network),
+    ["instagram", "x", "linkedin"],
+  );
+  assert.equal(view.cards[1].message, COPY.insightsX);
+  assert.equal(view.cards[2].message, COPY.linkedIn);
+  const failed = buildInsightView({
+    targets: [{ key: "x", network: "x", status: "failed", failed: true }],
+    snapshotsByPost: {},
+    publishedAt: NOW,
+    now: NOW,
+  });
+  assert.equal(failed.cards[0].kind, "failed");
+  assert.match(failed.cards[0].message, /didn't go out on X/);
+});
+
+test("refresh waits 15 minutes and ages are compact on comments", () => {
+  assert.equal(refreshAllowed(null, NOW.getTime()), true);
+  assert.equal(refreshAllowed(new Date(NOW.getTime() - 2 * 60 * 1000), NOW.getTime()), false);
+  assert.equal(refreshAllowed(new Date(NOW.getTime() - 2 * 60 * 60 * 1000), NOW.getTime()), true);
+  assert.equal(longAge(new Date(NOW.getTime() - 2 * 60 * 60 * 1000), NOW), "2 hours ago");
+  assert.equal(compactAge(new Date(NOW.getTime() - 3 * 60 * 60 * 1000), NOW), "3h");
+  assert.equal(compactAge(new Date(NOW.getTime() - 26 * 60 * 60 * 1000), NOW), "1d");
+  assert.match(publishedLabel("2026-11-10T09:00:00Z"), /^Published /);
+});
+
+test("comment actions follow the network and there is no Like button", () => {
+  const other = { own: false, hidden: false, deleted: false, text: "Hi" };
+  const own = { ...other, own: true };
+  const hidden = { ...other, hidden: true, text: "spam" };
+  assert.deepEqual(commentActions("instagram", other), ["reply", "hide", "delete"]);
+  assert.deepEqual(commentActions("instagram", own), ["delete"]);
+  assert.deepEqual(commentActions("instagram", hidden), ["unhide", "delete"]);
+  assert.deepEqual(commentActions("facebook", other), ["reply", "hide", "delete"]);
+  assert.deepEqual(commentActions("threads", other), ["reply", "hide"]);
+  assert.deepEqual(commentActions("threads", own), ["delete"]);
+  assert.deepEqual(commentActions("youtube", other), ["reply", "remove"]);
+  assert.deepEqual(commentActions("youtube", own), ["remove"]);
+  assert.deepEqual(commentActions("tiktok", other), []);
+  assert.deepEqual(commentActions("pinterest", other), []);
+  assert.deepEqual(commentActions("x", other), []);
+  assert.deepEqual(commentActions("x", other, true), ["reply", "hide"]);
+  assert.deepEqual(commentActions("linkedin", other), []);
+  for (const network of ["instagram", "facebook", "threads", "youtube", "x"]) {
+    assert.equal(commentActions(network, other, true).includes("like"), false);
+  }
+  assert.equal(showComposer("instagram"), true);
+  assert.equal(showComposer("tiktok"), false);
+  assert.equal(showComposer("x"), false);
+  assert.equal(showComposer("youtube"), true);
+  assert.equal(capabilityNote("facebook"), "On Facebook Pages you can reply to, hide and delete comments.");
+  assert.equal(noCommentsCopy("instagram"), "No comments on Instagram yet.");
+  assert.equal(pinCommentsCopy(2), "This Pin has 2 comments.");
+  assert.equal(pinCommentsCopy(null), "");
+  assert.equal(composerHint("instagram"), "Posts a new comment on Instagram.");
+  assert.equal(replyHint("dan.sample", "instagram"), "Replying to @dan.sample on Instagram");
+  assert.equal(replyPostedToast("instagram"), "Reply posted on Instagram");
+});
+
+test("delete confirm quotes the comment and YouTube Remove is its own dialog", () => {
+  const comment = { text: "Get 10k followers fast, DM me" };
+  const removed = deleteConfirmCopy(comment, "instagram");
+  assert.equal(removed.title, "Delete this comment?");
+  assert.match(removed.body, /Get 10k followers fast, DM me/);
+  assert.match(removed.body, /removed from Instagram/);
+  assert.equal(removed.confirm, "Delete comment");
+  const youtube = deleteConfirmCopy(comment, "youtube");
+  assert.equal(youtube.title, COPY.removeTitle);
+  assert.equal(youtube.body, COPY.removeBody);
+  assert.equal(youtube.confirm, COPY.removeButton);
+  assert.equal(containsBannedWord(youtube.body), false);
+});
+
+test("replies flatten to one level and the busiest unread network is the default", () => {
+  const thread = normalizeThread({
+    comments: [
+      {
+        id: "a",
+        text: "Root",
+        author_handle: "maya",
+        is_read: false,
+        replies: [
+          {
+            id: "b",
+            text: "Child",
+            author_handle: "cafe",
+            is_own: true,
+            is_read: true,
+            replies: [{ id: "c", text: "Deep", author_handle: "maya", is_read: false }],
+          },
+        ],
+      },
+    ],
+  });
+  const shown = presentThread(thread);
+  assert.equal(shown[0].replies.length, 2);
+  assert.equal(shown[0].replies[0].replyingTo, "");
+  assert.equal(shown[0].replies[1].replyingTo, "@cafe");
+  assert.equal(unreadCount(thread), 2);
+  const sorted = sortRoots(
+    [
+      { id: "old", text: "Old", createdAt: "2026-11-10T08:00:00Z", replies: [] },
+      { id: "new", text: "New", createdAt: "2026-11-10T10:00:00Z", replies: [] },
+    ],
+    "newest",
+  );
+  assert.equal(sorted[0].id, "new");
+  const targets = [
+    { key: "ig", network: "instagram" },
+    { key: "fb", network: "facebook" },
+    { key: "x", network: "x" },
+  ];
+  const threads = {
+    ig: [{ id: "1", read: true, own: false, deleted: false, replies: [] }],
+    fb: [
+      { id: "2", read: false, own: false, deleted: false, replies: [] },
+      { id: "3", read: false, own: false, deleted: false, replies: [] },
+    ],
+  };
+  assert.equal(pickCommentTarget(targets, threads, ""), "fb");
+  assert.equal(pickCommentTarget(targets, threads, "ig"), "ig");
+  assert.equal(chipCount(targets[2], threads, {}, false), null);
+  assert.equal(tabCommentCount(targets, threads, {}, false), 3);
+  const hidden = mapComment(thread, "a", (item) => ({ ...item, hidden: true }));
+  assert.equal(hidden[0].hidden, true);
+});
+
+test("targets group sibling posts and reconnect copy names the network", () => {
+  const post = {
+    id: "1",
+    content: "Hello",
+    scheduled_at: "2026-11-10T09:00:00Z",
+    media_urls: ["a"],
+    connected_account_id: "acc-ig",
+    status: "published",
+  };
+  const other = {
+    ...post,
+    id: "2",
+    connected_account_id: "acc-fb",
+  };
+  const accounts = [
+    { id: "acc-ig", platform: "instagram", account_name: "Northwind Café (@northwind.sample)" },
+    { id: "acc-fb", platform: "facebook", account_name: "Northwind Café", needs_reconnect: true },
+  ];
+  const targets = buildTargets(post, [post, other], accounts);
+  assert.deepEqual(
+    targets.map((target) => target.network),
+    ["instagram", "facebook"],
+  );
+  assert.equal(targets[0].name, "Northwind Café");
+  assert.equal(targets[0].handle, "@northwind.sample");
+  assert.equal(accountAccess(accounts[1], null), "needs_reconnect");
+  assert.equal(
+    accountAccess({ is_active: true }, { supports_comments_read: true, can_read_comments: false, reconnect_for_permissions: true }),
+    "comments_not_enabled",
+  );
+  const banner = reconnectBanner("instagram", "@northwind.sample");
+  assert.equal(banner.title, "Reconnect Instagram to see comments");
+  assert.match(banner.body, /@northwind.sample/);
+  assert.equal(turnOnBanner("threads").title, "Turn on comments for Threads");
+  assert.equal(countBadge(0), "");
+  assert.equal(countBadge(12), "12");
+  assert.equal(countBadge(120), "99+");
+  assert.deepEqual(inboxNetworkOptions(["instagram", "x", "tiktok", "linkedin"]), {
+    available: ["instagram"],
+    later: ["x", "linkedin", "tiktok"],
+  });
+});
+
+test("engagement client can post a comment and remove one", async () => {
+  const calls = [];
+  const client = createEngagementClient(async (path, options = {}) => {
+    calls.push({ path, options });
+    return { ok: true };
+  });
+  await client.createComment("post 1", "Hello", "instagram");
+  await client.removeComment("comment 1");
+  assert.equal(calls[0].path, "/posts/post%201/comments");
+  assert.equal(calls[0].options.method, "POST");
+  assert.equal(calls[0].options.body, JSON.stringify({ text: "Hello", network: "instagram" }));
+  assert.equal(calls[1].path, "/comments/comment%201");
+  assert.equal(calls[1].options.method, "DELETE");
+});

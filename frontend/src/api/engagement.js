@@ -84,5 +84,16 @@ export function createEngagementClient(request) {
     syncPost(postId) {
       return request(postEngagementSyncPath(postId), { method: "POST" });
     },
+    /** New comment on the post. The drawer composer uses this. */
+    createComment(postId, text, network) {
+      return request(postCommentsPath(postId), {
+        method: "POST",
+        body: JSON.stringify({ text, network }),
+      });
+    },
+    /** Delete or YouTube Remove. The confirm dialog calls this. */
+    removeComment(commentId) {
+      return request(`/comments/${encodeURIComponent(commentId)}`, { method: "DELETE" });
+    },
   };
 }

@@ -1839,6 +1839,8 @@ function QueueView({
   onDeletePost,
   onRefresh,
   initialTab,
+  onOpenDetails,
+  openPostId,
 }) {
   const [qTab, setQTab] = useState(initialTab || "scheduled");
   const [chanFilter, setChanFilter] = useState("all");
@@ -2098,37 +2100,43 @@ function QueueView({
                 const when = postPlacementAt(p);
                 const timeLabel = when ? fmtTime(when) : "";
                 return (
-                  <div key={p.id} className="post">
-                    <div className="time sc-time-1l">{timeLabel}</div>
-                    <ScAccountAvatar account={acc} size={36} />
-                    <div className="body">
-                      <div className="row" style={{ gap: 8, marginBottom: 4 }}>
-                        <b className="sm">{acc?.account_name || acc?.platform || "Account"}</b>
-                        <StatusBadge status={p.status} post={p} />
-                        {p.post_metadata?.evergreen_source_id && (
-                          <span className="badge nodot">Evergreen</span>
+                  <div key={p.id} className={`post${openPostId === p.id ? " eng-post-open" : ""}`}>
+                    <button
+                      type="button"
+                      className="eng-post-openbtn"
+                      onClick={() => onOpenDetails?.(p)}
+                    >
+                      <div className="time sc-time-1l">{timeLabel}</div>
+                      <ScAccountAvatar account={acc} size={36} />
+                      <div className="body">
+                        <div className="row" style={{ gap: 8, marginBottom: 4 }}>
+                          <b className="sm">{acc?.account_name || acc?.platform || "Account"}</b>
+                          <StatusBadge status={p.status} post={p} />
+                          {p.post_metadata?.evergreen_source_id && (
+                            <span className="badge nodot">Evergreen</span>
+                          )}
+                        </div>
+                        <div className="txt">{p.content || "Untitled post"}</div>
+                        {p.status === "failed" && (
+                          <div
+                            className="row xs"
+                            style={{ gap: 4, color: "var(--error)", marginTop: 8 }}
+                          >
+                            <AlertCircle size={14} aria-hidden="true" style={{ flex: "none" }} />
+                            {failedBannerText(p, acc)}
+                          </div>
                         )}
                       </div>
-                      <div className="txt">{p.content || "Untitled post"}</div>
-                      {p.status === "failed" && (
-                        <div
-                          className="row xs"
-                          style={{ gap: 4, color: "var(--error)", marginTop: 8 }}
-                        >
-                          <AlertCircle size={14} aria-hidden="true" style={{ flex: "none" }} />
-                          {failedBannerText(p, acc)}
-                        </div>
+                      {p.media_urls?.[0] && (
+                        <img
+                          className="thumb"
+                          src={p.media_urls[0]}
+                          alt=""
+                          style={{ objectFit: "cover" }}
+                          onError={hideBrokenImg}
+                        />
                       )}
-                    </div>
-                    {p.media_urls?.[0] && (
-                      <img
-                        className="thumb"
-                        src={p.media_urls[0]}
-                        alt=""
-                        style={{ objectFit: "cover" }}
-                        onError={hideBrokenImg}
-                      />
-                    )}
+                    </button>
                     <div className="row" style={{ gap: 6 }}>
                       {p.status === "failed" ? (
                         <button
@@ -2394,6 +2402,8 @@ export default function PublishSection({
   initialQueueTab,
   initialOpenPostId,
   onPostDeleted,
+  onOpenDetails,
+  openPostId,
 }) {
   const safePosts = Array.isArray(posts) ? posts.filter(Boolean) : [];
   const safeAccounts = Array.isArray(accounts) ? accounts.filter(Boolean) : [];
@@ -2574,6 +2584,8 @@ export default function PublishSection({
           onDeletePost={setDeletingPost}
           onRefresh={onRefresh}
           initialTab={initialQueueTab}
+          onOpenDetails={onOpenDetails}
+          openPostId={openPostId}
         />
       )}
       {active === "drafts" && (

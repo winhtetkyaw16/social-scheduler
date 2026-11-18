@@ -111,6 +111,9 @@ export const COPY = {
   inboxEmptyAll: "New comments from your channels will show up here.",
   inboxEmptyFilter:
     "No unread comments right now. New comments from your channels will show up here.",
+  searchEmptyTitle: "No comments match your search",
+  searchEmptyBody: "Try a different word or clear the search.",
+  clearSearch: "Clear search",
   inboxErrorTitle: "We couldn't load your comments",
   inboxErrorBody: "This is not your fault. Please try again later.",
   inboxLater: "Comments not available yet",
@@ -782,11 +785,24 @@ export function visibleFeed(items) {
     .filter((item) => item.kind === "comment" && !item.own);
 }
 
-export function emptyInboxCopy(status) {
-  if (!status || status === "all") {
-    return { title: COPY.inboxEmptyTitle, body: COPY.inboxEmptyAll, action: "" };
+export function emptyInboxCopy(status, search = "") {
+  if (String(search || "").trim()) {
+    return {
+      title: COPY.searchEmptyTitle,
+      body: COPY.searchEmptyBody,
+      action: COPY.clearSearch,
+      clearSearch: true,
+    };
   }
-  return { title: COPY.inboxEmptyTitle, body: COPY.inboxEmptyFilter, action: COPY.showAll };
+  if (!status || status === "all") {
+    return { title: COPY.inboxEmptyTitle, body: COPY.inboxEmptyAll, action: "", clearSearch: false };
+  }
+  return {
+    title: COPY.inboxEmptyTitle,
+    body: COPY.inboxEmptyFilter,
+    action: COPY.showAll,
+    clearSearch: false,
+  };
 }
 
 export function commentedLine(item, accountLabel, now = new Date()) {

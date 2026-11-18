@@ -201,7 +201,7 @@ export default function InboxPage({
   }, [selected?.id, selected?.postId, client, fixtures]);
 
   const banners = inboxBanners(matrix?.accounts);
-  const empty = emptyInboxCopy(status);
+  const empty = emptyInboxCopy(status, query);
   const shown = presentThread(thread);
   const root = findThreadRoot(shown.length ? thread : [], selected?.id);
   const detailComment = root
@@ -580,7 +580,18 @@ export default function InboxPage({
           <h3>{empty.title}</h3>
           <p>{empty.body}</p>
           {empty.action ? (
-            <button type="button" className="btn btn-secondary" onClick={() => setStatus("all")}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => {
+                if (empty.clearSearch) {
+                  setSearch("");
+                  setQuery("");
+                  return;
+                }
+                setStatus("all");
+              }}
+            >
               {empty.action}
             </button>
           ) : null}

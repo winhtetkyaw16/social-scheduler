@@ -414,6 +414,9 @@ test("the inbox feed keeps a kind and only shows comments", () => {
   assert.equal(emptyInboxCopy("all").body, COPY.inboxEmptyAll);
   assert.equal(emptyInboxCopy("unread").body, COPY.inboxEmptyFilter);
   assert.equal(emptyInboxCopy("unread").action, "Show all comments");
+  assert.equal(emptyInboxCopy("all", "latte").title, "No comments match your search");
+  assert.equal(emptyInboxCopy("unread", "latte").action, "Clear search");
+  assert.equal(emptyInboxCopy("all", "  ").title, COPY.inboxEmptyTitle);
   const line = commentedLine(
     { createdAt: new Date(NOW.getTime() - 3 * 60 * 60 * 1000), network: "instagram" },
     "@northwind.sample",

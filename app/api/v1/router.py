@@ -5,6 +5,7 @@ from fastapi import APIRouter
 from app.api.v1.endpoints import (
     accounts,
     auth,
+    engagement,
     health,
     meta_callbacks,
     posts,
@@ -20,5 +21,6 @@ router.include_router(
 )
 router.include_router(accounts.router, prefix="/accounts", tags=["accounts"])
 router.include_router(posts.router, prefix="/posts", tags=["posts"])
+router.include_router(engagement.router, tags=["engagement"])
 router.include_router(upload.router, prefix="/upload", tags=["upload"])
 router.include_router(publish.router, prefix="/publish", tags=["publish"])

@@ -45,11 +45,11 @@ const TILE_SIZES = { badge: 18, sm: 20, md: 24, "": 28, lg: 40 };
 function tileRadius(px) {
   return px <= 18 ? 5 : px <= 20 ? 6 : px <= 24 ? 7 : px <= 32 ? 8 : 10;
 }
-export function ChannelTile({ platform, size = 28, className = "", style }) {
+export function ChannelTile({ platform, size = 28, className = "", style, label: labelOverride }) {
   const key = platform === "twitter" ? "x" : platform;
   const glyph = PLATFORM_GLYPHS[key];
   const px = typeof size === "number" ? size : (TILE_SIZES[size] ?? 28);
-  const label = PLATFORM_LABELS[key] || platform || "Channel";
+  const label = labelOverride || PLATFORM_LABELS[key] || platform || "Channel";
   if (!glyph) return null;
   return (
     <span

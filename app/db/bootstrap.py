@@ -32,7 +32,11 @@ def _add_column_if_missing(engine: Engine, table: str, column: str, ddl: str) ->
 
 
 def ensure_database_schema(engine: Engine) -> None:
-    """Create missing tables and patch legacy schemas without requiring Alembic."""
+    """Create missing tables and patch legacy schemas without requiring Alembic.
+
+    Mapped models in ``app.models`` — including ``post_comments`` and
+    ``post_insights_snapshots`` — are created here when the table is absent.
+    """
     had_decision_history = inspect(engine).has_table("approval_decisions")
     Base.metadata.create_all(bind=engine)
     for column, ddl in _USER_COLUMN_PATCHES.items():

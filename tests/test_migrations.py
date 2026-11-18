@@ -20,6 +20,8 @@ CORE_TABLES = {
     "media_assets",
     "approval_workflows",
     "post_internal_comments",
+    "post_comments",
+    "post_insights_snapshots",
 }
 
 

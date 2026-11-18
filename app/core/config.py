@@ -196,6 +196,20 @@ SCHEDULER_POLL_SECONDS = int(os.getenv("SCHEDULER_POLL_SECONDS", "30"))
 TOKEN_REFRESH_INTERVAL_SECONDS = int(
     os.getenv("TOKEN_REFRESH_INTERVAL_SECONDS", "3600")
 )
+# How often to pull comments and insights, and how far back published posts are visited.
+ENGAGEMENT_SYNC_INTERVAL_SECONDS = int(
+    os.getenv("ENGAGEMENT_SYNC_INTERVAL_SECONDS", "900")
+)
+ENGAGEMENT_SYNC_LOOKBACK_DAYS = int(os.getenv("ENGAGEMENT_SYNC_LOOKBACK_DAYS", "30"))
+
+
+def engagement_x_enabled() -> bool:
+    """X comment, reply, hide, and insight calls stay off unless this is true.
+
+    Read at call time so a process restart, not an import, picks up the flag.
+    """
+    raw = os.getenv("ENGAGEMENT_X_ENABLED", "false").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
 # CORS_ALLOWED_ORIGINS wins. ALLOWED_ORIGINS remains the fallback name.
 CORS_ALLOWED_ORIGINS = resolve_cors_origins(
     os.getenv("CORS_ALLOWED_ORIGINS"),

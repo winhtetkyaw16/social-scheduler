@@ -361,11 +361,21 @@ def test_oauth_requests_engagement_and_reply_scopes():
 
     providers = _providers()
     assert "pages_manage_engagement" in providers["facebook"].scopes
-    assert "pages_read_user_content" not in providers["facebook"].scopes
+    assert "pages_read_user_content" in providers["facebook"].scopes
+    assert "read_insights" in providers["facebook"].scopes
+    assert "pages_manage_posts" in providers["facebook"].scopes
+    assert "instagram_manage_insights" in providers["instagram"].scopes
+    assert "instagram_manage_comments" in providers["instagram"].scopes
     assert "threads_manage_replies" in providers["threads"].scopes
+    assert "threads_read_replies" in providers["threads"].scopes
+    assert "threads_manage_insights" in providers["threads"].scopes
     assert {"threads_basic", "threads_content_publish"} <= set(
         providers["threads"].scopes
     )
+    assert "https://www.googleapis.com/auth/yt-analytics.readonly" in providers["youtube"].scopes
+    assert "https://www.googleapis.com/auth/youtube.readonly" in providers["youtube"].scopes
+    assert "tweet.moderate.write" in providers["x"].scopes
+    assert "video.list" not in providers["tiktok"].scopes
 
 
 def test_facebook_first_comment_uses_page_token_and_comments_edge(monkeypatch):

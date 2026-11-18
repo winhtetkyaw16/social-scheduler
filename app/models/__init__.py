@@ -6,6 +6,7 @@ Importing this package registers every mapped class on the shared metadata.
 from app.models.approval_decision import ApprovalDecisionRecord
 from app.models.base import Base
 from app.models.connected_account import ConnectedAccount, OAuthPickSession
+from app.models.engagement import PostComment, PostInsightsSnapshot
 from app.models.execution_log import ExecutionLog
 from app.models.publish import (
     ApprovalWorkflow,
@@ -24,6 +25,8 @@ __all__ = [
     "Workspace",
     "ConnectedAccount",
     "OAuthPickSession",
+    "PostComment",
+    "PostInsightsSnapshot",
     "ScheduledPost",
     "ExecutionLog",
     "PublishItem",

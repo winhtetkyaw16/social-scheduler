@@ -44,6 +44,14 @@
   --text: #111827;
   --text-2: #6B7280;
   --text-3: #9CA3AF;
+  /* Aliases used by the engagement drawer and inbox. */
+  --secondary: #6B7280;
+  --muted: #9CA3AF;
+  --subtle: #F3F4F6;
+  --active: #EEF2FF;
+  --activeText: #4338CA;
+  --link: #4F46E5;
+  --scrim: rgba(17, 24, 39, 0.4);
   /* Accent: identical in light and dark. */
   --primary: #4F46E5;
   --primary-hover: #4338CA;
@@ -86,6 +94,13 @@
   --text: #F9FAFB;
   --text-2: #9CA3AF;
   --text-3: #6B7280;
+  --secondary: #9CA3AF;
+  --muted: #6B7280;
+  --subtle: #1F2937;
+  --active: rgba(79, 70, 229, 0.22);
+  --activeText: #F9FAFB;
+  --link: #6366F1;
+  --scrim: rgba(0, 0, 0, 0.6);
   /* Accent stays the same indigo; only its soft tint gets a dark-friendly alpha. */
   --primary-soft: rgba(79,70,229,.20);
   --primary-soft-text: #F9FAFB;

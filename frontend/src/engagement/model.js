@@ -13,6 +13,13 @@ export function inboxPane(tier, detailOpen) {
   return detailOpen ? "detail" : "list";
 }
 
+/** Posts sit beside their comments from 1024px up. Narrower screens open the thread alone. */
+export function postsPane(width, detailOpen) {
+  const n = Number(width) || 0;
+  if (n >= 1024) return "both";
+  return detailOpen ? "detail" : "list";
+}
+
 export const INSIGHTS_WAIT_MS = 3 * 60 * 60 * 1000;
 export const REFRESH_MIN_MS = 15 * 60 * 1000;
 export const NETWORK_MEMORY_KEY = "socialcastly_comment_network";
@@ -127,6 +134,12 @@ export const COPY = {
   postsErrorBody: "This is not your fault. Please try again later.",
   createPost: "Create post",
   noCommentsYet: "No comments yet",
+  postsThreadEmptyBody: "When someone comments, it will show up here.",
+  refreshComments: "Refresh",
+  commentsUpdated: "Comments updated",
+  markRead: "Mark as read",
+  markUnread: "Mark as unread",
+  postDetails: "Post details",
   untitledPost: "Untitled post",
   showAll: "Show all comments",
   tryAgain: "Try again",
@@ -710,6 +723,41 @@ export function commentCount(list) {
   }
   walk(list);
   return n;
+}
+
+/** Comments from other people, skipping deleted notes and our own replies. */
+export function audienceCommentCount(list) {
+  let n = 0;
+  function walk(items) {
+    for (const item of items || []) {
+      if (!item || item.deleted || item.own) {
+        walk(item?.replies);
+        continue;
+      }
+      n += 1;
+      walk(item.replies);
+    }
+  }
+  walk(list);
+  return n;
+}
+
+/** Ids to flip. ``wantRead`` collects unread comments; otherwise it collects read ones. */
+export function commentIdsByRead(list, wantRead) {
+  const ids = [];
+  function walk(items) {
+    for (const item of items || []) {
+      if (!item || item.deleted || item.own) {
+        walk(item?.replies);
+        continue;
+      }
+      const isRead = !!item.read;
+      if (wantRead ? !isRead : isRead) ids.push(String(item.id));
+      walk(item.replies);
+    }
+  }
+  walk(list);
+  return ids;
 }
 
 export function unreadCount(list) {

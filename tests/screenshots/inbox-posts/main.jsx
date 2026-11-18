@@ -90,23 +90,28 @@ const THREADS = {
   "post-ig": [
     {
       id: "c1",
-      authorName: "Ada Lovelace",
-      handle: "@ada",
+      network: "instagram",
+      author_name: "Ada Lovelace",
+      author_handle: "ada",
       text: "The pour looks perfect. Saving this for Saturday.",
-      createdAt: "2026-11-17T08:12:00Z",
-      likes: 4,
+      created_at_provider: "2026-11-17T08:12:00Z",
+      like_count: 4,
+      is_read: false,
       replies: [],
     },
     {
       id: "c2",
-      authorName: "Grace Hopper",
-      handle: "@grace",
+      network: "instagram",
+      author_name: "Grace Hopper",
+      author_handle: "grace",
       text: "Extra hot is the only way. See you at the market.",
-      createdAt: "2026-11-17T09:40:00Z",
-      likes: 1,
+      created_at_provider: "2026-11-17T09:40:00Z",
+      like_count: 1,
+      is_read: true,
       replies: [],
     },
   ],
+  "post-fb": [],
 };
 
 function Harness() {
@@ -118,8 +123,15 @@ function Harness() {
         <InboxPage
           accounts={ACCOUNTS}
           xEnabled={false}
-          fixtures={{ view: "posts", phase: "ready", posts: FEED, counts: { all: 0, unread: 0, unreplied: 0, replied: 0 } }}
-          onOpenPost={(id) => {
+          fixtures={{
+            view: "posts",
+            phase: "ready",
+            posts: FEED,
+            threads: THREADS,
+            counts: { all: 0, unread: 0, unreplied: 0, replied: 0 },
+          }}
+          onOpenPost={(id, options) => {
+            if (!options?.fromInboxPosts) return;
             const url = new URL(window.location.href);
             url.searchParams.set("post", id);
             window.history.pushState({ engagementPost: id }, "", url.pathname + url.search);

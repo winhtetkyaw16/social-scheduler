@@ -7,7 +7,10 @@ import {
   emptyInboxCopy,
   emptyPostsCopy,
   inboxBanners,
+  audienceCommentCount,
+  commentIdsByRead,
   inboxPane,
+  postsPane,
   viewportTier,
   visibleFeed,
   buildInsightView,
@@ -407,6 +410,21 @@ test("375 and 390 are a phone inbox list until a comment is opened", () => {
   assert.equal(inboxPane("tablet", false), "list");
   assert.equal(inboxPane("tablet", true), "detail");
   assert.equal(inboxPane("desktop", true), "both");
+  assert.equal(postsPane(1440, false), "both");
+  assert.equal(postsPane(1024, false), "both");
+  assert.equal(postsPane(1023, false), "list");
+  assert.equal(postsPane(1023, true), "detail");
+  assert.equal(postsPane(390, false), "list");
+  assert.equal(postsPane(390, true), "detail");
+  assert.equal(postsPane(375, true), "detail");
+  const thread = [
+    { id: "a", read: false, deleted: false, own: false, replies: [{ id: "b", read: true, own: true, replies: [] }] },
+    { id: "c", read: true, own: false, replies: [] },
+    { id: "d", read: false, deleted: true, own: false, replies: [] },
+  ];
+  assert.equal(audienceCommentCount(thread), 2);
+  assert.deepEqual(commentIdsByRead(thread, true), ["a"]);
+  assert.deepEqual(commentIdsByRead(thread, false), ["c"]);
 });
 
 test("the inbox feed keeps a kind and only shows comments", () => {

@@ -1707,6 +1707,7 @@ function App() {
   });
   const [detailTab, setDetailTab] = useState("insights");
   const detailHistory = useRef(false);
+  const detailFromPosts = useRef(false);
   const unreadRequest = useRef(0);
   const [remember, setRemember] = useState(true);
   const toastTimer = useRef(null);
@@ -2369,6 +2370,7 @@ function App() {
     const id = post?.id;
     if (!id) return;
     setDetailTab(options?.tab === "comments" ? "comments" : "insights");
+    detailFromPosts.current = !!options?.fromInboxPosts;
     const url = new URL(window.location.href);
     const existing = url.searchParams.get("post");
     url.searchParams.set("post", id);
@@ -2385,9 +2387,12 @@ function App() {
       window.history.back();
       return;
     }
-    const url = new URL(window.location.href);
-    url.searchParams.delete("post");
-    window.history.replaceState({}, "", url.pathname + url.search + url.hash);
+    if (!detailFromPosts.current) {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("post");
+      window.history.replaceState({}, "", url.pathname + url.search + url.hash);
+    }
+    detailFromPosts.current = false;
     setDetailPostId("");
   }
   function goToTab(rawTab, opts) {
@@ -3158,6 +3163,12 @@ function App() {
   }, []);
   useEffect(() => {
     const syncPost = () => {
+      if (window.history.state?.inboxPost) {
+        detailHistory.current = false;
+        detailFromPosts.current = false;
+        setDetailPostId("");
+        return;
+      }
       const id = new URLSearchParams(window.location.search).get("post") || "";
       if (!id) detailHistory.current = false;
       setDetailPostId(id);

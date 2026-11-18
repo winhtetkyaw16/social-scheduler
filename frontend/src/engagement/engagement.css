@@ -85,7 +85,9 @@
 .eng-chips { flex-wrap: wrap; }
 .eng-switch { flex-wrap: nowrap; margin-bottom: 0; padding-bottom: 0; scrollbar-width: none; }
 .eng-switch-block { display: flex; flex-direction: column; gap: 8px; }
-.eng-switch-block .eng-toolbar { margin: 0; }
+.eng-switch-block .eng-toolbar { margin: 0; align-items: flex-start; min-height: 0; }
+.eng-switch-block .eng-note,
+.eng-switch-block .eng-sort { line-height: 16px; min-height: 0; height: auto; }
 .eng-switch::-webkit-scrollbar { display: none; }
 .eng-netchip, .eng-switch button {
   height: 32px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface);

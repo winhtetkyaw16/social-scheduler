@@ -440,6 +440,7 @@ export default function PostDetailDrawer({
 
   const capability = matrix?.accounts?.find((row) => row.account_id === selectedTarget?.account?.id);
   const access = accountAccess(selectedTarget?.account, capability);
+  const metrics = metricsFromSnapshot(selectedTarget?.network, snapshots[selectedTarget?.key]);
   const presentation = selectedTarget
     ? commentsPresentation({
         network: selectedTarget.network,
@@ -450,7 +451,6 @@ export default function PostDetailDrawer({
     : null;
   const mode = presentation?.kind || "muted";
   const roots = sortRoots(threads[selectedTarget?.key] || [], order);
-  const metrics = metricsFromSnapshot(selectedTarget?.network, snapshots[selectedTarget?.key]);
   const canCompose = !!(presentation?.composer && commentsOn);
   const confirm = pending && selectedTarget ? deleteConfirmCopy(pending, selectedTarget.network) : null;
 

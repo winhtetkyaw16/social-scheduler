@@ -7,21 +7,6 @@
   box-shadow: none;
 }
 .snav-logo { display: flex; align-items: center; gap: 8px; padding: 0 8px; margin-bottom: 32px; }
-.snav-mark {
-  width: 28px; height: 28px; border-radius: 999px; flex: none;
-  background: linear-gradient(90deg, #4f46e5, #7c3aed);
-  display: inline-flex; align-items: center; justify-content: center;
-}
-.snav-mark-ring {
-  width: 14px; height: 14px; border-radius: 999px;
-  border: 3px solid #fff; border-right-color: transparent;
-}
-.snav-word { font-weight: 600; letter-spacing: -0.02em; color: var(--text); font-size: 20px; }
-.snav-logo.is-base .snav-word { font-size: 16px; }
-.snav-social {
-  background-image: linear-gradient(90deg, #4f46e5, #7c3aed);
-  -webkit-background-clip: text; background-clip: text; color: transparent;
-}
 .snav-group { margin-bottom: 24px; }
 .snav-group:last-child { margin-bottom: 0; }
 .snav-label { font-size: 12px; color: var(--muted); padding: 0 12px; margin-bottom: 8px; }

@@ -22,6 +22,8 @@ import {
   Users,
   X,
 } from "lucide-react";
+import lockupLight from "../assets/brand/socialcastly-lockup-light.png";
+import lockupDark from "../assets/brand/socialcastly-lockup-dark.png";
 import { Avatar } from "../sc/ui.jsx";
 import { NAV_GROUPS, menuUnreadDot, navBadge } from "../navModel.js";
 
@@ -42,15 +44,13 @@ const ICONS = {
   "message-square": MessageSquare,
 };
 
+// Same lockup images and sizes the app used before this nav.
 export function BrandLockup({ size = "xl" }) {
+  const height = size === "base" ? 26 : 30;
   return (
     <div className={`snav-logo${size === "base" ? " is-base" : ""}`}>
-      <span className="snav-mark" aria-hidden="true">
-        <span className="snav-mark-ring" />
-      </span>
-      <span className="snav-word">
-        <span className="snav-social">social</span>castly
-      </span>
+      <img className="logo-light" src={lockupLight} alt="SocialCastly" style={{ height }} />
+      <img className="logo-dark" src={lockupDark} alt="SocialCastly" style={{ height }} />
     </div>
   );
 }

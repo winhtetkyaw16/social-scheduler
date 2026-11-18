@@ -361,14 +361,19 @@ export default function InboxPage({
 
   return (
     <div className="eng-inbox" data-engagement="inbox" data-phase={phase} data-pane={pane}>
-      <div className="page-head">
+      <div className="page-head eng-inbox-head">
         <div>
           <h1>{COPY.inboxTitle}</h1>
-          <p>{tier === "phone" ? COPY.inboxSubMobile : COPY.inboxSub}</p>
+          <p>{tier === "desktop" ? COPY.inboxSub : COPY.inboxSubMobile}</p>
         </div>
-        <button type="button" className="btn btn-secondary" onClick={() => void markAll()} disabled={busy === "all"}>
-          <Check size={16} />
-          {tier === "phone" ? COPY.markAllRead : "Mark all as read"}
+        <button
+          type="button"
+          className={`btn btn-secondary${tier === "desktop" ? "" : " btn-sm"}`}
+          onClick={() => void markAll()}
+          disabled={phase !== "ready" || items.length === 0 || busy === "all"}
+        >
+          <Check size={tier === "desktop" ? 16 : 14} />
+          {tier === "desktop" ? "Mark all as read" : COPY.markAllRead}
         </button>
       </div>
 
@@ -482,19 +487,50 @@ export default function InboxPage({
               </div>
             ) : null}
           </div>
-          <select
-            className="select eng-account"
-            aria-label="All accounts"
-            value={accountId}
-            onChange={(event) => setAccountId(event.target.value)}
-          >
-            <option value="">All accounts</option>
-            {accountOptions.map((item) => (
-              <option key={item.id} value={item.id}>
-                {displayName(item) || item.account_name || networkName(item.platform)}
-              </option>
-            ))}
-          </select>
+          <div className="eng-select">
+            <button
+              type="button"
+              className="input eng-select-btn"
+              aria-expanded={menu === "account"}
+              aria-label="All accounts"
+              onClick={() => setMenu((current) => (current === "account" ? "" : "account"))}
+            >
+              {accountOptions.find((item) => item.id === accountId)
+                ? displayName(accountOptions.find((item) => item.id === accountId)) || "Account"
+                : "All accounts"}
+              <ChevronDown size={16} />
+            </button>
+            {menu === "account" ? (
+              <div className="eng-pop" role="listbox">
+                <button
+                  type="button"
+                  className={!accountId ? "is-on" : ""}
+                  onClick={() => {
+                    setAccountId("");
+                    setMenu("");
+                  }}
+                >
+                  All accounts
+                  {!accountId ? <Check size={16} /> : null}
+                </button>
+                {accountOptions.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={accountId === item.id ? "is-on" : ""}
+                    onClick={() => {
+                      setAccountId(item.id);
+                      setMenu("");
+                    }}
+                  >
+                    <Glyph network={item.platform} size={16} />
+                    {displayName(item) || item.account_name || networkName(item.platform)}
+                    {accountId === item.id ? <Check size={16} /> : null}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
         </div>
       </div>
 
@@ -514,7 +550,7 @@ export default function InboxPage({
 
       {phase === "loading" ? (
         <div className="eng-inbox-panes" aria-busy="true">
-          <div className="card eng-inbox-list">
+          <div className={`eng-inbox-list${tier === "desktop" ? " card" : " is-plain"}`}>
             {Array.from({ length: 7 }, (_, index) => (
               <div className="eng-feed eng-feed-skel" key={index}>
                 <div className="eng-skel eng-skel-avatar" />
@@ -553,12 +589,12 @@ export default function InboxPage({
 
       {phase === "ready" && items.length > 0 ? (
         <div className="eng-inbox-panes">
-          <div className="card eng-inbox-list">
+          <div className={`eng-inbox-list${tier === "desktop" ? " card" : " is-plain"}`}>
             {items.map((item) => (
               <button
                 key={item.id}
                 type="button"
-                className={`eng-feed${item.id === selected?.id ? " is-on" : ""}`}
+                className={`eng-feed${tier === "desktop" && item.id === selected?.id ? " is-on" : ""}`}
                 onClick={() => void openItem(item)}
               >
                 <span className="eng-feed-avatar">

@@ -735,6 +735,8 @@ def test_inbox_filters_pagination_and_read_state(client, auth_headers):
     assert body["unread_count"] == 2
     assert body["unread_by_network"]["facebook"] == 1
     assert body["unread_by_network"]["instagram"] == 1
+    assert all(item["kind"] == "comment" for item in body["items"])
+    assert body["counts"] == {"all": 4, "unread": 2, "unreplied": 2, "replied": 1}
 
     unread = client.get("/api/v1/inbox?status=unread", headers=headers)
     unread_ids = {item["id"] for item in unread.json()["items"]}
@@ -791,6 +793,12 @@ def test_inbox_filters_pagination_and_read_state(client, auth_headers):
 
     empty = client.post("/api/v1/comments/read", headers=headers, json={})
     assert empty.status_code == 422
+
+    unread_again = client.post(f"/api/v1/comments/{newest}/unread", headers=headers)
+    assert unread_again.status_code == 200, unread_again.text
+    assert unread_again.json()["is_read"] is False
+    missing_unread = client.post(f"/api/v1/comments/{uuid4()}/unread", headers=headers)
+    assert missing_unread.status_code == 404
 
 
 def test_reply_is_gated_then_stores_our_reply(client, auth_headers, monkeypatch):

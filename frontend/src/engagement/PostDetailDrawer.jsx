@@ -153,6 +153,7 @@ export default function PostDetailDrawer({
   initialTab = "insights",
   fixtures = null,
   pendingPost = false,
+  onActivity,
 }) {
   useBodyScrollLock(true);
   const targets = useMemo(() => buildTargets(post, posts, accounts), [post, posts, accounts]);
@@ -356,6 +357,7 @@ export default function PostDetailDrawer({
       tell(replyPostedToast(selectedTarget?.network), "success");
       setDrafts((current) => ({ ...current, [comment.id]: "" }));
       setReplyId(null);
+      onActivity?.();
       await load();
     } catch {
       tell(COPY.actionFailed);
@@ -373,6 +375,7 @@ export default function PostDetailDrawer({
     }));
     try {
       await client.hideReply(comment.id, hidden);
+      onActivity?.();
     } catch {
       setThreads((current) => ({
         ...current,
@@ -393,6 +396,7 @@ export default function PostDetailDrawer({
         [key]: mapComment(current[key], pending.id, (item) => ({ ...item, deleted: true })),
       }));
       setPending(null);
+      onActivity?.();
     } catch {
       tell(COPY.actionFailed);
     } finally {
@@ -408,6 +412,7 @@ export default function PostDetailDrawer({
       await client.createComment(selectedTarget.post.id, text, selectedTarget.network);
       setComposer("");
       tell(replyPostedToast(selectedTarget.network), "success");
+      onActivity?.();
       await load();
     } catch {
       tell(COPY.actionFailed);
@@ -852,7 +857,7 @@ export default function PostDetailDrawer({
   );
 }
 
-function CommentBlock({
+export function CommentBlock({
   comment,
   network,
   xEnabled,

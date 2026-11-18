@@ -167,6 +167,16 @@ def inbox_page(
         "offset": offset,
         "unread_count": int(unread_count),
         "unread_by_network": {name: int(count) for name, count in by_network_rows},
+        "counts": {
+            "all": _status_total(db, user_id, network=network, account_id=account_id, status="all"),
+            "unread": int(unread_count),
+            "unreplied": _status_total(
+                db, user_id, network=network, account_id=account_id, status="unreplied"
+            ),
+            "replied": _status_total(
+                db, user_id, network=network, account_id=account_id, status="replied"
+            ),
+        },
     }
 
 
@@ -176,6 +186,26 @@ def mark_comment_read(db: Session, comment: PostComment) -> PostComment:
     db.commit()
     db.refresh(comment)
     return comment
+
+
+def mark_comment_unread(db: Session, comment: PostComment) -> PostComment:
+    """Put the unread dot back on one comment."""
+    comment.is_read = False
+    db.commit()
+    db.refresh(comment)
+    return comment
+
+
+def _status_total(db: Session, user_id: UUID, *, network, account_id, status: str) -> int:
+    stmt = _apply_inbox_filters(
+        _owned_comment_stmt(user_id),
+        network=network,
+        account_id=account_id,
+        status=status,
+        search=None,
+        include_deleted=False,
+    )
+    return _count(db, stmt)
 
 
 def mark_comments_read(

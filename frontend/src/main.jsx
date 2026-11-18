@@ -65,6 +65,7 @@ import {
   Heart,
   Home,
   ImagePlus,
+  Inbox,
   Instagram,
   Linkedin,
   Link2,
@@ -123,8 +124,9 @@ import { Avatar as ScAvatar, Ch as ScCh } from "./sc/ui.jsx";
 import { resolveApiBase, resolveApiOrigin } from "./apiBase.js";
 import { showsAppShell } from "./sessionGate.js";
 import { createEngagementClient } from "./api/engagement.js";
-import { readXEnabled } from "./engagement/model.js";
+import { countBadge, readXEnabled } from "./engagement/model.js";
 import PostDetailDrawer from "./engagement/PostDetailDrawer.jsx";
+import InboxPage from "./engagement/InboxPage.jsx";
 import "./engagement/engagement.css";
 
 const API_BASE = resolveApiBase(import.meta.env);
@@ -1681,6 +1683,7 @@ function App() {
             "onboarding",
             "states",
             "biolink",
+            "inbox",
           ].includes(tab)
         ? tab
         : "home";
@@ -1691,6 +1694,7 @@ function App() {
   const [approvalItems, setApprovalItems] = useState([]);
   const [draftCount, setDraftCount] = useState(0);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [inboxUnread, setInboxUnread] = useState(0);
   const [detailPostId, setDetailPostId] = useState(() => {
     try {
       return new URLSearchParams(window.location.search).get("post") || "";
@@ -1718,6 +1722,19 @@ function App() {
     [authenticatedFetch],
   );
   const xEngagementEnabled = readXEnabled(import.meta.env);
+  const refreshInboxUnread = useCallback(() => {
+    if (!token) {
+      setInboxUnread(0);
+      return;
+    }
+    engagementClient
+      .listInbox({ limit: 1 })
+      .then((page) => setInboxUnread(Number(page?.unread_count) || 0))
+      .catch(() => {});
+  }, [engagementClient, token]);
+  useEffect(() => {
+    refreshInboxUnread();
+  }, [refreshInboxUnread]);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", dark);
@@ -2387,6 +2404,7 @@ function App() {
         "onboarding",
         "states",
         "biolink",
+        "inbox",
       ].includes(tab)
     ) {
       if (["calendar", "week", "posts", "queue", "drafts", "approvals"].includes(tab)) {
@@ -3151,6 +3169,7 @@ function App() {
         "onboarding",
         "states",
         "biolink",
+        "inbox",
       ].includes(returnTab)
     )
       returnTab = "accounts";
@@ -3297,6 +3316,7 @@ function App() {
         ["queue", "Queue", ListTodo],
         ["drafts", "Drafts", FileText],
         ["approvals", "Approvals", CheckCircle2],
+        ["inbox", "Inbox", Inbox],
       ],
     ],
     ["Insights", [["analytics", "Analytics", BarChart3]]],
@@ -3319,23 +3339,27 @@ function App() {
   ];
   const navActive = (id) =>
     activeTab === id || (id === "calendar" && ["week", "posts"].includes(activeTab));
-  const navLink = ([id, label, Icon]) => (
-    <a
-      key={id}
-      href={`#${id}`}
-      onClick={(event) => {
-        event.preventDefault();
-        setMoreOpen(false);
-        goToTab(id);
-      }}
-      className={navActive(id) ? "active" : ""}
-      aria-current={navActive(id) ? "page" : undefined}
-    >
-      <Icon size={18} className="ico" />
-      {label}
-      {navCounts[id] ? <span className="count">{navCounts[id]}</span> : null}
-    </a>
-  );
+  const navLink = ([id, label, Icon]) => {
+    const badge =
+      id === "inbox" ? countBadge(inboxUnread) : navCounts[id] ? String(navCounts[id]) : "";
+    return (
+      <a
+        key={id}
+        href={`#${id}`}
+        onClick={(event) => {
+          event.preventDefault();
+          setMoreOpen(false);
+          goToTab(id);
+        }}
+        className={navActive(id) ? "active" : ""}
+        aria-current={navActive(id) ? "page" : undefined}
+      >
+        <Icon size={18} className="ico" />
+        {label}
+        {badge ? <span className={id === "inbox" ? "count strong" : "count"}>{badge}</span> : null}
+      </a>
+    );
+  };
   const publishViews = ["calendar", "week", "posts", "queue", "drafts", "approvals", "library"];
   const activeChannels = accounts.filter((account) => account.is_active !== false);
 
@@ -3515,6 +3539,21 @@ function App() {
                   }}
                   onOpenDetails={openPostDetails}
                   openPostId={detailPostId}
+                />
+              </RenderErrorBoundary>
+            ) : activeTab === "inbox" ? (
+              <RenderErrorBoundary scope="Inbox">
+                <InboxPage
+                  client={engagementClient}
+                  accounts={accounts}
+                  xEnabled={xEngagementEnabled}
+                  onOpenPost={(postId) => openPostDetails({ id: postId })}
+                  onReconnect={(network) => {
+                    if (network) void connectAccount(network);
+                    else goToTab("accounts");
+                  }}
+                  notify={notify}
+                  onActivity={refreshInboxUnread}
                 />
               </RenderErrorBoundary>
             ) : activeTab === "analytics" ? (
@@ -3807,6 +3846,7 @@ function App() {
           client={engagementClient}
           xEnabled={xEngagementEnabled}
           pendingPost={loadingAccounts && !posts.some((item) => item.id === detailPostId)}
+          onActivity={refreshInboxUnread}
           onClose={closePostDetails}
           onOpenInQueue={() => goToTab("queue")}
           onReconnect={(account) => {

@@ -46,6 +46,7 @@ from app.services.engagement.inbox import (
     inbox_page,
     insights_for_post,
     mark_comment_read,
+    mark_comment_unread,
     mark_comments_read,
 )
 from app.services.engagement.sync import store_own_reply, sync_one_post
@@ -140,6 +141,7 @@ def get_inbox(
                 **base,
                 account_name=getattr(account, "account_name", "") or "",
                 post_excerpt=content[:140],
+                kind="comment",
             )
         )
     return InboxPage(
@@ -149,6 +151,7 @@ def get_inbox(
         offset=page["offset"],
         unread_count=page["unread_count"],
         unread_by_network=page["unread_by_network"],
+        counts=page["counts"],
     )
 
 
@@ -186,6 +189,19 @@ def mark_read_bulk(
     if missing:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Comment not found")
     return MarkReadResult(updated=updated)
+
+
+@router.post("/comments/{comment_id}/unread", response_model=CommentRead)
+def mark_unread(
+    comment_id: UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> CommentRead:
+    """Put the unread dot back on one owned comment."""
+    comment = get_owned_comment(db, comment_id, user.id)
+    if comment is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Comment not found")
+    return _comment_read(mark_comment_unread(db, comment))
 
 
 @router.post("/comments/{comment_id}/read", response_model=CommentRead)

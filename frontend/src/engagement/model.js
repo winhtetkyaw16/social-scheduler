@@ -316,9 +316,16 @@ export function displayHandle(account) {
   return atHandle(explicit || fromName?.[1] || "");
 }
 
+export function audienceLabel(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "this account";
+  if (raw.startsWith("@") || !/\s/.test(raw)) return atHandle(raw);
+  return raw;
+}
+
 export function reconnectBanner(network, handle) {
   const name = networkName(network);
-  const who = atHandle(handle) || "this account";
+  const who = audienceLabel(handle);
   return {
     title: `Reconnect ${name} to see comments`,
     body: `${name} disconnected from SocialCastly, so new comments from ${who} aren't coming in.`,
@@ -663,6 +670,88 @@ export function mapComment(list, id, fn) {
 
 export function staticCopyList() {
   return Object.values(COPY);
+}
+
+export const INBOX_FILTERS = [
+  { id: "all", label: "All", status: "all" },
+  { id: "unread", label: "Unread", status: "unread" },
+  { id: "unreplied", label: "Not replied", status: "unreplied" },
+  { id: "replied", label: "Replied", status: "replied" },
+];
+
+export function feedKind(item) {
+  const kind = item?.kind;
+  return kind === "mention" || kind === "dm" ? kind : "comment";
+}
+
+export function normalizeFeedItem(row) {
+  const comment = normalizeComment(row) || {
+    id: String(row?.id || ""),
+    network: canonicalNetwork(row?.network),
+    text: row?.text || "",
+    replies: [],
+  };
+  return {
+    ...comment,
+    kind: feedKind(row),
+    accountName: row?.account_name || row?.accountName || "",
+    postExcerpt: row?.post_excerpt || row?.postExcerpt || "",
+    accountId: String(row?.social_account_id || row?.accountId || ""),
+    providerPostId: row?.provider_post_id || row?.providerPostId || "",
+  };
+}
+
+/** The inbox shows comments only. Mentions and DMs stay on the row for later. */
+export function visibleFeed(items) {
+  return (items || []).map(normalizeFeedItem).filter((item) => item.kind === "comment");
+}
+
+export function emptyInboxCopy(status) {
+  if (!status || status === "all") {
+    return { title: COPY.inboxEmptyTitle, body: COPY.inboxEmptyAll, action: "" };
+  }
+  return { title: COPY.inboxEmptyTitle, body: COPY.inboxEmptyFilter, action: COPY.showAll };
+}
+
+export function commentedLine(item, accountLabel, now = new Date()) {
+  const compact = compactAge(item?.createdAt, now);
+  const when = compact === "now" ? "just now" : `${compact} ago`;
+  const who = accountLabel ? ` · ${accountLabel}` : "";
+  return `Commented ${when} on ${networkName(item?.network)}${who}`;
+}
+
+export function findThreadRoot(comments, id) {
+  const want = String(id || "");
+  function contains(node) {
+    if (!node) return false;
+    if (String(node.id) === want) return true;
+    return (node.replies || []).some(contains);
+  }
+  return (comments || []).find(contains) || null;
+}
+
+export function inboxBanners(capabilityAccounts) {
+  const rows = [];
+  for (const account of capabilityAccounts || []) {
+    const network = canonicalNetwork(account.network);
+    if (!INBOX_NETWORKS.includes(network)) continue;
+    const access = accountAccess(
+      { needs_reconnect: account.needs_reconnect, is_active: account.is_active },
+      account,
+    );
+    if (access === "ok") continue;
+    const parsed = String(account.account_name || "");
+    const fromName = (/\(@([^)]+)\)\s*$/.exec(parsed) || [])[1];
+    const handle = fromName || parsed;
+    const copy = access === "needs_reconnect" ? reconnectBanner(network, handle) : turnOnBanner(network);
+    rows.push({
+      id: String(account.account_id || account.id || network),
+      network,
+      access,
+      ...copy,
+    });
+  }
+  return rows;
 }
 
 export function inboxNetworkOptions(connectedPlatforms, xEnabled = false) {

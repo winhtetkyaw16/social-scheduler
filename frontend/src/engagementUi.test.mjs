@@ -2,6 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   COPY,
+  commentedLine,
+  emptyInboxCopy,
+  inboxBanners,
+  visibleFeed,
   buildInsightView,
   buildTargets,
   capabilityNote,
@@ -312,6 +316,49 @@ test("targets group sibling posts and reconnect copy names the network", () => {
   });
 });
 
+test("the inbox feed keeps a kind and only shows comments", () => {
+  const rows = visibleFeed([
+    { id: "1", text: "Hi", network: "instagram", kind: "comment", is_read: false },
+    { id: "2", text: "Mention", network: "instagram", kind: "mention" },
+    { id: "3", text: "DM", network: "instagram", kind: "dm" },
+    { id: "4", text: "Default", network: "threads" },
+  ]);
+  assert.deepEqual(rows.map((row) => row.kind), ["comment", "comment"]);
+  assert.equal(rows[0].text, "Hi");
+  assert.equal(emptyInboxCopy("all").body, COPY.inboxEmptyAll);
+  assert.equal(emptyInboxCopy("unread").body, COPY.inboxEmptyFilter);
+  assert.equal(emptyInboxCopy("unread").action, "Show all comments");
+  const line = commentedLine(
+    { createdAt: new Date(NOW.getTime() - 3 * 60 * 60 * 1000), network: "instagram" },
+    "@northwind.sample",
+    NOW,
+  );
+  assert.equal(line, "Commented 3h ago on Instagram · @northwind.sample");
+  const banners = inboxBanners([
+    {
+      account_id: "a",
+      network: "instagram",
+      needs_reconnect: true,
+      account_name: "Northwind (@northwind.sample)",
+      supports_comments_read: true,
+    },
+    {
+      account_id: "b",
+      network: "threads",
+      reconnect_for_permissions: true,
+      supports_comments_read: true,
+      can_read_comments: false,
+      account_name: "Northwind",
+    },
+    { account_id: "c", network: "tiktok", needs_reconnect: true },
+  ]);
+  assert.equal(banners.length, 2);
+  assert.equal(banners[0].title, "Reconnect Instagram to see comments");
+  assert.match(banners[0].body, /@northwind.sample/);
+  assert.equal(banners[1].title, "Turn on comments for Threads");
+  assert.equal(banners.some((banner) => banner.network === "tiktok"), false);
+});
+
 test("engagement client can post a comment and remove one", async () => {
   const calls = [];
   const client = createEngagementClient(async (path, options = {}) => {
@@ -320,9 +367,12 @@ test("engagement client can post a comment and remove one", async () => {
   });
   await client.createComment("post 1", "Hello", "instagram");
   await client.removeComment("comment 1");
+  await client.markUnread("comment 1");
   assert.equal(calls[0].path, "/posts/post%201/comments");
   assert.equal(calls[0].options.method, "POST");
   assert.equal(calls[0].options.body, JSON.stringify({ text: "Hello", network: "instagram" }));
   assert.equal(calls[1].path, "/comments/comment%201");
   assert.equal(calls[1].options.method, "DELETE");
+  assert.equal(calls[2].path, "/comments/comment%201/unread");
+  assert.equal(calls[2].options.method, "POST");
 });

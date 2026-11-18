@@ -63,6 +63,9 @@ export function createEngagementClient(request) {
     markRead(commentId) {
       return request(commentReadPath(commentId), { method: "POST" });
     },
+    markUnread(commentId) {
+      return request(`/comments/${encodeURIComponent(commentId)}/unread`, { method: "POST" });
+    },
     hideReply(commentId, hidden = true) {
       return request(commentHidePath(commentId), {
         method: "POST",

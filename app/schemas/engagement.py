@@ -7,6 +7,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 InboxStatus = Literal["unread", "unreplied", "replied", "all"]
+FeedKind = Literal["comment", "mention", "dm"]
 
 
 def _utc(value: datetime | None) -> datetime | None:
@@ -64,10 +65,24 @@ class CommentThread(BaseModel):
 
 
 class InboxComment(CommentRead):
-    """A comment row in the unified inbox, with enough context to open the post."""
+    """A comment row in the unified inbox, with enough context to open the post.
+
+    ``kind`` is ``comment`` today. ``mention`` and ``dm`` are reserved so those
+    feeds can be added without changing the row shape.
+    """
 
     account_name: str = ""
     post_excerpt: str = ""
+    kind: FeedKind = "comment"
+
+
+class InboxCounts(BaseModel):
+    """Totals for the segment control, ignoring the status filter and search."""
+
+    all: int = 0
+    unread: int = 0
+    unreplied: int = 0
+    replied: int = 0
 
 
 class InboxPage(BaseModel):
@@ -79,6 +94,7 @@ class InboxPage(BaseModel):
     offset: int
     unread_count: int
     unread_by_network: dict[str, int]
+    counts: InboxCounts = Field(default_factory=InboxCounts)
 
 
 class CommentReplyRequest(BaseModel):

@@ -143,7 +143,7 @@ def get_inbox(
             InboxComment(
                 **base,
                 account_name=getattr(account, "account_name", "") or "",
-                post_excerpt=content[:140] + ("…" if len(content) > 140 else ""),
+                post_excerpt=content,
                 post_thumb=str(media[0]) if media else "",
                 post_published_at=published,
                 kind="comment",

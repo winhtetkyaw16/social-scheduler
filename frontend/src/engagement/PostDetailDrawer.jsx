@@ -695,6 +695,7 @@ export default function PostDetailDrawer({
             <div className="eng-body">
               {selectedTarget ? (
                 <>
+                  <div className="eng-switch-block">
                   <div className="eng-switch" role="tablist" aria-label="Networks">
                     {targets.map((target) => {
                       const count = chipCount(target, threads, snapshots, xEnabled);
@@ -737,6 +738,7 @@ export default function PostDetailDrawer({
                       </button>
                     </div>
                   ) : null}
+                  </div>
                   {phase === "loading" ? <div className="eng-skel" style={{ height: 120 }} /> : null}
                   {phase !== "loading" && errors[selectedTarget.key] ? (
                     <StateBlock

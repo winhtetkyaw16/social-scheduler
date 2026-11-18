@@ -274,8 +274,12 @@ export default function PostDetailDrawer({
 
   const commentsOn = commentsTabEnabled(targets);
   useEffect(() => {
+    setTab(initialTab === "comments" ? "comments" : "insights");
+  }, [initialTab, post?.id]);
+  useEffect(() => {
+    if (!post) return;
     if (!commentsOn && tab === "comments") setTab("insights");
-  }, [commentsOn, tab]);
+  }, [commentsOn, tab, post]);
 
   useEffect(() => {
     panelRef.current?.focus();

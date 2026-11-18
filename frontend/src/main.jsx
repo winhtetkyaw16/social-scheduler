@@ -1705,6 +1705,7 @@ function App() {
       return "";
     }
   });
+  const [detailTab, setDetailTab] = useState("insights");
   const detailHistory = useRef(false);
   const unreadRequest = useRef(0);
   const [remember, setRemember] = useState(true);
@@ -2364,9 +2365,10 @@ function App() {
       message: "This workspace view will be available as the product grows.",
     });
   }
-  function openPostDetails(post) {
+  function openPostDetails(post, options) {
     const id = post?.id;
     if (!id) return;
+    setDetailTab(options?.tab === "comments" ? "comments" : "insights");
     const url = new URL(window.location.href);
     const existing = url.searchParams.get("post");
     url.searchParams.set("post", id);
@@ -3440,7 +3442,8 @@ function App() {
                   client={engagementClient}
                   accounts={accounts}
                   xEnabled={xEngagementEnabled}
-                  onOpenPost={(postId) => openPostDetails({ id: postId })}
+                  onOpenPost={(postId, options) => openPostDetails({ id: postId }, options)}
+                  onCreatePost={() => openStudio()}
                   onReconnect={(network) => {
                     if (network) void connectAccount(network);
                     else goToTab("accounts");
@@ -3663,6 +3666,7 @@ function App() {
           accounts={accounts}
           client={engagementClient}
           xEnabled={xEngagementEnabled}
+          initialTab={detailTab}
           pendingPost={loadingAccounts && !posts.some((item) => item.id === detailPostId)}
           onActivity={refreshInboxUnread}
           onClose={closePostDetails}

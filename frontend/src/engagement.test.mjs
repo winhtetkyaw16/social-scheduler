@@ -5,6 +5,7 @@ import {
   capabilitiesPath,
   createEngagementClient,
   inboxPath,
+  inboxPostsPath,
   postCommentsPath,
 } from "./api/engagement.js";
 
@@ -28,6 +29,26 @@ test("inbox path keeps only set filters", () => {
   assert.match(path, /offset=40/);
 });
 
+test("inbox posts path keeps network, account, and search", () => {
+  assert.equal(inboxPostsPath(), "/inbox/posts");
+  assert.equal(inboxPostsPath({ search: "", network: "instagram" }), "/inbox/posts?network=instagram");
+  const path = inboxPostsPath({
+    network: "youtube",
+    account_id: "acc-2",
+    search: "latte art",
+    limit: 30,
+    offset: 30,
+    status: "unread",
+  });
+  assert.match(path, /^\/inbox\/posts\?/);
+  assert.match(path, /network=youtube/);
+  assert.match(path, /account_id=acc-2/);
+  assert.match(path, /search=latte\+art/);
+  assert.match(path, /limit=30/);
+  assert.match(path, /offset=30/);
+  assert.equal(path.includes("status="), false);
+});
+
 test("engagement client calls the authenticated request helper", async () => {
   const calls = [];
   const request = async (path, options = {}) => {
@@ -44,6 +65,7 @@ test("engagement client calls the authenticated request helper", async () => {
   await client.insights("post/1");
   await client.capabilities();
   await client.syncPost("post/1");
+  await client.listInboxPosts({ network: "threads", search: "hello" });
 
   assert.equal(calls[0].path, postCommentsPath("post/1"));
   assert.equal(calls[1].path, "/inbox?status=replied");
@@ -58,4 +80,5 @@ test("engagement client calls the authenticated request helper", async () => {
   assert.equal(calls[7].path, capabilitiesPath);
   assert.equal(calls[8].path, "/posts/post%2F1/engagement/sync");
   assert.equal(calls[8].options.method, "POST");
+  assert.equal(calls[9].path, "/inbox/posts?network=threads&search=hello");
 });

@@ -16,6 +16,7 @@ export function inboxPane(tier, detailOpen) {
 export const INSIGHTS_WAIT_MS = 3 * 60 * 60 * 1000;
 export const REFRESH_MIN_MS = 15 * 60 * 1000;
 export const NETWORK_MEMORY_KEY = "socialcastly_comment_network";
+export const INBOX_VIEW_KEY = "socialcastly_inbox_view";
 
 export const INSIGHT_METRICS = [
   ["likes", "Likes"],
@@ -117,6 +118,16 @@ export const COPY = {
   inboxErrorTitle: "We couldn't load your comments",
   inboxErrorBody: "This is not your fault. Please try again later.",
   inboxLater: "Comments not available yet",
+  inboxPostsSub: "Published posts from your channels, even before anyone comments.",
+  inboxPostsEmptyTitle: "No published posts yet",
+  inboxPostsEmptyBody: "Publish a post and it will show up here, ready for comments.",
+  inboxPostsSearchTitle: "No posts match your search",
+  inboxPostsSearchBody: "Try a different word or clear the search.",
+  postsErrorTitle: "We couldn't load your posts",
+  postsErrorBody: "This is not your fault. Please try again later.",
+  createPost: "Create post",
+  noCommentsYet: "No comments yet",
+  untitledPost: "Untitled post",
   showAll: "Show all comments",
   tryAgain: "Try again",
   you: "You",
@@ -804,6 +815,81 @@ export function visibleFeed(items) {
   return (items || [])
     .map(normalizeFeedItem)
     .filter((item) => item.kind === "comment" && !item.own);
+}
+
+/** Stored choice wins. Otherwise Comments when something is unread, else Posts. */
+export function inboxViewChoice({ stored = "", unread = 0 } = {}) {
+  if (stored === "comments" || stored === "posts") return stored;
+  return Number(unread) > 0 ? "comments" : "posts";
+}
+
+export function readInboxView(storage) {
+  if (!storage || typeof storage.getItem !== "function") return "";
+  try {
+    const raw = storage.getItem(INBOX_VIEW_KEY);
+    return raw === "comments" || raw === "posts" ? raw : "";
+  } catch {
+    return "";
+  }
+}
+
+export function writeInboxView(storage, view) {
+  if (view !== "comments" && view !== "posts") return;
+  if (!storage || typeof storage.setItem !== "function") return;
+  try {
+    storage.setItem(INBOX_VIEW_KEY, view);
+  } catch {
+    /* The choice still applies for this visit. */
+  }
+}
+
+export function normalizeInboxPost(row) {
+  const media = Array.isArray(row?.media_urls) ? row.media_urls.filter(Boolean) : [];
+  const thumb = row?.media_thumb || row?.mediaThumb || media[0] || "";
+  const comments = Number(row?.comment_count ?? row?.commentCount);
+  const unread = Number(row?.unread_count ?? row?.unreadCount);
+  return {
+    id: String(row?.id || ""),
+    accountId: String(row?.social_account_id || row?.accountId || ""),
+    network: canonicalNetwork(row?.network),
+    accountName: row?.account_name || row?.accountName || "",
+    caption: String(row?.content ?? row?.caption ?? ""),
+    thumb: String(thumb || ""),
+    publishedAt: row?.published_at ?? row?.publishedAt ?? null,
+    commentCount: Number.isFinite(comments) && comments > 0 ? comments : 0,
+    unreadCount: Number.isFinite(unread) && unread > 0 ? unread : 0,
+  };
+}
+
+export function postCaption(text) {
+  const value = String(text || "").trim();
+  return value || COPY.untitledPost;
+}
+
+export function commentCountLabel(count) {
+  const n = Number(count);
+  if (!Number.isFinite(n) || n <= 0) return COPY.noCommentsYet;
+  if (n === 1) return "1 comment";
+  return `${formatCount(n)} comments`;
+}
+
+export function emptyPostsCopy(search = "") {
+  if (String(search || "").trim()) {
+    return {
+      title: COPY.inboxPostsSearchTitle,
+      body: COPY.inboxPostsSearchBody,
+      action: COPY.clearSearch,
+      clearSearch: true,
+      create: false,
+    };
+  }
+  return {
+    title: COPY.inboxPostsEmptyTitle,
+    body: COPY.inboxPostsEmptyBody,
+    action: COPY.createPost,
+    clearSearch: false,
+    create: true,
+  };
 }
 
 export function emptyInboxCopy(status, search = "") {

@@ -99,6 +99,34 @@ class InboxPage(BaseModel):
     counts: InboxCounts = Field(default_factory=InboxCounts)
 
 
+class InboxPost(BaseModel):
+    """A published post in the inbox, including posts that have no comments yet."""
+
+    id: UUID
+    social_account_id: UUID
+    network: str
+    account_name: str = ""
+    content: str = ""
+    media_thumb: str = ""
+    published_at: datetime | None = None
+    comment_count: int = 0
+    unread_count: int = 0
+
+    @field_validator("published_at", mode="before")
+    @classmethod
+    def attach_utc(cls, value: datetime | None) -> datetime | None:
+        return _utc(value)
+
+
+class InboxPostsPage(BaseModel):
+    """Published posts for the inbox, newest first."""
+
+    items: list[InboxPost]
+    total: int
+    limit: int
+    offset: int
+
+
 class CommentReplyRequest(BaseModel):
     """Text of a reply posted to the network."""
 

@@ -7,6 +7,7 @@ import {
   ExternalLink,
   Inbox,
   MoreHorizontal,
+  Plus,
   RefreshCw,
   CircleDot,
   Search,
@@ -22,22 +23,29 @@ import {
   accountAccess,
   atHandle,
   canonicalNetwork,
+  commentCountLabel,
   commentedLine,
   commenterMeta,
   compactAge,
+  countBadge,
   deleteConfirmCopy,
   displayHandle,
   displayName,
   emptyInboxCopy,
+  emptyPostsCopy,
   externalUrl,
   findThreadRoot,
   inboxBanners,
   inboxNetworkOptions,
   inboxPane,
+  inboxViewChoice,
   mapComment,
   networkName,
+  normalizeInboxPost,
   normalizeThread,
+  postCaption,
   presentThread,
+  readInboxView,
   replyHint,
   replyPostedToast,
   shortDay,
@@ -45,6 +53,7 @@ import {
   viewOnName,
   viewportTier,
   visibleFeed,
+  writeInboxView,
 } from "./model.js";
 
 function Glyph({ network, size = 16 }) {
@@ -55,17 +64,37 @@ function safeHref(url) {
   return /^https?:\/\//i.test(String(url || "")) ? url : "";
 }
 
+function storedInboxView() {
+  try {
+    return readInboxView(window.localStorage);
+  } catch {
+    return "";
+  }
+}
+
 export default function InboxPage({
   client,
   accounts = [],
   xEnabled = false,
   onOpenPost,
+  onCreatePost,
   onReconnect,
   notify,
   onActivity,
   fixtures = null,
 }) {
   const [status, setStatus] = useState("all");
+  const [view, setView] = useState(() => {
+    if (fixtures?.view === "comments" || fixtures?.view === "posts") return fixtures.view;
+    return storedInboxView();
+  });
+  const explicitView = React.useRef(
+    Boolean(
+      fixtures?.view === "comments" ||
+        fixtures?.view === "posts" ||
+        storedInboxView(),
+    ),
+  );
   const [network, setNetwork] = useState("");
   const [accountId, setAccountId] = useState("");
   const [search, setSearch] = useState("");
@@ -87,7 +116,16 @@ export default function InboxPage({
     viewportTier(typeof window === "undefined" ? 1440 : window.innerWidth),
   );
   const [detailOpen, setDetailOpen] = useState(false);
-  const pane = inboxPane(tier, detailOpen);
+  const [postItems, setPostItems] = useState(() =>
+    fixtures?.view === "posts" ? (fixtures.posts || []).map(normalizeInboxPost) : [],
+  );
+  const [postTotal, setPostTotal] = useState(() =>
+    fixtures?.view === "posts" ? (fixtures.posts || []).length : 0,
+  );
+  const [postPhase, setPostPhase] = useState(() =>
+    fixtures?.view === "posts" ? fixtures.phase || "ready" : "loading",
+  );
+  const pane = view === "posts" ? "list" : inboxPane(tier, detailOpen);
   useEffect(() => {
     document.body.classList.toggle("eng-phone-detail", pane === "detail");
     return () => document.body.classList.remove("eng-phone-detail");
@@ -173,11 +211,80 @@ export default function InboxPage({
     }
   }
 
+  async function loadPosts({ offset = 0, append = false } = {}) {
+    if (fixtures) {
+      const rows = (fixtures.posts || []).map(normalizeInboxPost);
+      setPostItems(append ? (current) => [...current, ...rows] : rows);
+      setPostTotal(rows.length);
+      setPostPhase(fixtures.phase || "ready");
+      if (fixtures.matrix) setMatrix(fixtures.matrix);
+      setNow(new Date());
+      return;
+    }
+    if (!client) {
+      setPostPhase("error");
+      return;
+    }
+    if (!append) setPostPhase("loading");
+    try {
+      const [page, caps] = await Promise.all([
+        client.listInboxPosts({
+          network: network || undefined,
+          account_id: accountId || undefined,
+          search: query || undefined,
+          limit: 30,
+          offset,
+        }),
+        offset === 0 ? client.capabilities().catch(() => null) : Promise.resolve(matrix),
+      ]);
+      const next = (page?.items || []).map(normalizeInboxPost);
+      setPostItems((current) => (append ? [...current, ...next] : next));
+      setPostTotal(Number(page?.total) || 0);
+      if (offset === 0 && caps) setMatrix(caps);
+      setPostPhase("ready");
+      setNow(new Date());
+    } catch {
+      if (!append) {
+        setPostItems([]);
+        setPostPhase("error");
+      } else {
+        notify?.({ title: COPY.postsErrorTitle, message: COPY.postsErrorBody });
+      }
+    }
+  }
+
+  const listKind = view === "posts" ? "posts" : "comments";
   useEffect(() => {
-    void loadPage();
-    // Reload when the filters change. loadPage closes over the latest ones.
+    if (listKind === "posts") void loadPosts();
+    else void loadPage();
+    // Reload when the filters or the view change. The loaders close over the latest ones.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, network, accountId, query, fixtures, client]);
+  }, [listKind, status, network, accountId, query, fixtures, client]);
+
+  useEffect(() => {
+    if (view || explicitView.current) return;
+    if (phase === "error") {
+      setView("comments");
+      return;
+    }
+    if (phase !== "ready") return;
+    setView(inboxViewChoice({ stored: "", unread: counts?.unread }));
+  }, [view, phase, counts]);
+
+  function chooseView(next) {
+    explicitView.current = true;
+    setView(next);
+    setMenu("");
+    if (next === "posts") {
+      setDetailOpen(false);
+      setReplyOpen(false);
+    }
+    try {
+      writeInboxView(window.localStorage, next);
+    } catch {
+      /* The choice still applies for this visit. */
+    }
+  }
 
   const selected = items.find((item) => item.id === selectedId) || null;
   useEffect(() => {
@@ -320,6 +427,7 @@ export default function InboxPage({
     function onKey(event) {
       const tag = event.target?.tagName;
       if (tag && /input|textarea|select/i.test(tag)) return;
+      if (view !== "comments") return;
       if (event.key === "j" || event.key === "k") {
         const index = items.findIndex((item) => item.id === selected?.id);
         const next = event.key === "j" ? items[index + 1] : items[index - 1];
@@ -367,24 +475,53 @@ export default function InboxPage({
   };
 
   return (
-    <div className="eng-inbox" data-engagement="inbox" data-phase={phase} data-pane={pane}>
+    <div className="eng-inbox" data-engagement="inbox" data-view={view || "pending"} data-phase={view === "posts" ? postPhase : phase} data-pane={pane}>
       <div className="page-head eng-inbox-head">
         <div>
           <h1>{COPY.inboxTitle}</h1>
-          <p>{tier === "desktop" ? COPY.inboxSub : COPY.inboxSubMobile}</p>
+          <p>
+            {view === "posts"
+              ? COPY.inboxPostsSub
+              : tier === "desktop"
+                ? COPY.inboxSub
+                : COPY.inboxSubMobile}
+          </p>
         </div>
+        {view === "posts" ? null : (
+          <button
+            type="button"
+            className={`btn btn-secondary${tier === "desktop" ? "" : " btn-sm"}`}
+            onClick={() => void markAll()}
+            disabled={phase !== "ready" || items.length === 0 || busy === "all"}
+          >
+            <Check size={tier === "desktop" ? 16 : 14} />
+            {tier === "desktop" ? "Mark all as read" : COPY.markAllRead}
+          </button>
+        )}
+      </div>
+
+      <div className="eng-seg eng-view-switch" role="tablist" aria-label="Inbox view">
         <button
           type="button"
-          className={`btn btn-secondary${tier === "desktop" ? "" : " btn-sm"}`}
-          onClick={() => void markAll()}
-          disabled={phase !== "ready" || items.length === 0 || busy === "all"}
+          role="tab"
+          aria-selected={view === "comments"}
+          className={view === "comments" ? "is-on" : ""}
+          onClick={() => chooseView("comments")}
         >
-          <Check size={tier === "desktop" ? 16 : 14} />
-          {tier === "desktop" ? "Mark all as read" : COPY.markAllRead}
+          Comments
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={view === "posts"}
+          className={view === "posts" ? "is-on" : ""}
+          onClick={() => chooseView("posts")}
+        >
+          Posts
         </button>
       </div>
 
-      {phase === "ready" && banners.length ? (
+      {(view === "posts" ? postPhase : phase) === "ready" && banners.length ? (
         <div className="eng-banner-stack">
           {banners.map((banner) => (
             <div className="eng-banner" key={banner.id}>
@@ -411,32 +548,34 @@ export default function InboxPage({
       ) : null}
 
       <div className="eng-filters">
-        <div className="eng-seg" role="tablist" aria-label="Comment status">
-          {INBOX_FILTERS.map((filter) => {
-            const count = phase === "loading" ? null : countFor(filter.id);
-            const on = status === filter.status;
-            return (
-              <button
-                key={filter.id}
-                type="button"
-                role="tab"
-                aria-selected={on}
-                className={on ? "is-on" : ""}
-                onClick={() => setStatus(filter.status)}
-              >
-                {filter.label}
-                {count == null ? null : <span>{count}</span>}
-              </button>
-            );
-          })}
-        </div>
-        <div className="eng-filters-rest">
+        {view === "posts" ? null : (
+          <div className="eng-seg" role="tablist" aria-label="Comment status">
+            {INBOX_FILTERS.map((filter) => {
+              const count = phase === "loading" ? null : countFor(filter.id);
+              const on = status === filter.status;
+              return (
+                <button
+                  key={filter.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={on}
+                  className={on ? "is-on" : ""}
+                  onClick={() => setStatus(filter.status)}
+                >
+                  {filter.label}
+                  {count == null ? null : <span>{count}</span>}
+                </button>
+              );
+            })}
+          </div>
+        )}
+        <div className={`eng-filters-rest${view === "posts" ? " is-start" : ""}`}>
           <label className="eng-search">
             <Search size={16} />
             <input
               value={search}
-              placeholder="Search comments"
-              aria-label="Search comments"
+              placeholder={view === "posts" ? "Search posts" : "Search comments"}
+              aria-label={view === "posts" ? "Search posts" : "Search comments"}
               onChange={(event) => setSearch(event.target.value)}
             />
           </label>
@@ -541,7 +680,7 @@ export default function InboxPage({
         </div>
       </div>
 
-      {phase === "error" ? (
+      {view === "comments" && phase === "error" ? (
         <div className="card eng-state eng-state-card">
           <span className="eng-state-icon red">
             <TriangleAlert size={24} />
@@ -555,7 +694,7 @@ export default function InboxPage({
         </div>
       ) : null}
 
-      {phase === "loading" ? (
+      {view !== "posts" && (view === "" || phase === "loading") ? (
         <div className="eng-inbox-panes" aria-busy="true">
           <div className={`eng-inbox-list${tier === "desktop" ? " card" : " is-plain"}`}>
             {Array.from({ length: 7 }, (_, index) => (
@@ -579,7 +718,7 @@ export default function InboxPage({
         </div>
       ) : null}
 
-      {phase === "ready" && items.length === 0 ? (
+      {view === "comments" && phase === "ready" && items.length === 0 ? (
         <div className="card eng-state eng-state-card">
           <span className="eng-state-icon">
             <Inbox size={24} />
@@ -605,7 +744,7 @@ export default function InboxPage({
         </div>
       ) : null}
 
-      {phase === "ready" && items.length > 0 ? (
+      {view === "comments" && phase === "ready" && items.length > 0 ? (
         <div className="eng-inbox-panes">
           <div className={`eng-inbox-list${tier === "desktop" ? " card" : " is-plain"}`}>
             {items.map((item) => (
@@ -761,6 +900,110 @@ export default function InboxPage({
               </>
             ) : null}
           </div>
+        </div>
+      ) : null}
+
+      {view === "posts" && postPhase === "error" ? (
+        <div className="card eng-state eng-state-card">
+          <span className="eng-state-icon red">
+            <TriangleAlert size={24} />
+          </span>
+          <h3>{COPY.postsErrorTitle}</h3>
+          <p>{COPY.postsErrorBody}</p>
+          <button type="button" className="btn btn-secondary" onClick={() => void loadPosts()}>
+            <RefreshCw size={16} />
+            {COPY.tryAgain}
+          </button>
+        </div>
+      ) : null}
+
+      {view === "posts" && postPhase === "loading" ? (
+        <div className={`eng-post-list${tier === "desktop" ? " card" : " is-plain"}`} aria-busy="true">
+          {Array.from({ length: 5 }, (_, index) => (
+            <div className="eng-postrow" key={index}>
+              <div className="eng-skel eng-postrow-thumb" />
+              <div style={{ flex: 1 }}>
+                <div className="eng-skel eng-skel-line" style={{ width: "36%" }} />
+                <div className="eng-skel eng-skel-line" />
+                <div className="eng-skel eng-skel-line" style={{ width: "28%" }} />
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {view === "posts" && postPhase === "ready" && postItems.length === 0 ? (
+        <div className="card eng-state eng-state-card">
+          <span className="eng-state-icon">
+            <Inbox size={24} />
+          </span>
+          <h3>{emptyPostsCopy(query).title}</h3>
+          <p>{emptyPostsCopy(query).body}</p>
+          {emptyPostsCopy(query).action ? (
+            <button
+              type="button"
+              className={emptyPostsCopy(query).create ? "btn btn-primary" : "btn btn-secondary"}
+              onClick={() => {
+                const emptyPosts = emptyPostsCopy(query);
+                if (emptyPosts.clearSearch) {
+                  setSearch("");
+                  setQuery("");
+                  return;
+                }
+                onCreatePost?.();
+              }}
+            >
+              {emptyPostsCopy(query).create ? <Plus size={16} /> : null}
+              {emptyPostsCopy(query).action}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {view === "posts" && postPhase === "ready" && postItems.length > 0 ? (
+        <div className={`eng-post-list${tier === "desktop" ? " card" : " is-plain"}`} data-engagement="inbox-posts">
+          {postItems.map((item) => {
+            const account = accounts.find((entry) => entry.id === item.accountId);
+            const name = displayName(account) || item.accountName || networkName(item.network);
+            const when = shortDay(item.publishedAt);
+            const unread = countBadge(item.unreadCount);
+            return (
+              <button
+                key={item.id}
+                type="button"
+                className="eng-postrow"
+                data-post-id={item.id}
+                onClick={() => onOpenPost?.(item.id, { tab: "comments" })}
+              >
+                {item.thumb ? <img className="eng-postrow-thumb" src={item.thumb} alt="" /> : null}
+                <span className="eng-postrow-main">
+                  <span className="eng-postrow-top">
+                    <Glyph network={item.network} size={16} />
+                    <b>{name}</b>
+                    {when ? <span className="eng-postrow-date">{when}</span> : null}
+                  </span>
+                  <span className="eng-postrow-caption">{postCaption(item.caption)}</span>
+                  <span className="eng-postrow-foot">
+                    <span className={item.commentCount > 0 ? "" : "is-quiet"}>{commentCountLabel(item.commentCount)}</span>
+                    {unread ? (
+                      <span className="eng-unread-badge" aria-label={`${item.unreadCount} unread`}>
+                        {unread}
+                      </span>
+                    ) : null}
+                  </span>
+                </span>
+              </button>
+            );
+          })}
+          {postItems.length < postTotal ? (
+            <button
+              type="button"
+              className="btn btn-ghost eng-post-more"
+              onClick={() => void loadPosts({ offset: postItems.length, append: true })}
+            >
+              Load more
+            </button>
+          ) : null}
         </div>
       ) : null}
       {pending && selected ? (

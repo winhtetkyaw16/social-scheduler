@@ -3,7 +3,9 @@ import assert from "node:assert/strict";
 import {
   COPY,
   commentedLine,
+  commentCountLabel,
   emptyInboxCopy,
+  emptyPostsCopy,
   inboxBanners,
   inboxPane,
   viewportTier,
@@ -50,6 +52,12 @@ import {
   viewOnName,
   accountAccess,
   inboxNetworkOptions,
+  inboxViewChoice,
+  normalizeInboxPost,
+  postCaption,
+  readInboxView,
+  writeInboxView,
+  INBOX_VIEW_KEY,
 } from "./engagement/model.js";
 import { createEngagementClient } from "./api/engagement.js";
 
@@ -455,6 +463,76 @@ test("the inbox feed keeps a kind and only shows comments", () => {
   assert.match(banners[0].body, /@northwind.sample/);
   assert.equal(banners[1].title, "Turn on comments for Threads");
   assert.equal(banners.some((banner) => banner.network === "tiktok"), false);
+});
+
+test("inbox posts view prefers a saved choice, otherwise unread comments", () => {
+  assert.equal(inboxViewChoice({ stored: "", unread: 3 }), "comments");
+  assert.equal(inboxViewChoice({ stored: "", unread: 0 }), "posts");
+  assert.equal(inboxViewChoice({ stored: "posts", unread: 4 }), "posts");
+  assert.equal(inboxViewChoice({ stored: "comments", unread: 0 }), "comments");
+  assert.equal(inboxViewChoice({ stored: "nope", unread: 0 }), "posts");
+  const storage = {
+    value: "",
+    getItem(key) {
+      assert.equal(key, INBOX_VIEW_KEY);
+      return this.value;
+    },
+    setItem(key, value) {
+      assert.equal(key, INBOX_VIEW_KEY);
+      this.value = value;
+    },
+  };
+  assert.equal(readInboxView(storage), "");
+  writeInboxView(storage, "posts");
+  assert.equal(readInboxView(storage), "posts");
+  writeInboxView(storage, "later");
+  assert.equal(readInboxView(storage), "posts");
+  assert.equal(readInboxView(null), "");
+});
+
+test("a published post row shows counts, a snippet, and hides a missing date", () => {
+  const row = normalizeInboxPost({
+    id: "p1",
+    social_account_id: "acc",
+    network: "Instagram",
+    account_name: "Northwind Café",
+    content: "  Morning pour  ",
+    media_urls: ["https://cdn.example/latte.jpg"],
+    published_at: "2026-11-16T02:15:00Z",
+    comment_count: 3,
+    unread_count: 2,
+  });
+  assert.equal(row.network, "instagram");
+  assert.equal(row.accountName, "Northwind Café");
+  assert.equal(postCaption(row.caption), "Morning pour");
+  assert.equal(row.thumb, "https://cdn.example/latte.jpg");
+  assert.equal(commentCountLabel(row.commentCount), "3 comments");
+  assert.equal(commentCountLabel(1), "1 comment");
+  assert.equal(commentCountLabel(0), COPY.noCommentsYet);
+  assert.equal(shortDay(row.publishedAt), "Mon, Nov 16");
+  const quiet = normalizeInboxPost({
+    id: "p2",
+    network: "facebook",
+    content: "   ",
+    published_at: null,
+    comment_count: 0,
+    unread_count: 0,
+  });
+  assert.equal(postCaption(quiet.caption), COPY.untitledPost);
+  assert.equal(quiet.thumb, "");
+  assert.equal(shortDay(quiet.publishedAt), "");
+  assert.equal(shortDay(normalizeInboxPost({ published_at: 0 }).publishedAt), "");
+  assert.equal(shortDay(normalizeInboxPost({ published_at: "1970-01-01T00:00:00Z" }).publishedAt), "");
+  const empty = emptyPostsCopy("");
+  assert.equal(empty.title, COPY.inboxPostsEmptyTitle);
+  assert.equal(empty.action, COPY.createPost);
+  assert.equal(empty.create, true);
+  const searched = emptyPostsCopy("latte");
+  assert.equal(searched.title, COPY.inboxPostsSearchTitle);
+  assert.equal(searched.clearSearch, true);
+  for (const line of [empty.title, empty.body, searched.title, searched.body, COPY.inboxPostsSub, COPY.noCommentsYet]) {
+    assert.equal(containsBannedWord(line), false, line);
+  }
 });
 
 test("engagement client can post a comment and remove one", async () => {

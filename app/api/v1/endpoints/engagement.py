@@ -18,6 +18,8 @@ from app.schemas.engagement import (
     CommentThread,
     InboxComment,
     InboxPage,
+    InboxPost,
+    InboxPostsPage,
     InboxStatus,
     MarkReadRequest,
     MarkReadResult,
@@ -44,6 +46,7 @@ from app.services.engagement.inbox import (
     comments_for_post,
     get_owned_comment,
     inbox_page,
+    inbox_posts_page,
     insights_for_post,
     mark_comment_read,
     mark_comment_unread,
@@ -157,6 +160,34 @@ def get_inbox(
         unread_count=page["unread_count"],
         unread_by_network=page["unread_by_network"],
         counts=page["counts"],
+    )
+
+
+@router.get("/inbox/posts", response_model=InboxPostsPage)
+def get_inbox_posts(
+    network: str | None = None,
+    account_id: UUID | None = None,
+    search: str | None = None,
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> InboxPostsPage:
+    """Published posts on inbox networks, newest first, including posts with no comments."""
+    page = inbox_posts_page(
+        db,
+        user.id,
+        network=network,
+        account_id=account_id,
+        search=search,
+        limit=limit,
+        offset=offset,
+    )
+    return InboxPostsPage(
+        items=[InboxPost(**item) for item in page["items"]],
+        total=page["total"],
+        limit=page["limit"],
+        offset=page["offset"],
     )
 
 

@@ -234,7 +234,40 @@ def _connect(client, headers, platform="facebook", scopes=None):
     return UUID(created.json()["id"])
 
 
-def _published(user_id, account_id, *, days_ago=0, content="Hello world", provider_post_id=None):
+def _legacy_account(user_id, platform, name):
+    """Insert an account the connect API would reject, such as legacy ``twitter``."""
+    db = SessionLocal()
+    try:
+        account = ConnectedAccount(
+            user_id=user_id,
+            platform=platform,
+            platform_account_id=f"{platform}-{uuid4().hex[:8]}",
+            account_name=name,
+            account_type="user",
+            access_token_ciphertext="test-access-token",
+            scopes=[],
+            is_active=True,
+            needs_reconnect=False,
+            extra_metadata={},
+        )
+        db.add(account)
+        db.commit()
+        return account.id
+    finally:
+        db.close()
+
+
+def _published(
+    user_id,
+    account_id,
+    *,
+    days_ago=0,
+    content="Hello world",
+    provider_post_id=None,
+    media_urls=None,
+    published_at="default",
+    status="published",
+):
     when = datetime.now(timezone.utc) - timedelta(days=days_ago)
     db = SessionLocal()
     try:
@@ -242,12 +275,12 @@ def _published(user_id, account_id, *, days_ago=0, content="Hello world", provid
             user_id=user_id,
             connected_account_id=account_id,
             content=content,
-            media_urls=[],
+            media_urls=list(media_urls or []),
             scheduled_at=when,
-            status="published",
+            status=status,
             idempotency_key=uuid4().hex,
             provider_post_id=provider_post_id or uuid4().hex,
-            published_at=when,
+            published_at=when if published_at == "default" else published_at,
             post_metadata={},
         )
         db.add(post)
@@ -765,6 +798,7 @@ def test_endpoints_require_auth_and_hide_other_users(client, auth_headers):
     unauthenticated = [
         ("GET", f"/api/v1/posts/{post_id}/comments"),
         ("GET", "/api/v1/inbox"),
+        ("GET", "/api/v1/inbox/posts"),
         ("POST", f"/api/v1/comments/{comment_id}/reply"),
         ("POST", f"/api/v1/comments/{comment_id}/read"),
         ("POST", "/api/v1/comments/read"),
@@ -1185,3 +1219,159 @@ def test_migration_inserts_round_trip_metrics(tmp_path):
     assert snapshot.impressions == 12
     assert snapshot.likes is None
     assert snapshot.saves is None
+
+
+def test_inbox_posts_include_posts_with_no_comments(client, auth_headers, monkeypatch):
+    """Published inbox posts show up with totals, even when nobody has commented."""
+    headers, _ = auth_headers
+    other = _login(client)
+    user_id = _user_id(headers)
+    other_id = _user_id(other)
+    instagram = _connect(client, headers, "instagram")
+    facebook = _connect(client, headers, "facebook")
+    youtube = _connect(client, headers, "youtube")
+    linkedin = _connect(client, headers, "linkedin")
+    tiktok = _connect(client, headers, "tiktok")
+    x_account = _connect(client, headers, "x")
+    twitter = _legacy_account(user_id, "twitter", "Legacy bird")
+    other_ig = _connect(client, other, "instagram")
+
+    newest = _published(
+        user_id,
+        instagram,
+        days_ago=0,
+        content="Latte art this morning",
+        media_urls=["https://cdn.example/latte.jpg", "https://cdn.example/second.jpg"],
+    )
+    quiet = _published(
+        user_id,
+        facebook,
+        days_ago=1,
+        content="A quiet Facebook note",
+        published_at=None,
+    )
+    older = _published(user_id, youtube, days_ago=3, content="Studio tour")
+    _published(user_id, linkedin, days_ago=0, content="LinkedIn update")
+    _published(user_id, tiktok, days_ago=0, content="TikTok clip")
+    _published(user_id, instagram, days_ago=0, content="Still a draft", status="draft")
+    _published(user_id, instagram, days_ago=0, content="Waiting to go out", status="scheduled")
+    x_post = _published(user_id, x_account, days_ago=0, content="A note on X")
+    twitter_post = _published(user_id, twitter, days_ago=2, content="Old twitter name")
+    other_post = _published(other_id, other_ig, days_ago=0, content="Someone else's latte")
+
+    _add_comment(newest, instagram, text="Love this", network="instagram", minutes_ago=5, author="Ada")
+    _add_comment(
+        newest,
+        instagram,
+        text="Me too",
+        network="instagram",
+        minutes_ago=4,
+        author="Grace",
+        is_read=True,
+    )
+    _add_comment(
+        newest,
+        instagram,
+        text="Our reply",
+        network="instagram",
+        minutes_ago=3,
+        is_own=True,
+        is_read=True,
+    )
+    _add_comment(newest, instagram, text="Removed", network="instagram", minutes_ago=2, deleted=True)
+    _add_comment(older, youtube, text="Nice video", network="youtube", minutes_ago=30, author="Sam")
+    _add_comment(
+        quiet,
+        facebook,
+        text="Own only",
+        network="facebook",
+        minutes_ago=8,
+        is_own=True,
+        is_read=True,
+    )
+
+    monkeypatch.delenv("ENGAGEMENT_X_ENABLED", raising=False)
+    denied = client.get("/api/v1/inbox/posts", headers=headers)
+    assert denied.status_code == 200, denied.text
+    body = denied.json()
+    ids = [item["id"] for item in body["items"]]
+    assert str(x_post) not in ids
+    assert str(twitter_post) not in ids
+    assert str(other_post) not in ids
+    assert ids == [str(newest), str(quiet), str(older)]
+    assert body["total"] == 3
+    top = body["items"][0]
+    assert top["network"] == "instagram"
+    assert "instagram" in top["account_name"].lower()
+    assert top["content"] == "Latte art this morning"
+    assert top["media_thumb"] == "https://cdn.example/latte.jpg"
+    assert top["comment_count"] == 2
+    assert top["unread_count"] == 1
+    assert top["social_account_id"] == str(instagram)
+    assert top["published_at"]
+    quiet_row = body["items"][1]
+    assert quiet_row["id"] == str(quiet)
+    assert quiet_row["comment_count"] == 0
+    assert quiet_row["unread_count"] == 0
+    assert quiet_row["media_thumb"] == ""
+    assert quiet_row["published_at"] is None
+    assert body["items"][2]["comment_count"] == 1
+    assert body["items"][2]["unread_count"] == 1
+    assert body["items"][2]["network"] == "youtube"
+
+    found = client.get("/api/v1/inbox/posts?search=LATTE", headers=headers)
+    assert [item["id"] for item in found.json()["items"]] == [str(newest)]
+    by_name = client.get("/api/v1/inbox/posts?search=youtube", headers=headers)
+    assert [item["id"] for item in by_name.json()["items"]] == [str(older)]
+    network = client.get("/api/v1/inbox/posts?network=YouTube", headers=headers)
+    assert [item["id"] for item in network.json()["items"]] == [str(older)]
+    blocked = client.get("/api/v1/inbox/posts?network=tiktok", headers=headers)
+    assert blocked.json() == {"items": [], "total": 0, "limit": 50, "offset": 0}
+    assert client.get("/api/v1/inbox/posts?network=x", headers=headers).json()["items"] == []
+
+    one_account = client.get(
+        f"/api/v1/inbox/posts?account_id={facebook}&limit=1&offset=0", headers=headers
+    )
+    assert one_account.status_code == 200
+    assert [item["id"] for item in one_account.json()["items"]] == [str(quiet)]
+    assert one_account.json()["total"] == 1
+
+    paged = client.get("/api/v1/inbox/posts?limit=1&offset=1", headers=headers)
+    assert [item["id"] for item in paged.json()["items"]] == [str(quiet)]
+    assert paged.json()["total"] == 3
+
+    hidden = client.get("/api/v1/inbox/posts", headers=other)
+    assert [item["id"] for item in hidden.json()["items"]] == [str(other_post)]
+
+    from sqlalchemy import event
+
+    from app.db.session import engine
+
+    def _statements(path):
+        seen = []
+
+        def before(conn, cursor, statement, parameters, context, executemany):
+            seen.append(statement)
+
+        event.listen(engine, "before_cursor_execute", before)
+        try:
+            response = client.get(path, headers=headers)
+            assert response.status_code == 200, response.text
+        finally:
+            event.remove(engine, "before_cursor_execute", before)
+        return seen
+
+    narrow = _statements("/api/v1/inbox/posts?limit=1")
+    wide = _statements("/api/v1/inbox/posts?limit=20")
+    assert narrow
+    assert len(narrow) == len(wide)
+    joined = "\n".join(wide).lower()
+    assert "post_comments" in joined
+    assert "group by" in joined
+
+    monkeypatch.setenv("ENGAGEMENT_X_ENABLED", "true")
+    enabled = client.get("/api/v1/inbox/posts?network=twitter", headers=headers)
+    assert enabled.status_code == 200, enabled.text
+    enabled_ids = {item["id"] for item in enabled.json()["items"]}
+    assert enabled_ids == {str(x_post), str(twitter_post)}
+    assert {item["network"] for item in enabled.json()["items"]} == {"x"}

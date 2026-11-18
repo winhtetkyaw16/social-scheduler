@@ -7,9 +7,10 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import exists, func, or_, select
+from sqlalchemy import case, exists, func, or_, select
 from sqlalchemy.orm import Session, aliased
 
+from app.core.config import engagement_x_enabled
 from app.models import ConnectedAccount, ScheduledPost
 from app.models.engagement import PostComment, PostInsightsSnapshot
 from app.services.engagement import registry
@@ -26,6 +27,8 @@ from app.services.engagement.tokens import reconnect_message
 from app.services.error_messages import network_name
 
 INBOX_STATUSES = ("unread", "unreplied", "replied", "all")
+# Same networks the inbox can read comments for. X is added only while the flag is on.
+INBOX_POST_NETWORKS = ("instagram", "facebook", "threads", "youtube")
 
 
 def _count(db: Session, stmt) -> int:
@@ -202,6 +205,118 @@ def inbox_page(
             ),
         },
     }
+
+
+def inbox_post_networks(*, x_enabled: bool) -> tuple[str, ...]:
+    """Networks whose published posts belong in the inbox."""
+    if x_enabled:
+        return (*INBOX_POST_NETWORKS, "x")
+    return INBOX_POST_NETWORKS
+
+
+def _platform_values(networks: tuple[str, ...]) -> list[str]:
+    """Account platform values that map onto these canonical networks."""
+    values = [name.lower() for name in networks]
+    if "x" in values and "twitter" not in values:
+        values.append("twitter")
+    return values
+
+
+def _empty_posts_page(limit: int, offset: int) -> dict:
+    return {"items": [], "total": 0, "limit": limit, "offset": offset}
+
+
+def inbox_posts_page(
+    db: Session,
+    user_id: UUID,
+    *,
+    network: str | None = None,
+    account_id: UUID | None = None,
+    search: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict:
+    """Published posts for inbox networks, newest first.
+
+    Comment and unread totals come from one grouped query joined to the page,
+    so a post with no comments is included and the list does not query per post.
+    Own notes and deleted comments are not counted.
+    """
+    allowed = inbox_post_networks(x_enabled=engagement_x_enabled())
+    requested = registry.canonical_network(network) if (network or "").strip() else ""
+    if requested and requested not in allowed:
+        return _empty_posts_page(limit, offset)
+    active = (requested,) if requested else allowed
+    platforms = _platform_values(active)
+
+    visible = (
+        select(
+            PostComment.post_id.label("post_id"),
+            func.count(PostComment.id).label("comment_count"),
+            func.sum(case((PostComment.is_read.is_(False), 1), else_=0)).label("unread_count"),
+        )
+        .join(ScheduledPost, ScheduledPost.id == PostComment.post_id)
+        .where(
+            ScheduledPost.user_id == user_id,
+            PostComment.is_deleted.is_(False),
+            PostComment.is_own.is_(False),
+        )
+        .group_by(PostComment.post_id)
+        .subquery()
+    )
+    activity = func.coalesce(ScheduledPost.published_at, ScheduledPost.scheduled_at)
+    filtered = (
+        select(ScheduledPost.id)
+        .join(ConnectedAccount, ConnectedAccount.id == ScheduledPost.connected_account_id)
+        .where(
+            ScheduledPost.user_id == user_id,
+            ScheduledPost.status == "published",
+            func.lower(ConnectedAccount.platform).in_(platforms),
+        )
+    )
+    if account_id is not None:
+        filtered = filtered.where(ScheduledPost.connected_account_id == account_id)
+    needle = (search or "").strip().lower()
+    if needle:
+        pattern = f"%{needle}%"
+        filtered = filtered.where(
+            or_(
+                func.lower(ScheduledPost.content).like(pattern),
+                func.lower(func.coalesce(ConnectedAccount.account_name, "")).like(pattern),
+            )
+        )
+    total = _count(db, filtered)
+    rows = db.execute(
+        select(
+            ScheduledPost,
+            ConnectedAccount,
+            func.coalesce(visible.c.comment_count, 0),
+            func.coalesce(visible.c.unread_count, 0),
+        )
+        .join(ConnectedAccount, ConnectedAccount.id == ScheduledPost.connected_account_id)
+        .outerjoin(visible, visible.c.post_id == ScheduledPost.id)
+        .where(ScheduledPost.id.in_(filtered.order_by(None)))
+        .order_by(activity.desc(), ScheduledPost.id.desc())
+        .limit(limit)
+        .offset(offset)
+    ).all()
+    items = []
+    for post, account, comment_count, unread_count in rows:
+        media = [str(url) for url in (post.media_urls or []) if url]
+        items.append(
+            {
+                "id": post.id,
+                "social_account_id": post.connected_account_id,
+                "network": registry.canonical_network(account.platform),
+                "account_name": account.account_name or "",
+                "content": post.content or "",
+                "media_thumb": media[0] if media else "",
+                "published_at": post.published_at,
+                "comment_count": int(comment_count or 0),
+                "unread_count": int(unread_count or 0),
+            }
+        )
+    return {"items": items, "total": int(total), "limit": limit, "offset": offset}
 
 
 def mark_comment_read(db: Session, comment: PostComment) -> PostComment:

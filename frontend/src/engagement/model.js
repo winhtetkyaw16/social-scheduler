@@ -824,7 +824,7 @@ export function commentedLine(item, accountLabel, now = new Date()) {
   return `Commented ${when} on ${networkName(item?.network)}${who}`;
 }
 
-/** Phone detail header: "7d ago on Facebook Page · @northwind.sample". */
+/** Phone detail header: "7d ago on Facebook Page · @account". */
 export function commenterMeta(item, accountLabel, now = new Date()) {
   const compact = compactAge(item?.createdAt, now);
   const when = compact === "now" ? "just now" : `${compact} ago`;

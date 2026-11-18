@@ -1,5 +1,18 @@
 /** Plain rules for the post drawer and inbox. No React, no network, no made-up numbers. */
 
+export function viewportTier(width) {
+  const n = Number(width) || 0;
+  if (n < 768) return "phone";
+  if (n < 1024) return "tablet";
+  return "desktop";
+}
+
+/** On a phone the inbox is a list until a comment is opened. Wider screens keep both panes. */
+export function inboxPane(tier, detailOpen) {
+  if (tier === "phone") return detailOpen ? "detail" : "list";
+  return "both";
+}
+
 export const INSIGHTS_WAIT_MS = 3 * 60 * 60 * 1000;
 export const REFRESH_MIN_MS = 15 * 60 * 1000;
 export const NETWORK_MEMORY_KEY = "socialcastly_comment_network";
@@ -78,6 +91,7 @@ export const COPY = {
   inboxTitle: "Inbox",
   inboxSub: "Comments from all your channels in one place.",
   inboxSubMobile: "Comments from all your channels.",
+  markAllRead: "Mark all read",
   inboxEmptyTitle: "You're all caught up",
   inboxEmptyAll: "New comments from your channels will show up here.",
   inboxEmptyFilter:
@@ -240,6 +254,50 @@ export function mutedInsightCopy(network) {
   if (key === "linkedin") return COPY.linkedIn;
   if (key === "x") return COPY.insightsX;
   return `Insights from ${networkName(key)} aren't available in SocialCastly yet.`;
+}
+
+/** What the Comments tab shows for one network. Copy comes from the spec, unchanged. */
+export function commentsPresentation({ network, xEnabled = false, metrics = null, access = "ok" }) {
+  const mode = commentsMode(network, xEnabled);
+  if (mode === "muted") {
+    return {
+      kind: "muted",
+      message: mutedCommentCopy(network),
+      link: `Open on ${viewOnName(network)}`,
+      composer: false,
+    };
+  }
+  if (mode === "totals") {
+    return {
+      kind: "totals",
+      title: COPY.tiktokTotalsTitle,
+      body: COPY.tiktokTotalsBody,
+      link: COPY.tiktokLink,
+      composer: false,
+    };
+  }
+  if (mode === "pin") {
+    return {
+      kind: "pin",
+      title: COPY.pinterestTitle,
+      body: pinCommentsCopy(metrics?.comments),
+      link: COPY.pinterestLink,
+      composer: false,
+    };
+  }
+  const banner =
+    access === "needs_reconnect"
+      ? reconnectBanner(network)
+      : access === "comments_not_enabled"
+        ? turnOnBanner(network)
+        : null;
+  return {
+    kind: "list",
+    note: capabilityNote(network, xEnabled),
+    empty: noCommentsCopy(network),
+    composer: showComposer(network, xEnabled) && !banner,
+    banner,
+  };
 }
 
 export function showComposer(network, xEnabled = false) {

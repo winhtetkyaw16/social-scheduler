@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   BarChart3,
   ChevronDown,
+  ChevronLeft,
   Clock3,
   ExternalLink,
   Eye,
@@ -24,10 +25,9 @@ import {
   accountAccess,
   buildInsightView,
   buildTargets,
-  capabilityNote,
   chipCount,
   commentActions,
-  commentsMode,
+  commentsPresentation,
   commentsTabEnabled,
   compactAge,
   composerHint,
@@ -40,23 +40,20 @@ import {
   longAge,
   mapComment,
   metricsFromSnapshot,
-  mutedCommentCopy,
   networkName,
-  noCommentsCopy,
   normalizeThread,
   pickCommentTarget,
-  pinCommentsCopy,
   publishedLabel,
   refreshAllowed,
   replyHint,
   replyPostedToast,
-  showComposer,
   showRepliesUnsupported,
   sortRoots,
   tabCommentCount,
   reconnectBanner,
   turnOnBanner,
   viewOnName,
+  viewportTier,
 } from "./model.js";
 import "./engagement.css";
 
@@ -175,7 +172,17 @@ export default function PostDetailDrawer({
   const [pending, setPending] = useState(null);
   const [menu, setMenu] = useState(false);
   const [now, setNow] = useState(() => new Date());
+  const [tier, setTier] = useState(() =>
+    viewportTier(typeof window === "undefined" ? 1440 : window.innerWidth),
+  );
   const closeRef = useRef(null);
+  const phone = tier === "phone";
+
+  useEffect(() => {
+    const onResize = () => setTier(viewportTier(window.innerWidth));
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   const load = useCallback(async () => {
     if (fixtures) {
@@ -431,12 +438,20 @@ export default function PostDetailDrawer({
     if (action === "delete" || action === "remove") setPending(comment);
   }
 
-  const mode = selectedTarget ? commentsMode(selectedTarget.network, xEnabled) : "muted";
   const capability = matrix?.accounts?.find((row) => row.account_id === selectedTarget?.account?.id);
   const access = accountAccess(selectedTarget?.account, capability);
+  const presentation = selectedTarget
+    ? commentsPresentation({
+        network: selectedTarget.network,
+        xEnabled,
+        metrics,
+        access,
+      })
+    : null;
+  const mode = presentation?.kind || "muted";
   const roots = sortRoots(threads[selectedTarget?.key] || [], order);
   const metrics = metricsFromSnapshot(selectedTarget?.network, snapshots[selectedTarget?.key]);
-  const canCompose = selectedTarget && showComposer(selectedTarget.network, xEnabled) && access === "ok" && commentsOn;
+  const canCompose = !!(presentation?.composer && commentsOn);
   const confirm = pending && selectedTarget ? deleteConfirmCopy(pending, selectedTarget.network) : null;
 
   return (
@@ -451,13 +466,21 @@ export default function PostDetailDrawer({
         data-tab={tab}
         data-network={selectedTarget?.network || ""}
       >
-        <header className="eng-head">
+        <header className={`eng-head${phone ? " eng-head-phone" : ""}`}>
+          {phone ? (
+            <button type="button" className="eng-back" onClick={onClose} ref={closeRef}>
+              <ChevronLeft size={20} />
+              Back
+            </button>
+          ) : null}
           <h2 id="eng-drawer-title">Post details</h2>
           <div className="eng-head-actions">
+            {phone ? null : (
             <button type="button" className="btn btn-sm btn-ghost" onClick={onOpenInQueue}>
               <ExternalLink size={14} />
               <span className="eng-open-label">Open in Queue</span>
             </button>
+            )}
             <button
               type="button"
               className="eng-iconbtn"
@@ -477,15 +500,17 @@ export default function PostDetailDrawer({
                 </button>
               </div>
             ) : null}
-            <button
-              type="button"
-              className="eng-iconbtn"
-              aria-label="Close"
-              ref={closeRef}
-              onClick={onClose}
-            >
-              <X size={18} />
-            </button>
+            {phone ? null : (
+              <button
+                type="button"
+                className="eng-iconbtn"
+                aria-label="Close"
+                ref={closeRef}
+                onClick={onClose}
+              >
+                <X size={18} />
+              </button>
+            )}
           </div>
         </header>
 
@@ -684,7 +709,7 @@ export default function PostDetailDrawer({
                       );
                     })}
                   </div>
-                  {access !== "ok" ? (
+                  {presentation?.banner ? (
                     <AccessBanner
                       access={access}
                       network={selectedTarget.network}
@@ -692,9 +717,9 @@ export default function PostDetailDrawer({
                       onReconnect={() => onReconnect?.(selectedTarget.account)}
                     />
                   ) : null}
-                  {mode === "list" && capabilityNote(selectedTarget.network, xEnabled) ? (
+                  {mode === "list" && presentation.note ? (
                     <div className="eng-toolbar">
-                      <span className="eng-note">{capabilityNote(selectedTarget.network, xEnabled)}</span>
+                      <span className="eng-note">{presentation.note}</span>
                       <button
                         type="button"
                         className="eng-sort"
@@ -718,7 +743,7 @@ export default function PostDetailDrawer({
                   ) : null}
                   {phase !== "loading" && !errors[selectedTarget.key] && mode === "muted" ? (
                     <div className="eng-muted-block">
-                      <p>{mutedCommentCopy(selectedTarget.network)}</p>
+                      <p>{presentation.message}</p>
                       <a className="eng-link lg" href={safeHref(externalHref(selectedTarget))} target="_blank" rel="noreferrer">
                         Open on {viewOnName(selectedTarget.network)}
                         <ExternalLink size={14} />
@@ -727,7 +752,7 @@ export default function PostDetailDrawer({
                   ) : null}
                   {phase !== "loading" && !errors[selectedTarget.key] && mode === "totals" ? (
                     <article className="eng-card">
-                      <h3>{COPY.tiktokTotalsTitle}</h3>
+                      <h3>{presentation.title}</h3>
                       <div className="eng-metrics eng-metrics-4">
                         {[
                           ["comments", "Comments"],
@@ -743,25 +768,25 @@ export default function PostDetailDrawer({
                           </div>
                         ))}
                       </div>
-                      <p>{COPY.tiktokTotalsBody}</p>
+                      <p>{presentation.body}</p>
                       <a className="eng-link lg" href={safeHref(externalHref(selectedTarget))} target="_blank" rel="noreferrer">
-                        {COPY.tiktokLink}
+                        {presentation.link}
                         <ExternalLink size={14} />
                       </a>
                     </article>
                   ) : null}
                   {phase !== "loading" && !errors[selectedTarget.key] && mode === "pin" ? (
                     <div className="eng-info">
-                      <h3>{COPY.pinterestTitle}</h3>
-                      {pinCommentsCopy(metrics.comments) ? <p>{pinCommentsCopy(metrics.comments)}</p> : null}
+                      <h3>{presentation.title}</h3>
+                      {presentation.body ? <p>{presentation.body}</p> : null}
                       <a className="eng-link lg" href={safeHref(externalHref(selectedTarget))} target="_blank" rel="noreferrer">
-                        {COPY.pinterestLink}
+                        {presentation.link}
                         <ExternalLink size={14} />
                       </a>
                     </div>
                   ) : null}
                   {phase !== "loading" && !errors[selectedTarget.key] && mode === "list" && access === "ok" && roots.length === 0 ? (
-                    <StateBlock title={noCommentsCopy(selectedTarget.network)} />
+                    <StateBlock title={presentation.empty} />
                   ) : null}
                   {phase !== "loading" && !errors[selectedTarget.key] && mode === "list" && (access !== "ok" || roots.length > 0)
                     ? roots.map((comment) => (

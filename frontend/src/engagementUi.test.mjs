@@ -5,6 +5,8 @@ import {
   commentedLine,
   emptyInboxCopy,
   inboxBanners,
+  inboxPane,
+  viewportTier,
   visibleFeed,
   buildInsightView,
   buildTargets,
@@ -12,6 +14,7 @@ import {
   chipCount,
   commentActions,
   commentsMode,
+  commentsPresentation,
   commentsTabEnabled,
   compactAge,
   composerHint,
@@ -205,6 +208,53 @@ test("comment actions follow the network and there is no Like button", () => {
   assert.equal(replyPostedToast("instagram"), "Reply posted on Instagram");
 });
 
+test("each network's comments tab uses the spec copy and hides the list when it must", () => {
+  const x = commentsPresentation({ network: "x" });
+  assert.equal(x.kind, "muted");
+  assert.equal(x.message, "Comments from X aren't available in SocialCastly yet.");
+  assert.equal(x.link, "Open on X");
+  assert.equal(x.composer, false);
+  const xOn = commentsPresentation({ network: "x", xEnabled: true, access: "ok" });
+  assert.equal(xOn.kind, "list");
+  const linkedin = commentsPresentation({ network: "linkedin" });
+  assert.equal(linkedin.message, "Comments and insights from LinkedIn aren't available yet.");
+  assert.equal(linkedin.link, "Open on LinkedIn");
+  const tiktok = commentsPresentation({ network: "tiktok" });
+  assert.equal(tiktok.kind, "totals");
+  assert.equal(tiktok.title, "This post on TikTok");
+  assert.equal(tiktok.body, "TikTok only shares totals, not the comments themselves.");
+  assert.equal(tiktok.link, "Open in TikTok to read and reply");
+  assert.equal(tiktok.composer, false);
+  const pin = commentsPresentation({ network: "pinterest", metrics: { comments: 2 } });
+  assert.equal(pin.kind, "pin");
+  assert.equal(pin.title, "Pinterest doesn't share comments with other apps");
+  assert.equal(pin.body, "This Pin has 2 comments.");
+  assert.equal(pin.link, "Open in Pinterest");
+  const threads = commentsPresentation({ network: "threads", access: "comments_not_enabled" });
+  assert.equal(threads.banner.title, "Turn on comments for Threads");
+  assert.equal(threads.banner.button, "Reconnect Threads");
+  assert.match(threads.banner.body, /comments weren't turned on/);
+  assert.equal(threads.composer, false);
+  const ig = commentsPresentation({ network: "instagram", access: "needs_reconnect" });
+  assert.equal(ig.banner.title, "Reconnect Instagram to see comments");
+  assert.equal(ig.banner.button, "Reconnect");
+  const open = commentsPresentation({ network: "instagram" });
+  assert.equal(open.kind, "list");
+  assert.equal(open.composer, true);
+  assert.equal(open.empty, "No comments on Instagram yet.");
+  assert.equal(open.banner, null);
+  for (const state of [x, linkedin, tiktok, pin, threads, ig, open]) {
+    for (const value of Object.values(state)) {
+      if (typeof value === "string") assert.equal(containsBannedWord(value), false, value);
+      if (value && typeof value === "object") {
+        for (const nested of Object.values(value)) {
+          if (typeof nested === "string") assert.equal(containsBannedWord(nested), false, nested);
+        }
+      }
+    }
+  }
+});
+
 test("delete confirm quotes the comment and YouTube Remove is its own dialog", () => {
   const comment = { text: "Get 10k followers fast, DM me" };
   const removed = deleteConfirmCopy(comment, "instagram");
@@ -314,6 +364,20 @@ test("targets group sibling posts and reconnect copy names the network", () => {
     available: ["instagram"],
     later: ["x", "linkedin", "tiktok"],
   });
+});
+
+test("375 and 390 are a phone inbox list until a comment is opened", () => {
+  assert.equal(viewportTier(375), "phone");
+  assert.equal(viewportTier(390), "phone");
+  assert.equal(viewportTier(767), "phone");
+  assert.equal(viewportTier(768), "tablet");
+  assert.equal(viewportTier(1023), "tablet");
+  assert.equal(viewportTier(1024), "desktop");
+  assert.equal(viewportTier(1440), "desktop");
+  assert.equal(inboxPane("phone", false), "list");
+  assert.equal(inboxPane("phone", true), "detail");
+  assert.equal(inboxPane("tablet", false), "both");
+  assert.equal(inboxPane("desktop", true), "both");
 });
 
 test("the inbox feed keeps a kind and only shows comments", () => {

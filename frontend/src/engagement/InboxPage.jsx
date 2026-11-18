@@ -3,8 +3,10 @@ import React, { useEffect, useState } from "react";
 import {
   Check,
   ChevronDown,
+  ChevronLeft,
   ExternalLink,
   Inbox,
+  MoreHorizontal,
   RefreshCw,
   Search,
   Trash2,
@@ -28,6 +30,7 @@ import {
   findThreadRoot,
   inboxBanners,
   inboxNetworkOptions,
+  inboxPane,
   mapComment,
   networkName,
   normalizeThread,
@@ -36,6 +39,7 @@ import {
   replyPostedToast,
   sortRoots,
   viewOnName,
+  viewportTier,
   visibleFeed,
 } from "./model.js";
 
@@ -75,11 +79,36 @@ export default function InboxPage({
   const [menu, setMenu] = useState("");
   const [pending, setPending] = useState(null);
   const [now, setNow] = useState(() => new Date());
+  const [tier, setTier] = useState(() =>
+    viewportTier(typeof window === "undefined" ? 1440 : window.innerWidth),
+  );
+  const [detailOpen, setDetailOpen] = useState(false);
+  const pane = inboxPane(tier, detailOpen);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setQuery(search.trim()), 200);
     return () => window.clearTimeout(timer);
   }, [search]);
+
+  useEffect(() => {
+    const onResize = () => setTier(viewportTier(window.innerWidth));
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  useEffect(() => {
+    const sync = () => {
+      const id = new URLSearchParams(window.location.search).get("comment");
+      if (!id) {
+        setDetailOpen(false);
+        return;
+      }
+      setSelectedId(id);
+      setDetailOpen(true);
+    };
+    window.addEventListener("popstate", sync);
+    return () => window.removeEventListener("popstate", sync);
+  }, []);
 
   const platforms = accounts.map((account) => account.platform);
   const networkOptions = inboxNetworkOptions(platforms, xEnabled);
@@ -178,6 +207,18 @@ export default function InboxPage({
   const account = accounts.find((item) => item.id === selected?.accountId);
   const accountLabel = displayHandle(account) || atHandle(selected?.accountName) || displayName(account);
 
+  function backToList() {
+    setDetailOpen(false);
+    setReplyOpen(false);
+    if (window.history.state?.inboxComment) {
+      window.history.back();
+      return;
+    }
+    const url = new URL(window.location.href);
+    url.searchParams.delete("comment");
+    window.history.replaceState({}, "", url.pathname + url.search + url.hash);
+  }
+
   function tell(title, kind) {
     notify?.({ title, message: "", kind });
   }
@@ -186,6 +227,12 @@ export default function InboxPage({
     setSelectedId(item.id);
     setReplyOpen(false);
     setDraft("");
+    if (viewportTier(window.innerWidth) === "phone") {
+      setDetailOpen(true);
+      const url = new URL(window.location.href);
+      url.searchParams.set("comment", item.id);
+      window.history.pushState({ inboxComment: item.id }, "", url.pathname + url.search + url.hash);
+    }
     if (item.read || !client || fixtures) return;
     setItems((current) => current.map((row) => (row.id === item.id ? { ...row, read: true } : row)));
     setCounts((current) =>
@@ -308,15 +355,15 @@ export default function InboxPage({
   };
 
   return (
-    <div className="eng-inbox" data-engagement="inbox" data-phase={phase}>
+    <div className="eng-inbox" data-engagement="inbox" data-phase={phase} data-pane={pane}>
       <div className="page-head">
         <div>
           <h1>{COPY.inboxTitle}</h1>
-          <p>{COPY.inboxSub}</p>
+          <p>{tier === "phone" ? COPY.inboxSubMobile : COPY.inboxSub}</p>
         </div>
         <button type="button" className="btn btn-secondary" onClick={() => void markAll()} disabled={busy === "all"}>
           <Check size={16} />
-          Mark all as read
+          {tier === "phone" ? COPY.markAllRead : "Mark all as read"}
         </button>
       </div>
 
@@ -536,6 +583,37 @@ export default function InboxPage({
           <div className="card eng-inbox-detail">
             {selected && detailComment ? (
               <>
+                <div className="eng-mobile-bar">
+                  <button type="button" className="eng-back" onClick={backToList}>
+                    <ChevronLeft size={20} />
+                    Inbox
+                  </button>
+                  <span className="eng-mobile-spacer" />
+                  <a
+                    className="eng-iconbtn"
+                    href={safeHref(externalUrl(selected.network, selected.providerPostId))}
+                    target="_blank"
+                    rel="noreferrer"
+                    aria-label={`Open on ${viewOnName(selected.network)}`}
+                  >
+                    <ExternalLink size={18} />
+                  </a>
+                  <button
+                    type="button"
+                    className="eng-iconbtn"
+                    aria-label="More comment actions"
+                    onClick={() => setMenu((current) => (current === "detail" ? "" : "detail"))}
+                  >
+                    <MoreHorizontal size={18} />
+                  </button>
+                  {menu === "detail" ? (
+                    <div className="eng-menu eng-menu-mobile" role="menu">
+                      <button type="button" role="menuitem" onClick={() => void markUnread()}>
+                        Mark as unread
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
                 <div className="eng-detail-head">
                   <div className="eng-who">
                     <span className="eng-feed-avatar">

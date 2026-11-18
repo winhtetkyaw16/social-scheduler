@@ -777,7 +777,9 @@ export function normalizeFeedItem(row) {
 
 /** The inbox shows comments only. Mentions and DMs stay on the row for later. */
 export function visibleFeed(items) {
-  return (items || []).map(normalizeFeedItem).filter((item) => item.kind === "comment");
+  return (items || [])
+    .map(normalizeFeedItem)
+    .filter((item) => item.kind === "comment" && !item.own);
 }
 
 export function emptyInboxCopy(status) {

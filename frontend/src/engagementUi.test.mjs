@@ -406,8 +406,10 @@ test("the inbox feed keeps a kind and only shows comments", () => {
     { id: "2", text: "Mention", network: "instagram", kind: "mention" },
     { id: "3", text: "DM", network: "instagram", kind: "dm" },
     { id: "4", text: "Default", network: "threads" },
+    { id: "5", text: "Yes, iced", network: "instagram", is_own: true, kind: "comment" },
   ]);
   assert.deepEqual(rows.map((row) => row.kind), ["comment", "comment"]);
+  assert.equal(rows.some((row) => row.own), false);
   assert.equal(rows[0].text, "Hi");
   assert.equal(emptyInboxCopy("all").body, COPY.inboxEmptyAll);
   assert.equal(emptyInboxCopy("unread").body, COPY.inboxEmptyFilter);

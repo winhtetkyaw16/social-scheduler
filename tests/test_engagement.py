@@ -269,6 +269,7 @@ def _add_comment(
     is_own=False,
     author="Ada",
     deleted=False,
+    parent_id=None,
 ):
     when = datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)
     db = SessionLocal()
@@ -279,6 +280,7 @@ def _add_comment(
             network=network,
             provider_comment_id=uuid4().hex,
             provider_post_id="provider-post",
+            parent_comment_id=parent_id,
             author_name=author,
             text=text,
             created_at_provider=when,
@@ -724,19 +726,25 @@ def test_inbox_filters_pagination_and_read_state(client, auth_headers):
         minutes_ago=3,
         is_own=True,
         is_read=True,
+        parent_id=replied,
     )
 
     everything = client.get("/api/v1/inbox", headers=headers)
     assert everything.status_code == 200, everything.text
     body = everything.json()
     ids = [item["id"] for item in body["items"]]
-    assert ids == [str(newest), str(own), str(middle), str(replied)]
+    assert str(own) not in ids
+    assert ids == [str(newest), str(middle), str(replied)]
     assert all(item["text"] != "Gone" for item in body["items"])
+    assert all(not item["is_own"] for item in body["items"])
+    replied_row = next(item for item in body["items"] if item["id"] == str(replied))
+    assert replied_row["replied"] is True
+    assert next(item for item in body["items"] if item["id"] == str(newest))["replied"] is False
     assert body["unread_count"] == 2
     assert body["unread_by_network"]["facebook"] == 1
     assert body["unread_by_network"]["instagram"] == 1
     assert all(item["kind"] == "comment" for item in body["items"])
-    assert body["counts"] == {"all": 4, "unread": 2, "unreplied": 2, "replied": 1}
+    assert body["counts"] == {"all": 3, "unread": 2, "unreplied": 2, "replied": 1}
 
     unread = client.get("/api/v1/inbox?status=unread", headers=headers)
     unread_ids = {item["id"] for item in unread.json()["items"]}
@@ -764,7 +772,7 @@ def test_inbox_filters_pagination_and_read_state(client, auth_headers):
     )
     assert page.status_code == 200
     assert len(page.json()["items"]) == 1
-    assert page.json()["total"] == 3
+    assert page.json()["total"] == 2
 
     one = client.post(f"/api/v1/comments/{newest}/read", headers=headers)
     assert one.status_code == 200, one.text

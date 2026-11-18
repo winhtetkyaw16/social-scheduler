@@ -7,8 +7,8 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import func, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy import exists, func, or_, select
+from sqlalchemy.orm import Session, aliased
 
 from app.models import ConnectedAccount, ScheduledPost
 from app.models.engagement import PostComment, PostInsightsSnapshot
@@ -74,6 +74,8 @@ def _apply_inbox_filters(
 ):
     if not include_deleted:
         stmt = stmt.where(PostComment.is_deleted.is_(False))
+    # Our own replies live in the thread. They are not inbox items.
+    stmt = stmt.where(PostComment.is_own.is_(False))
     if network:
         stmt = stmt.where(func.lower(PostComment.network) == network.strip().lower())
     if account_id is not None:
@@ -86,7 +88,16 @@ def _apply_inbox_filters(
             PostComment.is_own.is_(False),
         )
     elif status == "replied":
-        stmt = stmt.where(PostComment.replied.is_(True))
+        reply = aliased(PostComment)
+        stmt = stmt.where(
+            exists(
+                select(reply.id).where(
+                    reply.parent_comment_id == PostComment.id,
+                    reply.is_own.is_(True),
+                    reply.is_deleted.is_(False),
+                )
+            )
+        )
     needle = (search or "").strip().lower()
     if needle:
         pattern = f"%{needle}%"
@@ -158,8 +169,21 @@ def inbox_page(
         item.id: item
         for item in db.scalars(select(ScheduledPost).where(ScheduledPost.id.in_(post_ids))).all()
     } if post_ids else {}
+    replied_parents: set = set()
+    if rows:
+        reply = aliased(PostComment)
+        replied_parents = set(
+            db.scalars(
+                select(reply.parent_comment_id).where(
+                    reply.parent_comment_id.in_([row.id for row in rows]),
+                    reply.is_own.is_(True),
+                    reply.is_deleted.is_(False),
+                )
+            ).all()
+        )
     return {
         "items": rows,
+        "replied_parents": replied_parents,
         "accounts": accounts,
         "posts": posts,
         "total": int(total),

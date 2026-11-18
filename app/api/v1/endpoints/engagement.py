@@ -133,6 +133,7 @@ def get_inbox(
     items: list[InboxComment] = []
     for row in page["items"]:
         base = CommentRead.model_validate(row).model_dump()
+        base["replied"] = row.id in page["replied_parents"]
         account = page["accounts"].get(row.social_account_id)
         post = page["posts"].get(row.post_id)
         content = (getattr(post, "content", "") or "").strip()

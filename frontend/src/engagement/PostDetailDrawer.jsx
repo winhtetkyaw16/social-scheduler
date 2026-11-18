@@ -906,7 +906,8 @@ export function CommentBlock({
   depth = 0,
 }) {
   const acts = commentActions(network, comment, xEnabled);
-  const name = comment.hidden ? comment.handle || comment.authorName : comment.authorName;
+  const name = comment.authorName || comment.handle || "";
+  const showHandle = !comment.own && comment.handle && comment.handle !== comment.authorName;
   return (
     <div className={depth ? "eng-reply" : "eng-comment"}>
       <Avatar name={name} size={depth ? 28 : 32} src={comment.avatarUrl} />
@@ -914,7 +915,7 @@ export function CommentBlock({
         <div className="eng-comment-meta">
           <b className={comment.hidden ? "is-muted" : ""}>{name}</b>
           {comment.own ? <span className="eng-badge">{COPY.you}</span> : null}
-          {!comment.own && !comment.hidden && comment.handle ? <span className="eng-handle">{comment.handle}</span> : null}
+          {showHandle ? <span className="eng-handle">{comment.handle}</span> : null}
           <span className="eng-handle">· {compactAge(comment.createdAt, now)}</span>
           {comment.hidden ? <span className="eng-badge">{COPY.hidden}</span> : null}
         </div>

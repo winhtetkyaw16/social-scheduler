@@ -426,7 +426,12 @@ test("the inbox feed keeps a kind and only shows comments", () => {
   assert.equal(line, "Commented 3h ago on Instagram · @northwind.sample");
   assert.equal(shortDay("2026-11-10T09:00:00Z"), "Tue, Nov 10");
   assert.equal(shortDay(null), "");
+  assert.equal(shortDay(undefined), "");
   assert.equal(shortDay(""), "");
+  assert.equal(shortDay(0), "");
+  assert.equal(shortDay(new Date(0)), "");
+  assert.equal(publishedLabel(null), "");
+  assert.equal(publishedLabel(0), "");
   const banners = inboxBanners([
     {
       account_id: "a",

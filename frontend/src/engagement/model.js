@@ -186,20 +186,28 @@ export function compactAge(date, now = new Date()) {
   return `${Math.floor(hr / 24)}d`;
 }
 
+function calendarDate(date) {
+  if (date == null || date === "" || date === 0) return null;
+  const parsed = new Date(date);
+  const time = parsed.getTime();
+  // new Date(null) and new Date(0) are the Unix epoch. That is not a publish time.
+  if (!Number.isFinite(time) || time <= 0) return null;
+  return parsed;
+}
+
 export function shortDay(date) {
-  if (date == null || date === "") return "";
-  const d = new Date(date);
-  if (Number.isNaN(d.getTime())) return "";
+  const parsed = calendarDate(date);
+  if (!parsed) return "";
   return new Intl.DateTimeFormat("en-US", {
     weekday: "short",
     month: "short",
     day: "numeric",
-  }).format(d);
+  }).format(parsed);
 }
 
 export function publishedLabel(date) {
-  const d = new Date(date);
-  if (Number.isNaN(d.getTime())) return "";
+  const d = calendarDate(date);
+  if (!d) return "";
   const day = new Intl.DateTimeFormat("en-US", {
     weekday: "short",
     month: "short",

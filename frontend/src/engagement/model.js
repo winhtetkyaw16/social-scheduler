@@ -187,6 +187,7 @@ export function compactAge(date, now = new Date()) {
 }
 
 export function shortDay(date) {
+  if (date == null || date === "") return "";
   const d = new Date(date);
   if (Number.isNaN(d.getTime())) return "";
   return new Intl.DateTimeFormat("en-US", {

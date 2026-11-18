@@ -35,6 +35,7 @@ import {
   pinCommentsCopy,
   presentThread,
   publishedLabel,
+  shortDay,
   readXEnabled,
   reconnectBanner,
   refreshAllowed,
@@ -423,6 +424,9 @@ test("the inbox feed keeps a kind and only shows comments", () => {
     NOW,
   );
   assert.equal(line, "Commented 3h ago on Instagram · @northwind.sample");
+  assert.equal(shortDay("2026-11-10T09:00:00Z"), "Tue, Nov 10");
+  assert.equal(shortDay(null), "");
+  assert.equal(shortDay(""), "");
   const banners = inboxBanners([
     {
       account_id: "a",

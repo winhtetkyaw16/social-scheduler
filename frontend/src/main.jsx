@@ -127,7 +127,9 @@ import { createEngagementClient } from "./api/engagement.js";
 import { countBadge, readXEnabled } from "./engagement/model.js";
 import PostDetailDrawer from "./engagement/PostDetailDrawer.jsx";
 import InboxPage from "./engagement/InboxPage.jsx";
+import { AppMenu, AppSidebar, AppTopbar } from "./engagement/AppNav.jsx";
 import "./engagement/engagement.css";
+import "./engagement/nav.css";
 
 const API_BASE = resolveApiBase(import.meta.env);
 const API_ORIGIN = resolveApiOrigin(API_BASE, window.location.origin);
@@ -1694,6 +1696,7 @@ function App() {
   const [approvalItems, setApprovalItems] = useState([]);
   const [draftCount, setDraftCount] = useState(0);
   const [moreOpen, setMoreOpen] = useState(false);
+  useBodyScrollLock(moreOpen);
   const [inboxUnread, setInboxUnread] = useState(0);
   const [detailPostId, setDetailPostId] = useState(() => {
     try {
@@ -3127,6 +3130,23 @@ function App() {
     };
   }, []);
   useEffect(() => {
+    if (!moreOpen) return undefined;
+    const onKey = (event) => {
+      if (event.key !== "Escape") return;
+      setMoreOpen(false);
+      if (window.history.state?.navMenu) window.history.back();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [moreOpen]);
+  useEffect(() => {
+    const onPop = () => {
+      if (!window.history.state?.navMenu) setMoreOpen(false);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+  useEffect(() => {
     const syncPost = () => {
       const id = new URLSearchParams(window.location.search).get("post") || "";
       if (!id) detailHistory.current = false;
@@ -3306,59 +3326,30 @@ function App() {
     drafts: draftCount,
     approvals: approvalItems.length,
   };
-  const navGroups = [
-    [
-      "Workspace",
-      [
-        ["home", "Dashboard", Home],
-        ["studio", "Create post", Plus],
-        ["calendar", "Calendar", CalendarDays],
-        ["queue", "Queue", ListTodo],
-        ["drafts", "Drafts", FileText],
-        ["approvals", "Approvals", CheckCircle2],
-        ["inbox", "Inbox", Inbox],
-      ],
-    ],
-    ["Insights", [["analytics", "Analytics", BarChart3]]],
-    [
-      "Manage",
-      [
-        ["accounts", "Channels", Share2],
-        ["media", "Media library", ImagePlus],
-        ["team", "Team", Users],
-        ["settings", "Settings", Settings2],
-      ],
-    ],
-    [
-      "More",
-      [
-        ["biolink", "Bio Link", Link2],
-        ["community", "Community", MessagesSquare],
-      ],
-    ],
-  ];
   const navActive = (id) =>
     activeTab === id || (id === "calendar" && ["week", "posts"].includes(activeTab));
-  const navLink = ([id, label, Icon]) => {
-    const badge =
-      id === "inbox" ? countBadge(inboxUnread) : navCounts[id] ? String(navCounts[id]) : "";
-    return (
-      <a
-        key={id}
-        href={`#${id}`}
-        onClick={(event) => {
-          event.preventDefault();
-          setMoreOpen(false);
-          goToTab(id);
-        }}
-        className={navActive(id) ? "active" : ""}
-        aria-current={navActive(id) ? "page" : undefined}
-      >
-        <Icon size={18} className="ico" />
-        {label}
-        {badge ? <span className={id === "inbox" ? "count strong" : "count"}>{badge}</span> : null}
-      </a>
-    );
+  const navCountsAll = { ...navCounts, inbox: inboxUnread };
+  function openNav() {
+    setMoreOpen(true);
+    if (!window.history.state?.navMenu) window.history.pushState({ navMenu: 1 }, "");
+  }
+  function closeNav(fromPop = false) {
+    setMoreOpen(false);
+    if (!fromPop && window.history.state?.navMenu) window.history.back();
+  }
+  const navProps = {
+    counts: navCountsAll,
+    isActive: navActive,
+    onNavigate: (id) => {
+      closeNav(false);
+      goToTab(id);
+    },
+    workspace: user.workspace_name,
+    channels: accounts.filter((account) => account.is_active !== false).length,
+    scheduled: navCounts.queue,
+    dark,
+    onToggleTheme: () => setDark((value) => !value),
+    onSignOut: logout,
   };
   const publishViews = ["calendar", "week", "posts", "queue", "drafts", "approvals", "library"];
   const activeChannels = accounts.filter((account) => account.is_active !== false);
@@ -3366,125 +3357,19 @@ function App() {
   return (
     <div className={`scd sc-app-root ${dark ? "dark" : ""}`}>
       <div className="app">
-        <aside className="sidebar sc-sidebar">
-          <div className="brand">
-            <img
-              className="logo-light"
-              src={lockupLight}
-              alt="SocialCastly"
-              style={{ height: 30 }}
-            />
-            <img className="logo-dark" src={lockupDark} alt="SocialCastly" style={{ height: 30 }} />
-          </div>
-          <nav className="nav" aria-label="Main navigation">
-            {navGroups.map(([group, items]) => (
-              <React.Fragment key={group}>
-                <div className="nav-label">{group}</div>
-                {items.map(navLink)}
-              </React.Fragment>
-            ))}
-          </nav>
-          <div className="foot">
-            <div
-              className="card"
-              style={{ padding: 12, background: "var(--surface-2)", boxShadow: "none" }}
-            >
-              <div className="row between">
-                <b
-                  className="sm"
-                  style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
-                >
-                  {user.workspace_name || "My Workspace"}
-                </b>
-              </div>
-              <div className="xs muted" style={{ marginTop: 4 }}>
-                {activeChannels.length} channel{activeChannels.length === 1 ? "" : "s"} ·{" "}
-                {navCounts.queue} scheduled
-              </div>
-              <div className="row" style={{ marginTop: 10, gap: 6 }}>
-                <button
-                  type="button"
-                  className="btn btn-sm btn-secondary grow"
-                  onClick={() => setDark((value) => !value)}
-                  aria-label={`Switch to ${dark ? "light" : "dark"} theme`}
-                >
-                  {dark ? <Sun size={14} /> : <Moon size={14} />}
-                  {dark ? "Light" : "Dark"}
-                </button>
-                <button type="button" className="btn btn-sm btn-ghost" onClick={logout}>
-                  Sign out
-                </button>
-              </div>
-            </div>
-          </div>
-        </aside>
+        <AppSidebar {...navProps} />
 
         <div className="main">
-          <header className="topbar">
-            <span className="sc-m-brand">
-              <img
-                className="logo-light"
-                src={lockupLight}
-                alt="SocialCastly"
-                style={{ height: 26 }}
-              />
-              <img
-                className="logo-dark"
-                src={lockupDark}
-                alt="SocialCastly"
-                style={{ height: 26 }}
-              />
-            </span>
-            <div className="grow" />
-            <button
-              type="button"
-              className="btn btn-ghost btn-icon sc-hide-m"
-              aria-label={`Switch to ${dark ? "light" : "dark"} theme`}
-              title="Switch theme"
-              onClick={() => setDark((value) => !value)}
-            >
-              {dark ? <Sun size={18} /> : <Moon size={18} />}
-            </button>
-            <button
-              type="button"
-              className="btn btn-ghost btn-icon"
-              aria-label="Notifications"
-              title="Notification settings"
-              onClick={() => goToTab("notifications")}
-            >
-              <svg className="ico" viewBox="0 0 24 24">
-                <path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
-                <path d="M10 21a2 2 0 0 0 4 0" />
-              </svg>
-            </button>
-            {activeTab !== "studio" && (
-              <button
-                type="button"
-                className="btn btn-primary sc-hide-m"
-                onClick={() => openStudio()}
-              >
-                <Plus size={16} />
-                New post
-              </button>
-            )}
-            <a
-              href="#settings"
-              onClick={(event) => {
-                event.preventDefault();
-                goToTab("settings");
-              }}
-              className="row sc-hide-m"
-              style={{ borderLeft: "1px solid var(--border)", paddingLeft: 16 }}
-            >
-              <ScAvatar name={user.full_name || "W"} size={32} />
-              <div>
-                <div className="sm" style={{ fontWeight: 600 }}>
-                  {user.full_name || "Workspace member"}
-                </div>
-                <div className="xs subtle">{user.workspace_name || "Workspace"}</div>
-              </div>
-            </a>
-          </header>
+          <AppTopbar
+            dark={dark}
+            onToggleTheme={() => setDark((value) => !value)}
+            onNotifications={() => goToTab("notifications")}
+            onNewPost={() => openStudio()}
+            onAccount={() => goToTab("settings")}
+            user={user}
+            inboxUnread={inboxUnread}
+            onOpenMenu={openNav}
+          />
 
           <div className="content">
             {loadError && (
@@ -3710,82 +3595,7 @@ function App() {
           </div>
         </div>
       </div>
-      <nav className="m-tab sc-mtab" aria-label="Mobile navigation">
-        {[
-          ["home", "Home", Home],
-          ["calendar", "Calendar", CalendarDays],
-        ].map(([id, label, Icon]) => (
-          <a
-            key={id}
-            href={`#${id}`}
-            className={navActive(id) ? "active" : ""}
-            onClick={(event) => {
-              event.preventDefault();
-              setMoreOpen(false);
-              goToTab(id);
-            }}
-          >
-            <Icon size={20} className="ico" />
-            {label}
-          </a>
-        ))}
-        <a
-          href="#studio"
-          aria-label="New post"
-          onClick={(event) => {
-            event.preventDefault();
-            setMoreOpen(false);
-            openStudio();
-          }}
-        >
-          <span className="fab">
-            <Plus size={22} />
-          </span>
-        </a>
-        <a
-          href="#queue"
-          className={activeTab === "queue" ? "active" : ""}
-          onClick={(event) => {
-            event.preventDefault();
-            setMoreOpen(false);
-            goToTab("queue");
-          }}
-        >
-          <ListTodo size={20} className="ico" />
-          Queue
-        </a>
-        <a
-          href="#more"
-          className={moreOpen ? "active" : ""}
-          onClick={(event) => {
-            event.preventDefault();
-            setMoreOpen((value) => !value);
-          }}
-        >
-          <MoreHorizontal size={20} className="ico" />
-          More
-        </a>
-      </nav>
-      {moreOpen && (
-        <div className="sc-more card" role="menu">
-          <nav className="nav">
-            {navGroups
-              .flatMap(([, items]) => items)
-              .filter(([id]) => !["home", "calendar", "queue", "studio"].includes(id))
-              .map(navLink)}
-            <a
-              href="#signout"
-              onClick={(event) => {
-                event.preventDefault();
-                logout();
-              }}
-            >
-              <XIcon size={18} className="ico" />
-              Sign out
-            </a>
-          </nav>
-        </div>
-      )}
+      <AppMenu open={moreOpen} onClose={closeNav} {...navProps} />
       <QuickStudioDialog
         tool={quickTool}
         files={files}

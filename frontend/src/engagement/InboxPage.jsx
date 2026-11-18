@@ -84,6 +84,10 @@ export default function InboxPage({
   );
   const [detailOpen, setDetailOpen] = useState(false);
   const pane = inboxPane(tier, detailOpen);
+  useEffect(() => {
+    document.body.classList.toggle("eng-phone-detail", pane === "detail");
+    return () => document.body.classList.remove("eng-phone-detail");
+  }, [pane]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setQuery(search.trim()), 200);

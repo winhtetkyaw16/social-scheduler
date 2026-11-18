@@ -32,6 +32,7 @@ export const bulkReadPath = "/comments/read";
 export const capabilitiesPath = "/engagement/capabilities";
 
 const INBOX_KEYS = ["network", "account_id", "status", "search", "limit", "offset"];
+const INBOX_POST_KEYS = ["network", "account_id", "search", "limit", "offset"];
 
 /** Inbox path with only the filters that were set. */
 export function inboxPath(filters = {}) {
@@ -45,6 +46,18 @@ export function inboxPath(filters = {}) {
   return query ? `/inbox?${query}` : "/inbox";
 }
 
+/** Published posts for the inbox. Same filters as comments, without a status. */
+export function inboxPostsPath(filters = {}) {
+  const params = new URLSearchParams();
+  for (const key of INBOX_POST_KEYS) {
+    const value = filters[key];
+    if (value === undefined || value === null || value === "") continue;
+    params.set(key, String(value));
+  }
+  const query = params.toString();
+  return query ? `/inbox/posts?${query}` : "/inbox/posts";
+}
+
 /** Thin client. `request` sends an authenticated call and returns the JSON body. */
 export function createEngagementClient(request) {
   return {
@@ -53,6 +66,9 @@ export function createEngagementClient(request) {
     },
     listInbox(filters) {
       return request(inboxPath(filters));
+    },
+    listInboxPosts(filters) {
+      return request(inboxPostsPath(filters));
     },
     reply(commentId, text) {
       return request(commentReplyPath(commentId), {

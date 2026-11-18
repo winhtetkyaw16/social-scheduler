@@ -7,9 +7,11 @@ import {
   ExternalLink,
   Inbox,
   MoreHorizontal,
+  Plus,
   RefreshCw,
   CircleDot,
   Search,
+  Send,
   Trash2,
   TriangleAlert,
 } from "lucide-react";
@@ -20,31 +22,46 @@ import {
   COPY,
   INBOX_FILTERS,
   accountAccess,
+  audienceCommentCount,
   atHandle,
   canonicalNetwork,
+  commentCountLabel,
+  commentIdsByRead,
   commentedLine,
   commenterMeta,
   compactAge,
+  composerHint,
+  composerPlaceholder,
+  countBadge,
   deleteConfirmCopy,
   displayHandle,
   displayName,
   emptyInboxCopy,
+  emptyPostsCopy,
   externalUrl,
   findThreadRoot,
   inboxBanners,
   inboxNetworkOptions,
   inboxPane,
+  inboxViewChoice,
+  postsPane,
   mapComment,
   networkName,
+  normalizeInboxPost,
   normalizeThread,
+  postCaption,
   presentThread,
+  readInboxView,
   replyHint,
   replyPostedToast,
   shortDay,
+  showComposer,
   sortRoots,
+  unreadCount,
   viewOnName,
   viewportTier,
   visibleFeed,
+  writeInboxView,
 } from "./model.js";
 
 function Glyph({ network, size = 16 }) {
@@ -55,17 +72,401 @@ function safeHref(url) {
   return /^https?:\/\//i.test(String(url || "")) ? url : "";
 }
 
+function writePostUrl(id, { push = false, open = false } = {}) {
+  const url = new URL(window.location.href);
+  if (id) url.searchParams.set("post", String(id));
+  else url.searchParams.delete("post");
+  const next = url.pathname + url.search + url.hash;
+  const state = { inboxPost: id || "", inboxPostOpen: !!open };
+  if (push) window.history.pushState(state, "", next);
+  else window.history.replaceState(state, "", next);
+}
+
+function PostThreadPane({
+  post,
+  accountName,
+  client,
+  fixtures,
+  xEnabled,
+  now,
+  showBack,
+  onBack,
+  onOpenDetails,
+  onCounts,
+  onActivity,
+  notify,
+}) {
+  const [thread, setThread] = useState([]);
+  const [phase, setPhase] = useState("loading");
+  const [replyId, setReplyId] = useState(null);
+  const [drafts, setDrafts] = useState({});
+  const [composer, setComposer] = useState("");
+  const [busy, setBusy] = useState("");
+  const [pending, setPending] = useState(null);
+
+  function tell(title, kind) {
+    notify?.({ title, message: "", kind });
+  }
+
+  async function loadThread() {
+    if (fixtures) {
+      const rows = fixtures.threads?.[post.id] || [];
+      setThread(normalizeThread(rows, post.network));
+      setPhase("ready");
+      return;
+    }
+    if (!client) {
+      setThread([]);
+      setPhase("error");
+      return;
+    }
+    setPhase("loading");
+    try {
+      const payload = await client.listComments(post.id);
+      const next = normalizeThread(payload, post.network);
+      setThread(next);
+      setPhase("ready");
+      onCounts?.(post.id, {
+        commentCount: audienceCommentCount(next),
+        unreadCount: unreadCount(next),
+      });
+    } catch {
+      setThread([]);
+      setPhase("error");
+    }
+  }
+
+  useEffect(() => {
+    void loadThread();
+    // Reload when this post changes. loadThread closes over the latest client.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [post.id, client, fixtures]);
+
+  const roots = sortRoots(thread, "newest");
+  const unreadIds = commentIdsByRead(thread, true);
+  const readIds = commentIdsByRead(thread, false);
+  const canCompose = showComposer(post.network, xEnabled);
+  const when = shortDay(post.publishedAt);
+
+  async function refresh() {
+    setBusy("refresh");
+    try {
+      if (client && !fixtures) await client.syncPost(post.id);
+      await loadThread();
+      if (!fixtures) tell(COPY.commentsUpdated, "success");
+    } catch {
+      tell(COPY.postsErrorTitle);
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function markThread(read) {
+    const ids = read ? unreadIds : readIds;
+    if (!ids.length) return;
+    setBusy(read ? "read" : "unread");
+    const previous = thread;
+    let next = thread;
+    for (const id of ids) {
+      next = mapComment(next, id, (item) => ({ ...item, read }));
+    }
+    setThread(next);
+    onCounts?.(post.id, {
+      commentCount: audienceCommentCount(next),
+      unreadCount: unreadCount(next),
+    });
+    if (!client || fixtures) {
+      setBusy("");
+      return;
+    }
+    try {
+      await Promise.all(ids.map((id) => (read ? client.markRead(id) : client.markUnread(id))));
+      onActivity?.();
+      onCounts?.(post.id, {
+        commentCount: audienceCommentCount(next),
+        unreadCount: unreadCount(next),
+      });
+    } catch {
+      setThread(previous);
+      onCounts?.(post.id, {
+        commentCount: audienceCommentCount(previous),
+        unreadCount: unreadCount(previous),
+      });
+      tell(COPY.actionFailed);
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function sendReply(comment) {
+    const text = String(drafts[comment.id] || "").trim();
+    if (!text || !client) return;
+    setBusy(comment.id);
+    try {
+      await client.reply(comment.id, text);
+      setDrafts((current) => ({ ...current, [comment.id]: "" }));
+      setReplyId(null);
+      tell(replyPostedToast(post.network), "success");
+      await loadThread();
+    } catch {
+      tell(COPY.actionFailed);
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function sendComposer() {
+    const text = composer.trim();
+    if (!text || !client) return;
+    setBusy("composer");
+    try {
+      await client.createComment(post.id, text, post.network);
+      setComposer("");
+      tell(replyPostedToast(post.network), "success");
+      await loadThread();
+    } catch {
+      tell(COPY.actionFailed);
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function changeHidden(comment, hidden) {
+    if (!client) return;
+    setThread((current) => mapComment(current, comment.id, (item) => ({ ...item, hidden })));
+    try {
+      await client.hideReply(comment.id, hidden);
+    } catch {
+      setThread((current) => mapComment(current, comment.id, (item) => ({ ...item, hidden: !hidden })));
+      tell(COPY.actionFailed);
+    }
+  }
+
+  async function confirmDelete() {
+    if (!pending || !client) return;
+    setBusy(pending.id);
+    try {
+      await client.removeComment(pending.id);
+      setThread((current) => mapComment(current, pending.id, (item) => ({ ...item, deleted: true })));
+      setPending(null);
+      const next = mapComment(thread, pending.id, (item) => ({ ...item, deleted: true }));
+      onCounts?.(post.id, {
+        commentCount: audienceCommentCount(next),
+        unreadCount: unreadCount(next),
+      });
+    } catch {
+      tell(COPY.actionFailed);
+    } finally {
+      setBusy("");
+    }
+  }
+
+  const confirm = pending ? deleteConfirmCopy(pending, post.network) : null;
+
+  return (
+    <section className="eng-post-detail card" data-engagement="post-comments" data-post-id={post.id}>
+      {showBack ? (
+        <header className="eng-sheet-head">
+          <button type="button" className="eng-back eng-back-auto" onClick={onBack}>
+            <ChevronLeft size={20} />
+            Inbox
+          </button>
+          <button
+            type="button"
+            className="eng-iconbtn"
+            aria-label={COPY.refreshComments}
+            onClick={() => void refresh()}
+            disabled={busy === "refresh"}
+          >
+            <RefreshCw size={18} />
+          </button>
+        </header>
+      ) : null}
+      <div className="eng-post-head">
+        {post.thumb ? <img className="eng-postrow-thumb" src={post.thumb} alt="" /> : null}
+        <div className="eng-post-head-copy">
+          <div className="eng-postrow-top">
+            <Glyph network={post.network} size={16} />
+            <b>{accountName}</b>
+          </div>
+          <p>{postCaption(post.caption)}</p>
+          {when ? <div className="eng-postrow-date eng-post-head-date">{when}</div> : null}
+          <button type="button" className="eng-link" onClick={onOpenDetails}>
+            {COPY.postDetails}
+          </button>
+        </div>
+        {showBack ? null : (
+          <button
+            type="button"
+            className="btn btn-sm btn-secondary"
+            onClick={() => void refresh()}
+            disabled={busy === "refresh"}
+          >
+            <RefreshCw size={14} />
+            {COPY.refreshComments}
+          </button>
+        )}
+      </div>
+      {phase === "ready" && roots.length > 0 ? (
+        <div className="eng-post-threadbar">
+          <button
+            type="button"
+            className="btn btn-sm btn-secondary"
+            onClick={() => void markThread(unreadIds.length > 0)}
+            disabled={busy === "read" || busy === "unread" || (unreadIds.length === 0 && readIds.length === 0)}
+          >
+            <CircleDot size={14} />
+            {unreadIds.length > 0 ? COPY.markRead : COPY.markUnread}
+          </button>
+        </div>
+      ) : null}
+      <div className="eng-scroll">
+        {phase === "loading" ? (
+          <div className="eng-body" aria-busy="true">
+            <div className="eng-skel eng-skel-line" style={{ width: "40%" }} />
+            <div className="eng-skel" style={{ height: 72 }} />
+            <div className="eng-skel eng-skel-line" />
+          </div>
+        ) : null}
+        {phase === "error" ? (
+          <div className="eng-state">
+            <span className="eng-state-icon red">
+              <TriangleAlert size={24} />
+            </span>
+            <h3>{COPY.postsErrorTitle}</h3>
+            <p>{COPY.postsErrorBody}</p>
+            <button type="button" className="btn btn-secondary" onClick={() => void loadThread()}>
+              <RefreshCw size={16} />
+              {COPY.tryAgain}
+            </button>
+          </div>
+        ) : null}
+        {phase === "ready" && roots.length === 0 ? (
+          <div className="eng-state">
+            <span className="eng-state-icon">
+              <Inbox size={24} />
+            </span>
+            <h3>{COPY.noCommentsYet}</h3>
+            <p>{COPY.postsThreadEmptyBody}</p>
+            <button type="button" className="btn btn-secondary" onClick={() => void refresh()} disabled={busy === "refresh"}>
+              <RefreshCw size={16} />
+              {COPY.refreshComments}
+            </button>
+          </div>
+        ) : null}
+        {phase === "ready" && roots.length > 0 ? (
+          <div className="eng-body">
+            {roots.map((comment) => (
+              <CommentBlock
+                key={comment.id}
+                comment={comment}
+                network={post.network}
+                xEnabled={xEnabled}
+                now={now}
+                replyId={replyId}
+                drafts={drafts}
+                setDrafts={setDrafts}
+                busy={busy}
+                onAction={(comment, action) => {
+                  if (action === "reply") setReplyId(comment.id);
+                  if (action === "hide") void changeHidden(comment, true);
+                  if (action === "unhide") void changeHidden(comment, false);
+                  if (action === "delete" || action === "remove") setPending(comment);
+                }}
+                onSend={sendReply}
+                onCancel={() => setReplyId(null)}
+              />
+            ))}
+          </div>
+        ) : null}
+      </div>
+      {canCompose && phase === "ready" ? (
+        <footer className="eng-composer">
+          <div className="eng-composer-row">
+            <input
+              className="input"
+              value={composer}
+              placeholder={composerPlaceholder(accountName)}
+              aria-label={composerPlaceholder(accountName)}
+              onChange={(event) => setComposer(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  void sendComposer();
+                }
+              }}
+            />
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={!composer.trim() || busy === "composer"}
+              onClick={() => void sendComposer()}
+            >
+              <Send size={16} />
+              <span className="eng-send-label">Send</span>
+            </button>
+          </div>
+          <div className="eng-composer-note">{composerHint(post.network)}</div>
+        </footer>
+      ) : null}
+      {confirm ? (
+        <div className="eng-confirm-layer" role="alertdialog" aria-labelledby="eng-post-confirm">
+          <div className="eng-confirm">
+            <div className="eng-confirm-row">
+              <span className="eng-confirm-icon">
+                <Trash2 size={20} />
+              </span>
+              <div>
+                <h3 id="eng-post-confirm">{confirm.title}</h3>
+                <p>{confirm.body}</p>
+              </div>
+            </div>
+            <div className="eng-confirm-actions">
+              <button type="button" className="btn btn-secondary" onClick={() => setPending(null)}>
+                Cancel
+              </button>
+              <button type="button" className="btn btn-danger" onClick={() => void confirmDelete()}>
+                {confirm.confirm}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function storedInboxView() {
+  try {
+    return readInboxView(window.localStorage);
+  } catch {
+    return "";
+  }
+}
+
 export default function InboxPage({
   client,
   accounts = [],
   xEnabled = false,
   onOpenPost,
+  onCreatePost,
   onReconnect,
   notify,
   onActivity,
   fixtures = null,
 }) {
   const [status, setStatus] = useState("all");
+  const [view, setView] = useState(() => {
+    if (fixtures?.view === "comments" || fixtures?.view === "posts") return fixtures.view;
+    return storedInboxView();
+  });
+  const explicitView = React.useRef(
+    Boolean(
+      fixtures?.view === "comments" ||
+        fixtures?.view === "posts" ||
+        storedInboxView(),
+    ),
+  );
   const [network, setNetwork] = useState("");
   const [accountId, setAccountId] = useState("");
   const [search, setSearch] = useState("");
@@ -86,8 +487,26 @@ export default function InboxPage({
   const [tier, setTier] = useState(() =>
     viewportTier(typeof window === "undefined" ? 1440 : window.innerWidth),
   );
+  const [width, setWidth] = useState(() => (typeof window === "undefined" ? 1440 : window.innerWidth));
   const [detailOpen, setDetailOpen] = useState(false);
-  const pane = inboxPane(tier, detailOpen);
+  const [selectedPostId, setSelectedPostId] = useState(() => {
+    if (fixtures?.view !== "posts") return "";
+    const rows = (fixtures.posts || []).map(normalizeInboxPost);
+    const fromUrl = typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("post") || "";
+    return rows.find((item) => item.id === fromUrl)?.id || rows[0]?.id || "";
+  });
+  const [postDetailOpen, setPostDetailOpen] = useState(false);
+  const [postItems, setPostItems] = useState(() =>
+    fixtures?.view === "posts" ? (fixtures.posts || []).map(normalizeInboxPost) : [],
+  );
+  const [postTotal, setPostTotal] = useState(() =>
+    fixtures?.view === "posts" ? (fixtures.posts || []).length : 0,
+  );
+  const [postPhase, setPostPhase] = useState(() =>
+    fixtures?.view === "posts" ? fixtures.phase || "ready" : "loading",
+  );
+  const postPane = postsPane(width, postDetailOpen);
+  const pane = view === "posts" ? postPane : inboxPane(tier, detailOpen);
   useEffect(() => {
     document.body.classList.toggle("eng-phone-detail", pane === "detail");
     return () => document.body.classList.remove("eng-phone-detail");
@@ -99,7 +518,10 @@ export default function InboxPage({
   }, [search]);
 
   useEffect(() => {
-    const onResize = () => setTier(viewportTier(window.innerWidth));
+    const onResize = () => {
+      setTier(viewportTier(window.innerWidth));
+      setWidth(window.innerWidth);
+    };
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
@@ -173,11 +595,124 @@ export default function InboxPage({
     }
   }
 
+  async function loadPosts({ offset = 0, append = false } = {}) {
+    if (fixtures) {
+      const rows = (fixtures.posts || []).map(normalizeInboxPost);
+      setPostItems(append ? (current) => [...current, ...rows] : rows);
+      setPostTotal(rows.length);
+      setPostPhase(fixtures.phase || "ready");
+      if (fixtures.matrix) setMatrix(fixtures.matrix);
+      setNow(new Date());
+      return;
+    }
+    if (!client) {
+      setPostPhase("error");
+      return;
+    }
+    if (!append) setPostPhase("loading");
+    try {
+      const [page, caps] = await Promise.all([
+        client.listInboxPosts({
+          network: network || undefined,
+          account_id: accountId || undefined,
+          search: query || undefined,
+          limit: 30,
+          offset,
+        }),
+        offset === 0 ? client.capabilities().catch(() => null) : Promise.resolve(matrix),
+      ]);
+      const next = (page?.items || []).map(normalizeInboxPost);
+      setPostItems((current) => (append ? [...current, ...next] : next));
+      setPostTotal(Number(page?.total) || 0);
+      if (offset === 0 && caps) setMatrix(caps);
+      setPostPhase("ready");
+      setNow(new Date());
+    } catch {
+      if (!append) {
+        setPostItems([]);
+        setPostPhase("error");
+      } else {
+        notify?.({ title: COPY.postsErrorTitle, message: COPY.postsErrorBody });
+      }
+    }
+  }
+
+  const listKind = view === "posts" ? "posts" : "comments";
   useEffect(() => {
-    void loadPage();
-    // Reload when the filters change. loadPage closes over the latest ones.
+    if (listKind === "posts") void loadPosts();
+    else void loadPage();
+    // Reload when the filters or the view change. The loaders close over the latest ones.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, network, accountId, query, fixtures, client]);
+  }, [listKind, status, network, accountId, query, fixtures, client]);
+
+  useEffect(() => {
+    if (view || explicitView.current) return;
+    if (phase === "error") {
+      setView("comments");
+      return;
+    }
+    if (phase !== "ready") return;
+    setView(inboxViewChoice({ stored: "", unread: counts?.unread }));
+  }, [view, phase, counts]);
+
+  useEffect(() => {
+    if (view !== "posts" || postPhase !== "ready" || postPane !== "both") return;
+    const fromUrl = new URLSearchParams(window.location.search).get("post") || "";
+    const fromUrlPost = postItems.find((item) => item.id === fromUrl);
+    const current = postItems.find((item) => item.id === selectedPostId);
+    const next = fromUrlPost || current || postItems[0] || null;
+    if (!next) return;
+    if (next.id !== selectedPostId) setSelectedPostId(next.id);
+    if (fromUrl !== next.id) writePostUrl(next.id);
+  }, [view, postPhase, postPane, postItems, selectedPostId]);
+
+  useEffect(() => {
+    const sync = () => {
+      const state = window.history.state || {};
+      if (!state.inboxPostOpen) setPostDetailOpen(false);
+      const id = new URLSearchParams(window.location.search).get("post") || "";
+      if (id) setSelectedPostId(id);
+    };
+    window.addEventListener("popstate", sync);
+    return () => window.removeEventListener("popstate", sync);
+  }, []);
+
+  function openPostRow(item) {
+    setSelectedPostId(item.id);
+    if (postPane === "both") {
+      writePostUrl(item.id);
+      return;
+    }
+    setPostDetailOpen(true);
+    writePostUrl(item.id, { push: true, open: true });
+  }
+
+  function backFromPost() {
+    setPostDetailOpen(false);
+    if (window.history.state?.inboxPostOpen) {
+      window.history.back();
+      return;
+    }
+    writePostUrl(selectedPostId);
+  }
+
+  function chooseView(next) {
+    explicitView.current = true;
+    setView(next);
+    setMenu("");
+    if (next === "posts") {
+      setDetailOpen(false);
+      setReplyOpen(false);
+    } else if (window.history.state?.inboxPost) {
+      writePostUrl("");
+      setPostDetailOpen(false);
+    }
+    try {
+      writeInboxView(window.localStorage, next);
+    } catch {
+      /* The choice still applies for this visit. */
+    }
+  }
 
   const selected = items.find((item) => item.id === selectedId) || null;
   useEffect(() => {
@@ -320,6 +855,7 @@ export default function InboxPage({
     function onKey(event) {
       const tag = event.target?.tagName;
       if (tag && /input|textarea|select/i.test(tag)) return;
+      if (view !== "comments") return;
       if (event.key === "j" || event.key === "k") {
         const index = items.findIndex((item) => item.id === selected?.id);
         const next = event.key === "j" ? items[index + 1] : items[index - 1];
@@ -358,6 +894,11 @@ export default function InboxPage({
     }
   }
 
+  const selectedPost = postItems.find((item) => item.id === selectedPostId) || null;
+  const selectedPostAccount = accounts.find((item) => item.id === selectedPost?.accountId);
+  const selectedPostName =
+    displayName(selectedPostAccount) || selectedPost?.accountName || networkName(selectedPost?.network);
+
   const countFor = (id) => {
     if (!counts) return null;
     if (id === "all") return counts.all;
@@ -367,24 +908,53 @@ export default function InboxPage({
   };
 
   return (
-    <div className="eng-inbox" data-engagement="inbox" data-phase={phase} data-pane={pane}>
+    <div className="eng-inbox" data-engagement="inbox" data-view={view || "pending"} data-phase={view === "posts" ? postPhase : phase} data-pane={pane}>
       <div className="page-head eng-inbox-head">
         <div>
           <h1>{COPY.inboxTitle}</h1>
-          <p>{tier === "desktop" ? COPY.inboxSub : COPY.inboxSubMobile}</p>
+          <p>
+            {view === "posts"
+              ? COPY.inboxPostsSub
+              : tier === "desktop"
+                ? COPY.inboxSub
+                : COPY.inboxSubMobile}
+          </p>
         </div>
+        {view === "posts" ? null : (
+          <button
+            type="button"
+            className={`btn btn-secondary${tier === "desktop" ? "" : " btn-sm"}`}
+            onClick={() => void markAll()}
+            disabled={phase !== "ready" || items.length === 0 || busy === "all"}
+          >
+            <Check size={tier === "desktop" ? 16 : 14} />
+            {tier === "desktop" ? "Mark all as read" : COPY.markAllRead}
+          </button>
+        )}
+      </div>
+
+      <div className="eng-seg eng-view-switch" role="tablist" aria-label="Inbox view">
         <button
           type="button"
-          className={`btn btn-secondary${tier === "desktop" ? "" : " btn-sm"}`}
-          onClick={() => void markAll()}
-          disabled={phase !== "ready" || items.length === 0 || busy === "all"}
+          role="tab"
+          aria-selected={view === "comments"}
+          className={view === "comments" ? "is-on" : ""}
+          onClick={() => chooseView("comments")}
         >
-          <Check size={tier === "desktop" ? 16 : 14} />
-          {tier === "desktop" ? "Mark all as read" : COPY.markAllRead}
+          Comments
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={view === "posts"}
+          className={view === "posts" ? "is-on" : ""}
+          onClick={() => chooseView("posts")}
+        >
+          Posts
         </button>
       </div>
 
-      {phase === "ready" && banners.length ? (
+      {(view === "posts" ? postPhase : phase) === "ready" && banners.length ? (
         <div className="eng-banner-stack">
           {banners.map((banner) => (
             <div className="eng-banner" key={banner.id}>
@@ -411,32 +981,34 @@ export default function InboxPage({
       ) : null}
 
       <div className="eng-filters">
-        <div className="eng-seg" role="tablist" aria-label="Comment status">
-          {INBOX_FILTERS.map((filter) => {
-            const count = phase === "loading" ? null : countFor(filter.id);
-            const on = status === filter.status;
-            return (
-              <button
-                key={filter.id}
-                type="button"
-                role="tab"
-                aria-selected={on}
-                className={on ? "is-on" : ""}
-                onClick={() => setStatus(filter.status)}
-              >
-                {filter.label}
-                {count == null ? null : <span>{count}</span>}
-              </button>
-            );
-          })}
-        </div>
-        <div className="eng-filters-rest">
+        {view === "posts" ? null : (
+          <div className="eng-seg" role="tablist" aria-label="Comment status">
+            {INBOX_FILTERS.map((filter) => {
+              const count = phase === "loading" ? null : countFor(filter.id);
+              const on = status === filter.status;
+              return (
+                <button
+                  key={filter.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={on}
+                  className={on ? "is-on" : ""}
+                  onClick={() => setStatus(filter.status)}
+                >
+                  {filter.label}
+                  {count == null ? null : <span>{count}</span>}
+                </button>
+              );
+            })}
+          </div>
+        )}
+        <div className={`eng-filters-rest${view === "posts" ? " is-start" : ""}`}>
           <label className="eng-search">
             <Search size={16} />
             <input
               value={search}
-              placeholder="Search comments"
-              aria-label="Search comments"
+              placeholder={view === "posts" ? "Search posts" : "Search comments"}
+              aria-label={view === "posts" ? "Search posts" : "Search comments"}
               onChange={(event) => setSearch(event.target.value)}
             />
           </label>
@@ -541,7 +1113,7 @@ export default function InboxPage({
         </div>
       </div>
 
-      {phase === "error" ? (
+      {view === "comments" && phase === "error" ? (
         <div className="card eng-state eng-state-card">
           <span className="eng-state-icon red">
             <TriangleAlert size={24} />
@@ -555,7 +1127,7 @@ export default function InboxPage({
         </div>
       ) : null}
 
-      {phase === "loading" ? (
+      {view !== "posts" && (view === "" || phase === "loading") ? (
         <div className="eng-inbox-panes" aria-busy="true">
           <div className={`eng-inbox-list${tier === "desktop" ? " card" : " is-plain"}`}>
             {Array.from({ length: 7 }, (_, index) => (
@@ -579,7 +1151,7 @@ export default function InboxPage({
         </div>
       ) : null}
 
-      {phase === "ready" && items.length === 0 ? (
+      {view === "comments" && phase === "ready" && items.length === 0 ? (
         <div className="card eng-state eng-state-card">
           <span className="eng-state-icon">
             <Inbox size={24} />
@@ -605,7 +1177,7 @@ export default function InboxPage({
         </div>
       ) : null}
 
-      {phase === "ready" && items.length > 0 ? (
+      {view === "comments" && phase === "ready" && items.length > 0 ? (
         <div className="eng-inbox-panes">
           <div className={`eng-inbox-list${tier === "desktop" ? " card" : " is-plain"}`}>
             {items.map((item) => (
@@ -761,6 +1333,135 @@ export default function InboxPage({
               </>
             ) : null}
           </div>
+        </div>
+      ) : null}
+
+      {view === "posts" && postPhase === "error" ? (
+        <div className="card eng-state eng-state-card">
+          <span className="eng-state-icon red">
+            <TriangleAlert size={24} />
+          </span>
+          <h3>{COPY.postsErrorTitle}</h3>
+          <p>{COPY.postsErrorBody}</p>
+          <button type="button" className="btn btn-secondary" onClick={() => void loadPosts()}>
+            <RefreshCw size={16} />
+            {COPY.tryAgain}
+          </button>
+        </div>
+      ) : null}
+
+      {view === "posts" && postPhase === "loading" ? (
+        <div className={`eng-post-list${tier === "desktop" ? " card" : " is-plain"}`} aria-busy="true">
+          {Array.from({ length: 5 }, (_, index) => (
+            <div className="eng-postrow" key={index}>
+              <div className="eng-skel eng-postrow-thumb" />
+              <div style={{ flex: 1 }}>
+                <div className="eng-skel eng-skel-line" style={{ width: "36%" }} />
+                <div className="eng-skel eng-skel-line" />
+                <div className="eng-skel eng-skel-line" style={{ width: "28%" }} />
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {view === "posts" && postPhase === "ready" && postItems.length === 0 ? (
+        <div className="card eng-state eng-state-card">
+          <span className="eng-state-icon">
+            <Inbox size={24} />
+          </span>
+          <h3>{emptyPostsCopy(query).title}</h3>
+          <p>{emptyPostsCopy(query).body}</p>
+          {emptyPostsCopy(query).action ? (
+            <button
+              type="button"
+              className={emptyPostsCopy(query).create ? "btn btn-primary" : "btn btn-secondary"}
+              onClick={() => {
+                const emptyPosts = emptyPostsCopy(query);
+                if (emptyPosts.clearSearch) {
+                  setSearch("");
+                  setQuery("");
+                  return;
+                }
+                onCreatePost?.();
+              }}
+            >
+              {emptyPostsCopy(query).create ? <Plus size={16} /> : null}
+              {emptyPostsCopy(query).action}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {view === "posts" && postPhase === "ready" && postItems.length > 0 ? (
+        <div className={`eng-posts-wrap${pane === "both" ? " is-split" : ""}`}>
+          <div className={`eng-post-list${pane === "both" ? " card" : " is-plain"}`} data-engagement="inbox-posts">
+            {postItems.map((item) => {
+              const account = accounts.find((entry) => entry.id === item.accountId);
+              const name = displayName(account) || item.accountName || networkName(item.network);
+              const when = shortDay(item.publishedAt);
+              const unread = countBadge(item.unreadCount);
+              const on = pane === "both" && item.id === selectedPostId;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={`eng-postrow${on ? " is-on" : ""}`}
+                  data-post-id={item.id}
+                  aria-current={on ? "true" : undefined}
+                  onClick={() => openPostRow(item)}
+                >
+                  {item.thumb ? <img className="eng-postrow-thumb" src={item.thumb} alt="" /> : null}
+                  <span className="eng-postrow-main">
+                    <span className="eng-postrow-top">
+                      <Glyph network={item.network} size={16} />
+                      <b>{name}</b>
+                      {when ? <span className="eng-postrow-date">{when}</span> : null}
+                    </span>
+                    <span className="eng-postrow-caption">{postCaption(item.caption)}</span>
+                    <span className="eng-postrow-foot">
+                      <span className={item.commentCount > 0 ? "" : "is-quiet"}>{commentCountLabel(item.commentCount)}</span>
+                      {unread ? (
+                        <span className="eng-unread-badge" aria-label={`${item.unreadCount} unread`}>
+                          {unread}
+                        </span>
+                      ) : null}
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
+            {postItems.length < postTotal ? (
+              <button
+                type="button"
+                className="btn btn-ghost eng-post-more"
+                onClick={() => void loadPosts({ offset: postItems.length, append: true })}
+              >
+                Load more
+              </button>
+            ) : null}
+          </div>
+          {selectedPost && pane !== "list" ? (
+            <PostThreadPane
+              key={selectedPost.id}
+              post={selectedPost}
+              accountName={selectedPostName}
+              client={client}
+              fixtures={fixtures}
+              xEnabled={xEnabled}
+              now={now}
+              showBack={pane === "detail"}
+              onBack={backFromPost}
+              onOpenDetails={() => onOpenPost?.(selectedPost.id, { tab: "comments", fromInboxPosts: true })}
+              onCounts={(id, counts) => {
+                setPostItems((current) =>
+                  current.map((row) => (row.id === id ? { ...row, ...counts } : row)),
+                );
+              }}
+              onActivity={onActivity}
+              notify={notify}
+            />
+          ) : null}
         </div>
       ) : null}
       {pending && selected ? (

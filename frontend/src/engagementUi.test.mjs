@@ -346,6 +346,25 @@ test("targets group sibling posts and reconnect copy names the network", () => {
     targets.map((target) => target.network),
     ["instagram", "facebook"],
   );
+  const ordered = buildTargets(
+    { id: "x1", content: "Hi", scheduled_at: "2026-11-10T09:00:00Z", media_urls: [], connected_account_id: "x", status: "published" },
+    [
+      { id: "x1", content: "Hi", scheduled_at: "2026-11-10T09:00:00Z", media_urls: [], connected_account_id: "x", status: "published" },
+      { id: "ig1", content: "Hi", scheduled_at: "2026-11-10T09:00:00Z", media_urls: [], connected_account_id: "ig", status: "published" },
+      { id: "li1", content: "Hi", scheduled_at: "2026-11-10T09:00:00Z", media_urls: [], connected_account_id: "li", status: "published" },
+      { id: "tt1", content: "Hi", scheduled_at: "2026-11-10T09:00:00Z", media_urls: [], connected_account_id: "tt", status: "published" },
+    ],
+    [
+      { id: "x", platform: "x", account_name: "X" },
+      { id: "ig", platform: "instagram", account_name: "IG" },
+      { id: "li", platform: "linkedin", account_name: "LI" },
+      { id: "tt", platform: "tiktok", account_name: "TT" },
+    ],
+  );
+  assert.deepEqual(
+    ordered.map((target) => target.network),
+    ["instagram", "tiktok", "x", "linkedin"],
+  );
   assert.equal(targets[0].name, "Northwind Café");
   assert.equal(targets[0].handle, "@northwind.sample");
   assert.equal(accountAccess(accounts[1], null), "needs_reconnect");
@@ -362,7 +381,7 @@ test("targets group sibling posts and reconnect copy names the network", () => {
   assert.equal(countBadge(120), "99+");
   assert.deepEqual(inboxNetworkOptions(["instagram", "x", "tiktok", "linkedin"]), {
     available: ["instagram"],
-    later: ["x", "linkedin", "tiktok"],
+    later: ["tiktok", "x", "linkedin"],
   });
 });
 

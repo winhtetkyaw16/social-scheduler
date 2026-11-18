@@ -176,7 +176,12 @@ export default function PostDetailDrawer({
     viewportTier(typeof window === "undefined" ? 1440 : window.innerWidth),
   );
   const closeRef = useRef(null);
+  const selectedChipRef = useRef(null);
   const phone = tier === "phone";
+
+  useEffect(() => {
+    selectedChipRef.current?.scrollIntoView({ inline: "nearest", block: "nearest" });
+  }, [selected, tab]);
 
   useEffect(() => {
     const onResize = () => setTier(viewportTier(window.innerWidth));
@@ -700,6 +705,7 @@ export default function PostDetailDrawer({
                           role="tab"
                           aria-selected={on}
                           className={on ? "is-on" : ""}
+                          ref={on ? selectedChipRef : null}
                           onClick={() => choose(target.key)}
                         >
                           <Glyph network={target.network} size={14} />

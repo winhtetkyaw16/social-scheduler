@@ -62,8 +62,23 @@ const CAPABILITY_NOTES = {
   x: "On X you can reply to, hide and delete comments.",
 };
 
+export const NETWORK_ORDER = [
+  "instagram",
+  "facebook",
+  "threads",
+  "youtube",
+  "tiktok",
+  "pinterest",
+  "x",
+  "linkedin",
+];
 export const INBOX_NETWORKS = ["instagram", "facebook", "threads", "youtube"];
-export const INBOX_LATER = ["x", "linkedin", "tiktok", "pinterest"];
+export const INBOX_LATER = ["tiktok", "pinterest", "x", "linkedin"];
+
+export function networkRank(network) {
+  const index = NETWORK_ORDER.indexOf(canonicalNetwork(network));
+  return index === -1 ? NETWORK_ORDER.length : index;
+}
 
 export const COPY = {
   metricUnavailable: "Not available for this network",
@@ -445,7 +460,8 @@ export function buildTargets(post, posts, accounts) {
         handle: displayHandle(account),
       };
     })
-    .filter(Boolean);
+    .filter(Boolean)
+    .sort((a, b) => networkRank(a.network) - networkRank(b.network));
 }
 
 export function externalUrl(network, providerPostId) {

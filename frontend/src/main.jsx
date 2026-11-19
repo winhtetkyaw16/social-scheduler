@@ -1,13 +1,7 @@
 // Studio shell: session, composer, navigation, and the API client for the signed-in app.
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { igCropPayload } from "./igFrame.js";
-import {
-  SUPPORTED_FORMATS,
-  autoFormat,
-  channelErrors,
-  effectiveFormat,
-  urlsForSelection,
-} from "./fixPlan.js";
+import { autoFormat, channelErrors, effectiveFormat, urlsForSelection } from "./fixPlan.js";
 import { useObjectUrl } from "./objectUrl.js";
 import { accessTokenExpiresAtMs } from "./accessToken.js";
 import {
@@ -39,7 +33,9 @@ import { cleanFbHash } from "./scrollLock.js";
 if (typeof window !== "undefined") cleanFbHash(window.location, window.history);
 import ModalPortal from "./ModalPortal.jsx";
 import "./sc/composer-v2.css";
+import { resolveCaption } from "./accountCaptions.js";
 import ManageAccounts, { AccountAvatar, DestinationPicker } from "./ManageAccounts.jsx";
+import ConnectIntroDialog from "./ConnectIntroDialog.jsx";
 import {
   ArrowDownToLine,
   ArrowLeft,
@@ -1446,91 +1442,6 @@ function QuickStudioDialogContent({
   );
 }
 
-function ConnectDialog({ channel, onClose, onConnect, busy, error }) {
-  useBodyScrollLock(!!channel);
-  if (!channel) return null;
-  const supported = OAUTH_PLATFORMS.has(channel.id);
-  const canPublish = PUBLISHABLE_PLATFORMS.has(channel.id);
-  const typeHints = {
-    facebook:
-      "Facebook Pages are the publishable destinations. Personal profiles are not postable via the Pages API. Groups appear only when Meta returns them. Linked Instagram Business accounts appear in the same picker when Meta returns them.",
-    instagram: "Instagram Business/Creator accounts via Instagram Login (not personal profiles).",
-    x: "Your X user account.",
-    linkedin: "Personal profile and Company/Organization Pages after authorization.",
-    youtube: "YouTube channels available to the Google account (pick Channel / Brand channel).",
-    tiktok: "TikTok Creator/Business account for the Content Posting API.",
-    pinterest: "Pinterest boards you can pin to (user login is kept as parent).",
-    threads: "Your Threads profile via the Meta Threads API.",
-  };
-  return (
-    <ModalPortal>
-      <div
-        className="modal-wrap sc-modal-wrap"
-        onMouseDown={(e) => {
-          if (e.target === e.currentTarget && !busy) onClose();
-        }}
-      >
-        <div
-          className="modal sc-modal max-w-md"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="connect-title"
-        >
-          <div className="flex items-start justify-between">
-            <div>
-              <span className="xs muted sc-eyebrow">CONNECT SOCIAL ACCOUNT</span>
-              <h2 id="connect-title" className="mt-1  text-xl font-extrabold">
-                Connect {channel.label}
-              </h2>
-            </div>
-            <button type="button" onClick={onClose} className="btn btn-ghost btn-icon">
-              <XIcon size={17} />
-            </button>
-          </div>
-          {supported ? (
-            <>
-              <p className="mt-2 text-xs leading-5 text-slate-500">
-                You'll continue to {channel.label} to authorize SocialCastly. Tokens are encrypted
-                on the server and never returned to the browser.
-              </p>
-              <p className="mt-2 text-xs leading-5 text-slate-500">{typeHints[channel.id] || ""}</p>
-              <p className="mt-2 text-[11px] font-semibold text-slate-500">
-                {canPublish
-                  ? "Scheduling/publishing is available for this network."
-                  : "Connect works; publishing needs a publish-ready destination (e.g. Facebook Page) and valid tokens."}
-              </p>
-            </>
-          ) : (
-            <p className="mt-2 text-xs leading-5 text-slate-500">
-              {channel.label} is not a connectable network in SocialCastly yet.
-            </p>
-          )}
-          {error && (
-            <p role="alert" className="mt-3 rounded-xl bg-rose-50 p-3 text-xs text-rose-700">
-              {error}
-            </p>
-          )}
-          <div className="mt-5 flex justify-end gap-2">
-            <button type="button" className="btn btn-secondary" onClick={onClose}>
-              Cancel
-            </button>
-            {supported && (
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => onConnect(channel.id)}
-                className="btn btn-primary !px-5 !py-2.5"
-              >
-                {busy ? "Redirecting…" : `Continue with ${channel.label}`}
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-    </ModalPortal>
-  );
-}
-
 function ConnectChannelPicker({ open, onClose, onPick, onRequestChannel }) {
   useBodyScrollLock(!!open);
   if (!open) return null;
@@ -1620,6 +1531,7 @@ function App() {
   const [caption, setCaption] = useState("");
   const [captionMode, setCaptionMode] = useState("universal");
   const [captionsByAccount, setCaptionsByAccount] = useState({});
+  const [captionsByNetwork, setCaptionsByNetwork] = useState({});
   const [useUniversalCaptionByAccount, setUseUniversalCaptionByAccount] = useState({});
   const [channelFiles, setChannelFiles] = useState({});
   const [channelMediaUrlsByAccount, setChannelMediaUrlsByAccount] = useState({});
@@ -1655,10 +1567,12 @@ function App() {
   const [quickTool, setQuickTool] = useState(null);
   const [quickFile, setQuickFile] = useState(null);
   const [connectChannel, setConnectChannel] = useState(null);
+  const [connectReauthId, setConnectReauthId] = useState("");
   const [showChannelPicker, setShowChannelPicker] = useState(false);
   const [connectBusy, setConnectBusy] = useState(false);
   const [connectError, setConnectError] = useState("");
   const [pickSession, setPickSession] = useState(null);
+  const reauthRef = useRef("");
   const [loadError, setLoadError] = useState("");
   const [posts, setPosts] = useState([]);
   const [localDrafts, setLocalDrafts] = useState([]);
@@ -1883,10 +1797,12 @@ function App() {
     }));
   };
   const postLimit = Math.min(previewChannel?.limit || MAX_CHARS, MAX_CHARS);
+  // Fallback: account caption -> network caption -> default caption (old drafts have no network captions).
   const captionForAccount = (account) =>
-    captionMode === "custom" && useUniversalCaptionByAccount[account?.id] === false
-      ? (captionsByAccount[account?.id] ?? caption)
-      : caption;
+    resolveCaption(
+      { captionMode, caption, captionsByNetwork, captionsByAccount, useUniversalCaptionByAccount },
+      account,
+    );
   const [mediaDims, setMediaDims] = useState({});
   const sharedMedia = useMemo(() => [...files, ...libraryMediaUrls], [files, libraryMediaUrls]);
   const sharedInfos = useMemo(
@@ -2136,6 +2052,7 @@ function App() {
       selectedAccounts,
       captionMode,
       captionsByAccount,
+      captionsByNetwork,
       useUniversalCaptionByAccount,
       caption,
       channelFiles,
@@ -2333,11 +2250,7 @@ function App() {
       setUseUniversalCaptionByAccount((current) => ({ ...current, [target.id]: false }));
       setCaptionsByAccount((current) => ({
         ...current,
-        [target.id]: transform(
-          useUniversalCaptionByAccount[target.id] === false
-            ? (current[target.id] ?? caption)
-            : caption,
-        ),
+        [target.id]: transform(captionForAccount(target)),
       }));
       return;
     }
@@ -2471,6 +2384,7 @@ function App() {
     setActiveTab("home");
     setCaption("");
     setCaptionsByAccount({});
+    setCaptionsByNetwork({});
     setUseUniversalCaptionByAccount({});
     setCaptionMode("universal");
     setTitle("");
@@ -2594,13 +2508,12 @@ function App() {
         title,
         captionMode,
         captionsByAccount,
+        captionsByNetwork,
         useUniversalCaptionByAccount,
         selectedIds,
         formatsByAccount: {
           ...formatsByAccount,
-          ...Object.fromEntries(
-            selectedAccounts.map((account) => [account.id, formatForAccount(account)]),
-          ),
+          ...Object.fromEntries(selectedAccounts.map((a) => [a.id, formatForAccount(a)])),
         },
         formatOverridesByAccount,
         platformSettingsByAccount,
@@ -2617,9 +2530,7 @@ function App() {
       };
       const payload = {
         content:
-          captionMode === "custom" && primaryAccount
-            ? (captionsByAccount[primaryAccount.id] ?? caption)
-            : caption,
+          captionMode === "custom" && primaryAccount ? captionForAccount(primaryAccount) : caption,
         media_urls: [...sharedUrls, ...Object.values(savedChannelUrls).flat()].slice(0, 35),
         post_format: primaryAccount ? formatForAccount(primaryAccount) : "Post",
         scheduled_at: scheduledAt,
@@ -2649,6 +2560,7 @@ function App() {
       setIgCropByAccount({});
       setCaption("");
       setCaptionsByAccount({});
+      setCaptionsByNetwork({});
       setCaptionMode("universal");
       setTitle("");
       setFormatsByAccount({});
@@ -2705,6 +2617,13 @@ function App() {
     setCaption(typeof metadata.caption === "string" ? metadata.caption : draft.content || "");
     setTitle(typeof metadata.title === "string" ? metadata.title : "");
     setCaptionMode(metadata.captionMode === "custom" ? "custom" : "universal");
+    setCaptionsByNetwork(
+      metadata.captionsByNetwork &&
+        typeof metadata.captionsByNetwork === "object" &&
+        !Array.isArray(metadata.captionsByNetwork)
+        ? metadata.captionsByNetwork
+        : {},
+    );
     setCaptionsByAccount(
       metadata.captionsByAccount && typeof metadata.captionsByAccount === "object"
         ? metadata.captionsByAccount
@@ -2824,7 +2743,7 @@ function App() {
     if (emptyCaptionAccount) {
       notify({
         title: "Add a caption",
-        message: `Write a caption for ${CHANNELS.find((channel) => channel.id === emptyCaptionAccount.platform)?.label || "each selected channel"}.`,
+        message: `Write a caption for ${emptyCaptionAccount.account_name || "this account"} (${CHANNELS.find((channel) => channel.id === emptyCaptionAccount.platform)?.label || emptyCaptionAccount.platform}).`,
       });
       return;
     }
@@ -2997,6 +2916,7 @@ function App() {
         setLibraryMediaUrls([]);
         setCaption("");
         setCaptionsByAccount({});
+        setCaptionsByNetwork({});
         setUseUniversalCaptionByAccount({});
         setCaptionMode("universal");
         setTitle("");
@@ -3055,8 +2975,9 @@ function App() {
     try {
       promoteSessionForOAuth("accounts");
       const returnTo = encodeURIComponent(window.location.origin);
+      const reauth = reauthRef.current ? `&reauth=${encodeURIComponent(reauthRef.current)}` : "";
       const result = await authenticatedFetch(
-        `/accounts/${platform}/connect?return_to=${returnTo}`,
+        `/accounts/${platform}/connect?return_to=${returnTo}${reauth}`,
       );
       if (!result?.authorization_url)
         throw new Error("The server did not return an authorization URL.");
@@ -3182,6 +3103,7 @@ function App() {
     const connectError = params.get("connect_error");
     const oauthPick = params.get("oauth_pick");
     const pickSessionId = params.get("pick_session");
+    const reauthId = params.get("reauth") || "";
     if (!connected && !connectError && !oauthPick) return;
     let returnTab = "accounts";
     try {
@@ -3216,13 +3138,14 @@ function App() {
       returnTab = "accounts";
     goToTab(returnTab);
     if (oauthPick && pickSessionId) {
-      setPickSession({ platform: oauthPick, sessionId: pickSessionId });
-      notify({
-        title: `Choose ${oauthPick} destinations`,
-        message:
-          "Select which Pages, channels, or boards to save. Tokens stay encrypted on the server.",
-        kind: "success",
-      });
+      setPickSession({ platform: oauthPick, sessionId: pickSessionId, reauthId });
+      if (!reauthId)
+        notify({
+          title: `Choose ${oauthPick} destinations`,
+          message:
+            "Select which Pages, channels, or boards to save. Tokens stay encrypted on the server.",
+          kind: "success",
+        });
     }
     if (connected)
       notify({
@@ -3236,6 +3159,7 @@ function App() {
     url.searchParams.delete("connect_error");
     url.searchParams.delete("oauth_pick");
     url.searchParams.delete("pick_session");
+    url.searchParams.delete("reauth");
     window.history.replaceState(
       {},
       "",
@@ -3293,7 +3217,9 @@ function App() {
   const queuedPosts = posts.filter((post) =>
     ["scheduled", "queued", "publishing", "failed"].includes(post.status),
   );
-  const connect = (channel) => {
+  const connect = (channel, options = {}) => {
+    reauthRef.current = options?.reauthId ? String(options.reauthId) : "";
+    setConnectReauthId(reauthRef.current);
     if (!channel) {
       setShowChannelPicker(true);
       return;
@@ -3529,6 +3455,8 @@ function App() {
                     setCaption={setCaption}
                     captionsByAccount={captionsByAccount}
                     setCaptionsByAccount={setCaptionsByAccount}
+                    captionsByNetwork={captionsByNetwork}
+                    setCaptionsByNetwork={setCaptionsByNetwork}
                     useUniversalCaptionByAccount={useUniversalCaptionByAccount}
                     setUseUniversalCaptionByAccount={setUseUniversalCaptionByAccount}
                     captionForAccount={captionForAccount}
@@ -3596,6 +3524,7 @@ function App() {
                         return;
                       setCaption("");
                       setCaptionsByAccount({});
+                      setCaptionsByNetwork({});
                       setUseUniversalCaptionByAccount({});
                       setCaptionMode("universal");
                       setTitle("");
@@ -3634,15 +3563,20 @@ function App() {
           request={authenticatedFetch}
           channelMeta={CHANNELS.find((item) => item.id === pickSession.platform)}
           ChannelBrandImage={ChannelBrandImage}
+          reauthId={pickSession.reauthId || ""}
           onClose={() => setPickSession(null)}
-          onSaved={async (platform) => {
+          onSaved={async (platform, info = {}) => {
             setPickSession(null);
             await loadWorkspace(token);
-            notify({
-              title: "Destinations saved",
-              message: `${platform} destinations are connected.`,
-              kind: "success",
-            });
+            const label = CHANNELS.find((item) => item.id === platform)?.label || platform;
+            if (info.mode === "reconnect")
+              notify({ title: `${label} reconnected`, kind: "success" });
+            else if (info.mode !== "all-added")
+              notify({
+                title: "Destinations saved",
+                message: `${platform} destinations are connected.`,
+                kind: "success",
+              });
           }}
         />
       )}
@@ -3662,9 +3596,13 @@ function App() {
           });
         }}
       />
-      <ConnectDialog
+      <ConnectIntroDialog
         channel={connectChannel}
-        onClose={() => setConnectChannel(null)}
+        reconnect={Boolean(connectReauthId)}
+        onClose={() => {
+          setConnectChannel(null);
+          setConnectReauthId("");
+        }}
         onConnect={connectAccount}
         busy={connectBusy}
         error={connectError}

@@ -18,7 +18,7 @@ from app.services.accounts import (
     delete_account,
     list_accounts,
 )
-from app.services.destinations import list_destinations, save_destinations
+from app.services.destinations import list_destinations_for_picker, save_destinations
 from app.services.oauth import finish_oauth, start_oauth
 
 router = APIRouter()
@@ -40,7 +40,7 @@ def get_oauth_destinations(
     user: User = Depends(get_current_user),
 ) -> dict:
     """List Pages/orgs/channels/boards for a pending OAuth pick session."""
-    return list_destinations(db, user.id, session_id)
+    return list_destinations_for_picker(db, user.id, session_id)
 
 
 @router.post(
@@ -53,7 +53,11 @@ def save_oauth_destinations(
 ) -> list[AccountRead]:
     """Persist the destinations the user selected after OAuth discovery."""
     accounts = save_destinations(
-        db, user.id, payload.pick_session_id, payload.destination_ids
+        db,
+        user.id,
+        payload.pick_session_id,
+        payload.destination_ids,
+        refresh_existing=payload.refresh_existing,
     )
     return [AccountRead.from_account(account) for account in accounts]
 
@@ -62,10 +66,11 @@ def save_oauth_destinations(
 def begin_oauth(
     platform: str,
     return_to: str | None = None,
+    reauth: str | None = None,
     user: User = Depends(get_current_user),
 ) -> dict[str, str]:
-    """Return the provider authorization URL for a connectable platform."""
-    return start_oauth(platform, user.id, return_to=return_to)
+    """Return the provider authorization URL; `reauth` = provider id of the account being re-authorized."""
+    return start_oauth(platform, user.id, return_to=return_to, reauth=reauth)
 
 
 @router.get("/{platform}/callback", include_in_schema=True)

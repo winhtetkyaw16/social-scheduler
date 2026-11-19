@@ -1,7 +1,27 @@
 // Row menu and delete confirmation for a scheduled or published post.
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Ch, AccountAvatar } from "./ui.jsx";
+import { Ch, IdAvatar } from "./ui.jsx";
+import {
+  NETWORK_NAMES,
+  networkName,
+  willRemoteDelete,
+  deleteCopy,
+  canDeletePost,
+  rowMenuActions,
+  deleteModalBody,
+  remoteDeleteFailedMessage,
+  publishedDeleteController,
+} from "../publishedDelete.js";
+
+export {
+  NETWORK_NAMES,
+  networkName,
+  willRemoteDelete,
+  deleteCopy,
+  canDeletePost,
+  remoteDeleteFailedMessage,
+};
 
 const svg = (p) => (
   <svg className="ico" viewBox="0 0 24 24" aria-hidden="true">
@@ -28,35 +48,8 @@ const ICO = {
 };
 const MENU_W = 168;
 
-export const NETWORK_NAMES = {
-  facebook: "Facebook",
-  instagram: "Instagram",
-  x: "X",
-  twitter: "X",
-  linkedin: "LinkedIn",
-  tiktok: "TikTok",
-  youtube: "YouTube",
-  pinterest: "Pinterest",
-  threads: "Threads",
-  bluesky: "Bluesky",
-};
-export function networkName(post, account) {
-  const p = String(account?.platform || post?.preview_platform || "").toLowerCase();
-  return NETWORK_NAMES[p] || account?.platform || "the network";
-}
-/** True when DELETE /posts/:id will also delete the post on the provider (published with a real provider id). */
-export function willRemoteDelete(post) {
-  return Boolean(post?.provider_post_id) && !String(post.provider_post_id).startsWith("inbox:");
-}
-export function deleteCopy(post, network) {
-  return willRemoteDelete(post)
-    ? `It's removed from SocialCastly and also deleted from ${network}. If ${network} rejects the delete, the post stays here.`
-    : `It's removed from SocialCastly only. Nothing was published, so nothing changes on ${network}.`;
-}
-export const canDeletePost = (post) => post?.status !== "publishing";
-
 /** Ghost "⋯" button + small Edit / Delete dropdown (reuses .pp-menu). Portaled so card overflow never clips it. */
-export function PostRowMenu({ post, onEdit, onDelete }) {
+export function PostRowMenu({ post, account, onEdit, onDelete }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState(null);
   const btnRef = useRef(null);
@@ -116,7 +109,10 @@ export function PostRowMenu({ post, onEdit, onDelete }) {
     setOpen(false);
     fn?.(post);
   };
-  const deletable = canDeletePost(post) && onDelete;
+  const actions = rowMenuActions(post, account);
+  const deletable = actions.delete && onDelete;
+  const showEdit = actions.edit && onEdit;
+  if (!showEdit && !deletable) return null;
   return (
     <>
       <button
@@ -157,12 +153,14 @@ export function PostRowMenu({ post, onEdit, onDelete }) {
                 ]?.focus();
               }}
             >
-              <a role="menuitem" href="#" onClick={pick(onEdit)}>
-                {ICO.edit}Edit
-              </a>
+              {showEdit && (
+                <a role="menuitem" href="#" onClick={pick(onEdit)}>
+                  {ICO.edit}Edit
+                </a>
+              )}
               {deletable && (
                 <>
-                  <hr className="sc-menu-div" />
+                  {showEdit && <hr className="sc-menu-div" />}
                   <a role="menuitem" href="#" className="danger" onClick={pick(onDelete)}>
                     {ICO.trash}Delete
                   </a>
@@ -190,7 +188,7 @@ function previewTime(v) {
  * Confirm modal for deleting a post. Calls DELETE /posts/:id (backend deletes on the
  * network first when the post was published, and keeps the row if that fails).
  */
-export function DeletePostModal({ post, account, request, onClose, onDeleted }) {
+export function DeletePostModal({ post, account, request, onClose, onDeleted, onRemoteFailed }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const cancelRef = useRef(null);
@@ -219,16 +217,26 @@ export function DeletePostModal({ post, account, request, onClose, onDeleted }) 
     return () => window.removeEventListener("keydown", onKey, true);
   }, [busy, onClose]);
   async function confirm() {
+    if (publishedDeleteController.isBusy(post.id)) return;
     setBusy(true);
     setError("");
-    try {
-      await request(`/posts/${post.id}`, { method: "DELETE" });
+    const result = await publishedDeleteController.run(request, post);
+    if (result.status === "busy") {
+      setBusy(false);
+      return;
+    }
+    if (result.status === "ok") {
       await onDeleted?.(post, { remote, network });
       onClose();
-    } catch (e) {
-      setError(e?.message || "Could not delete this post.");
-      setBusy(false);
+      return;
     }
+    if (remote) {
+      onClose();
+      onRemoteFailed?.(post, network);
+      return;
+    }
+    setError(result.error?.message || "Could not delete this post.");
+    setBusy(false);
   }
   const when = post.published_at || post.scheduled_at || post.created_at;
   const platform = account?.platform || post.preview_platform;
@@ -247,26 +255,33 @@ export function DeletePostModal({ post, account, request, onClose, onDeleted }) 
           aria-labelledby="sc-del-title"
           aria-describedby="sc-del-text"
         >
-          <div className="col" style={{ padding: "24px 24px 20px", gap: 8 }}>
-            <h2 id="sc-del-title">Delete this post?</h2>
+          <div className="sc-del-body">
+            <div className="sc-del-title-row">
+              <h2 id="sc-del-title">Delete this post?</h2>
+              <button
+                type="button"
+                className="pp-x"
+                aria-label="Close"
+                disabled={busy}
+                onClick={onClose}
+              >
+                ×
+              </button>
+            </div>
             <p id="sc-del-text" className="sm muted">
-              {remote
-                ? `This will remove the post from SocialCastly and also delete it from ${network}. If ${network} rejects the delete, the post stays here. This can't be undone.`
-                : "This will remove the post from your queue. This can't be undone."}
+              {deleteModalBody(post, network)}
             </p>
             <div className="row sc-del-preview">
               <span className="with-ch">
-                <AccountAvatar account={account} size={32} />
+                <IdAvatar account={account} size={32} />
                 {!account && platform && <Ch platform={platform} size="sm" />}
               </span>
               <div className="grow" style={{ minWidth: 0 }}>
-                <div className="xs subtle" style={{ marginBottom: 2 }}>
-                  <b style={{ color: "var(--text)" }}>
-                    {account?.account_name || post.preview_account_name || network}
-                  </b>{" "}
-                  · {previewTime(when)}
+                <div className="sc-del-who">
+                  <b>{account?.account_name || post.preview_account_name || network}</b>
+                  <span className="xs subtle">{previewTime(when)}</span>
                 </div>
-                <div className="sm sc-clamp2">{post.content || "Untitled post"}</div>
+                <div className="sm sc-clamp1">{post.content || "Untitled post"}</div>
               </div>
             </div>
             {error && (
@@ -291,11 +306,30 @@ export function DeletePostModal({ post, account, request, onClose, onDeleted }) 
               disabled={busy}
               onClick={() => void confirm()}
             >
-              {busy ? <span className="sc-spin" aria-hidden="true" /> : ICO.trash}
-              {busy ? "Deleting…" : "Delete"}
+              {busy ? "Deleting" : "Delete"}
             </button>
           </div>
         </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+/** Dark toast after a failed remote delete. Try again retries the same post via the shared controller. */
+export function DeleteFailedToast({ network, busy, onTryAgain }) {
+  return createPortal(
+    <div className="scd sc-del-toast-layer">
+      <div className="sc-del-toast" role="status">
+        <p>{remoteDeleteFailedMessage(network)}</p>
+        <button
+          type="button"
+          className="sc-del-toast-retry"
+          disabled={busy}
+          onClick={() => void onTryAgain?.()}
+        >
+          Try again
+        </button>
       </div>
     </div>,
     document.body,

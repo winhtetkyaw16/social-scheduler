@@ -333,6 +333,7 @@ def _write_state(
     platform: str,
     verifier: str | None,
     return_to: str | None = None,
+    reauth: str | None = None,
 ) -> str:
     """Encrypt the OAuth state (user, platform, PKCE verifier, return origin, expiry)."""
     payload = json.dumps(
@@ -341,6 +342,7 @@ def _write_state(
             "platform": platform,
             "verifier": verifier,
             "return_to": return_to,
+            "reauth": reauth,
             "exp": int((datetime.now(timezone.utc) + _STATE_TTL).timestamp()),
         },
         separators=(",", ":"),
@@ -382,6 +384,16 @@ def _peek_return_base(state: str | None) -> str:
         return config.FRONTEND_URL
 
 
+def _peek_reauth(state: str | None) -> str | None:
+    """Provider id of the account being re-authorized (only for an already-validated state)."""
+    try:
+        value = json.loads(decrypt_token(state or "")).get("reauth")
+    except Exception:
+        return None
+    value = str(value or "").strip()
+    return value[:255] if value else None
+
+
 def _studio_redirect(
     return_base: str | None = None, **query: str | None
 ) -> RedirectResponse:
@@ -395,7 +407,10 @@ def _studio_redirect(
 
 
 def start_oauth(
-    platform: str, user_id: UUID, return_to: str | None = None
+    platform: str,
+    user_id: UUID,
+    return_to: str | None = None,
+    reauth: str | None = None,
 ) -> dict[str, str]:
     """Build the provider authorization URL for the signed-in user."""
     provider = _require_provider(platform)
@@ -438,8 +453,9 @@ def start_oauth(
         verifier, challenge = _pkce_pair()
         params["code_challenge"] = challenge
         params["code_challenge_method"] = "S256"
+    reauth_id = str(reauth or "").strip()[:255] or None
     params["state"] = _write_state(
-        user_id, provider.platform, verifier, return_to=safe_return
+        user_id, provider.platform, verifier, return_to=safe_return, reauth=reauth_id
     )
     return {
         "platform": provider.platform,
@@ -503,7 +519,10 @@ def finish_oauth(
                 identity_json=identity,
             )
             return _studio_redirect(
-                return_base, oauth_pick=provider.platform, pick_session=str(session.id)
+                return_base,
+                oauth_pick=provider.platform,
+                pick_session=str(session.id),
+                reauth=_peek_reauth(state),
             )
         account_type = identity.get("account_type") or default_account_type(
             provider.platform

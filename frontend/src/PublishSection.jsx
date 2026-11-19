@@ -15,12 +15,29 @@ import {
   fmtDay,
   postTitle,
   AccountAvatar as ScAccountAvatar,
+  IdAvatar,
+  accountDisplayName,
+  accountHandle,
 } from "./sc/ui.jsx";
+import { needsHandle } from "./accountCaptions.js";
+// Name plus a muted @handle when another connected account could be confused with this one.
+function AcctName({ account, accounts = [] }) {
+  if (!account) return <b className="sm">Account</b>;
+  return (
+    <>
+      <b className="sm">{accountDisplayName(account)}</b>
+      {needsHandle(account, accounts) && (
+        <span className="xs subtle">{accountHandle(account)}</span>
+      )}
+    </>
+  );
+}
 import { createPortal } from "react-dom";
 import RenderErrorBoundary from "./RenderErrorBoundary.jsx";
 import {
   PostRowMenu,
   DeletePostModal,
+  DeleteFailedToast,
   deleteCopy,
   failedBannerText,
   friendlyError,
@@ -28,7 +45,8 @@ import {
 import { AccountAvatar } from "./ManageAccounts.jsx";
 import { BulkUploadCard, EvergreenCard } from "./sc/QueueExtras.jsx";
 import { groupQueuePosts } from "./queueOrder.js";
-import { savedPostBlock } from "./fixPlan.js";
+import { savedPostBlock, identityLine } from "./fixPlan.js";
+import { TIKTOK_NO_DELETE_NOTE, publishedDeleteController } from "./publishedDelete.js";
 import {
   AlertCircle,
   Archive,
@@ -342,10 +360,10 @@ function PostsListView({
                       : ""}
                   </span>
                 </div>
-                <ScAccountAvatar account={account} size={36} />
+                <IdAvatar account={account} size={36} />
                 <div className="body">
                   <div className="row" style={{ gap: 8, marginBottom: 4 }}>
-                    <b className="sm">{account?.account_name || account?.platform || "Account"}</b>
+                    <AcctName account={account} accounts={accounts} />
                     <StatusBadge status={post.status} post={post} />
                   </div>
                   <div className="txt">{post.content || "Untitled post"}</div>
@@ -389,6 +407,7 @@ function PostsListView({
                   )}
                   <PostRowMenu
                     post={post}
+                    account={account}
                     onEdit={(p) => (onEditPost || onSelectPost)?.(p)}
                     onDelete={onDeletePost}
                   />
@@ -416,6 +435,7 @@ function MonthCalendar({
   initialView = "month",
   onEditPost,
   onDuplicatePost,
+  onDeletePost,
 }) {
   const safePosts = Array.isArray(posts) ? posts.filter(Boolean) : [];
   const [view, setView] = useState(initialView);
@@ -898,6 +918,7 @@ function MonthCalendar({
             onNewPost={openComposerForDay}
             onEdit={onEditPost}
             onDuplicate={onDuplicatePost}
+            onDelete={onDeletePost}
           />
         </RenderErrorBoundary>
       )}
@@ -2107,10 +2128,10 @@ function QueueView({
                       onClick={() => onOpenDetails?.(p)}
                     >
                       <div className="time sc-time-1l">{timeLabel}</div>
-                      <ScAccountAvatar account={acc} size={36} />
+                      <IdAvatar account={acc} size={36} />
                       <div className="body">
                         <div className="row" style={{ gap: 8, marginBottom: 4 }}>
-                          <b className="sm">{acc?.account_name || acc?.platform || "Account"}</b>
+                          <AcctName account={acc} accounts={accounts} />
                           <StatusBadge status={p.status} post={p} />
                           {p.post_metadata?.evergreen_source_id && (
                             <span className="badge nodot">Evergreen</span>
@@ -2155,6 +2176,7 @@ function QueueView({
                       ) : null}
                       <PostRowMenu
                         post={p}
+                        account={acc}
                         onEdit={(x) => (onEditPost || onSelectPost)?.(x)}
                         onDelete={onDeletePost}
                       />
@@ -2493,10 +2515,24 @@ export default function PublishSection({
     } else openPost(post);
   }
   const [deletingPost, setDeletingPost] = useState(null);
+  const [deleteFail, setDeleteFail] = useState(null);
+  const [retryingDelete, setRetryingDelete] = useState(false);
   async function afterDelete(post, info) {
     if (selectedPost?.id === post.id) closePopover();
     if (onPostDeleted) await onPostDeleted(post, info);
     else await onRefresh?.();
+  }
+  async function retryFailedDelete() {
+    if (!deleteFail) return;
+    const { post, network } = deleteFail;
+    if (publishedDeleteController.isBusy(post.id)) return;
+    setRetryingDelete(true);
+    const result = await publishedDeleteController.run(request, post);
+    setRetryingDelete(false);
+    if (result.status === "ok") {
+      setDeleteFail(null);
+      await afterDelete(post, { remote: true, network });
+    }
   }
   const openedFromNav = React.useRef(null);
   useEffect(() => {
@@ -2527,6 +2563,7 @@ export default function PublishSection({
           <MonthCalendar
             onEditPost={(p) => setEditingPost(p)}
             onDuplicatePost={duplicatePost}
+            onDeletePost={setDeletingPost}
             key={active}
             initialView={active === "week" ? "week" : "month"}
             posts={calendarPosts}
@@ -2619,6 +2656,10 @@ export default function PublishSection({
               setEditingPost(p);
             }}
             onDuplicate={duplicatePost}
+            onDelete={(p) => {
+              closePopover();
+              setDeletingPost(p);
+            }}
           />
         </RenderErrorBoundary>
       )}
@@ -2629,6 +2670,14 @@ export default function PublishSection({
           request={request}
           onClose={() => setDeletingPost(null)}
           onDeleted={afterDelete}
+          onRemoteFailed={(post, network) => setDeleteFail({ post, network })}
+        />
+      )}
+      {deleteFail && (
+        <DeleteFailedToast
+          network={deleteFail.network}
+          busy={retryingDelete}
+          onTryAgain={retryFailedDelete}
         />
       )}
       {editingPost && (
@@ -2767,6 +2816,7 @@ function PostPopover({
   onClose,
   onEdit,
   onDuplicate,
+  onDelete,
   inline = false,
 }) {
   const mobile = useIsMobile();
@@ -2793,6 +2843,7 @@ function PostPopover({
   const mediaUrl = Array.isArray(current.media_urls) ? current.media_urls[0] : "";
   const isVideo = /\.(mp4|mov|webm|m4v|ogv)(\?|$)/i.test(mediaUrl || "");
   const published = current.status === "published";
+  const popW = published ? 380 : POPOVER_W;
   const permalink = published ? postPermalink(current) : "";
   const canArchive = ["published", "failed", "cancelled"].includes(current.status);
   const canDelete = current.status !== "publishing";
@@ -2836,7 +2887,7 @@ function PostPopover({
       const vh = window.innerHeight;
       if (!anchor || !anchor.isConnected) {
         setPos({
-          left: Math.max(8, (vw - POPOVER_W) / 2),
+          left: Math.max(8, (vw - popW) / 2),
           top: Math.max(8, (vh - elementHeight) / 2),
           side: "none",
         });
@@ -2844,24 +2895,24 @@ function PostPopover({
       }
       const rect = anchor.getBoundingClientRect();
       let side =
-        rect.right + POPOVER_GAP + POPOVER_W <= vw - 8
+        rect.right + POPOVER_GAP + popW <= vw - 8
           ? "right"
-          : rect.left - POPOVER_GAP - POPOVER_W >= 8
+          : rect.left - POPOVER_GAP - popW >= 8
             ? "left"
             : "below";
       let left;
       let top;
       let arrow;
       if (side === "below") {
-        left = Math.min(Math.max(8, rect.left + rect.width / 2 - POPOVER_W / 2), vw - POPOVER_W - 8);
+        left = Math.min(Math.max(8, rect.left + rect.width / 2 - popW / 2), vw - popW - 8);
         top = rect.bottom + POPOVER_GAP;
         if (top + elementHeight > vh - 8) {
           side = "above";
           top = Math.max(8, rect.top - POPOVER_GAP - elementHeight);
         }
-        arrow = Math.min(Math.max(16, rect.left + rect.width / 2 - left), POPOVER_W - 16);
+        arrow = Math.min(Math.max(16, rect.left + rect.width / 2 - left), popW - 16);
       } else {
-        left = side === "right" ? rect.right + POPOVER_GAP : rect.left - POPOVER_GAP - POPOVER_W;
+        left = side === "right" ? rect.right + POPOVER_GAP : rect.left - POPOVER_GAP - popW;
         top = rect.top + rect.height / 2 - 28;
         if (top + elementHeight > vh - 8) top = Math.max(8, vh - 8 - elementHeight);
         if (top < 8) top = 8;
@@ -2960,7 +3011,69 @@ function PostPopover({
       <path d="M12 7v5l3 2" />
     </svg>
   );
-  const body = (
+  const icoCal = (
+    <svg className="ico" viewBox="0 0 24 24">
+      <rect x="3" y="5" width="18" height="16" rx="2" />
+      <path d="M3 10h18M8 3v4M16 3v4" />
+    </svg>
+  );
+  const mediaBlock =
+    mediaUrl &&
+    (isVideo ? (
+      <video className="pp-thumb" src={mediaUrl} muted style={{ objectFit: "cover" }} />
+    ) : (
+      <img
+        className="pp-thumb"
+        src={mediaUrl}
+        alt=""
+        style={{ objectFit: "cover" }}
+        onError={hideBrokenImg}
+      />
+    ));
+  const publishedBody = (
+    <>
+      <div className="pp-head pp-pub-head">
+        <IdAvatar account={account} size={36} />
+        <div className="pp-id">
+          <div className="pp-id-row">
+            <span className="pp-name" id="pp-title">
+              {accountDisplayName(account) || current.preview_account_name || channelName}
+            </span>
+            <StatusBadge status={current.status} post={current} />
+          </div>
+          <div className="pp-sub">{account ? identityLine(account) : network}</div>
+        </div>
+        <button type="button" className="pp-x" aria-label="Close" onClick={onClose} data-autofocus>
+          ×
+        </button>
+      </div>
+      <div className="pp-time">
+        {icoCal}
+        {timeText || "No time set"}
+      </div>
+      <div className="pp-body">
+        <p className="pp-cap">{current.content || postTitle(current)}</p>
+        {mediaBlock}
+      </div>
+      {platform === "tiktok" ? (
+        <p className="pp-tt-note">{TIKTOK_NO_DELETE_NOTE}</p>
+      ) : (
+        <div className="pp-foot pp-pub-foot">
+          <button
+            type="button"
+            className="btn btn-sm pp-del-outline"
+            disabled={!!busy}
+            onClick={() => onDelete?.(current)}
+          >
+            Delete post
+          </button>
+        </div>
+      )}
+    </>
+  );
+  const body = published ? (
+    publishedBody
+  ) : (
     <>
       <div className="pp-head">
         <Ch platform={platform} />
@@ -3145,7 +3258,12 @@ function PostPopover({
 
   if (inline)
     return (
-      <div ref={popRef} className="dp-detail" role="group" aria-labelledby="pp-title">
+      <div
+        ref={popRef}
+        className={`dp-detail${published ? " pp-pub" : ""}`}
+        role="group"
+        aria-labelledby="pp-title"
+      >
         {body}
       </div>
     );
@@ -3174,7 +3292,7 @@ function PostPopover({
           role="dialog"
           aria-modal="true"
           aria-labelledby="pp-title"
-          className="pop sheet pp-sheet"
+          className={`pop sheet pp-sheet${published ? " pp-pub" : ""}`}
           style={{
             position: "fixed",
             transform: `translateY(${dragY}px)`,
@@ -3231,7 +3349,7 @@ function PostPopover({
         role="dialog"
         aria-modal="false"
         aria-labelledby="pp-title"
-        className="pop"
+        className={`pop${published ? " pp-pub" : ""}`}
         style={{
           position: "fixed",
           left: pos?.left ?? -9999,
@@ -3818,6 +3936,7 @@ function DayPopover({
   onNewPost,
   onEdit,
   onDuplicate,
+  onDelete,
 }) {
   const mobile = useIsMobile();
   const [overrides, setOverrides] = useState({});
@@ -4053,8 +4172,18 @@ function DayPopover({
               <Ch platform={account?.platform || post.preview_platform} />
               <div className="dp-main">
                 <div className="dp-l1">
-                  <b title={account?.account_name || ""}>
-                    {account?.account_name || account?.platform || "Account"}
+                  <b
+                    title={
+                      account ? `${accountDisplayName(account)} ${accountHandle(account)}` : ""
+                    }
+                  >
+                    {account ? accountDisplayName(account) : "Account"}
+                    {account && needsHandle(account, accounts) ? (
+                      <span className="subtle" style={{ fontWeight: 400 }}>
+                        {" "}
+                        {accountHandle(account)}
+                      </span>
+                    ) : null}
                   </b>
                   <span className="dp-cap">{post.content || postTitle(post)}</span>
                 </div>
@@ -4116,6 +4245,10 @@ function DayPopover({
           onDuplicate={(p, acc) => {
             onClose();
             onDuplicate?.(p, acc);
+          }}
+          onDelete={(p) => {
+            onClose();
+            onDelete?.(p);
           }}
         />
       </RenderErrorBoundary>

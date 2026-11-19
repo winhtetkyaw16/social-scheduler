@@ -7,17 +7,104 @@ from uuid import UUID
 
 import httpx
 from fastapi import HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core import config
 from app.core.security import decrypt_token
 from app.integrations.platform_catalog import default_account_type
-from app.models.connected_account import OAuthPickSession
+from app.models.connected_account import ConnectedAccount, OAuthPickSession
 from app.services.accounts import (
     delete_pick_session,
     get_pick_session,
     upsert_oauth_account,
 )
+
+
+def list_destinations_for_picker(db: Session, user_id: UUID, session_id: UUID) -> dict:
+    """Destinations for the picker UI: marks already-connected ones and never returns tokens (read-only).
+
+    Stored tokens are refreshed only when the user presses Reconnect / Save (save_destinations with
+    refresh_existing=True), not just by opening the picker.
+    """
+    listed = list_destinations(db, user_id, session_id)
+    session = get_pick_session(db, user_id, session_id)
+    existing = _active_accounts(db, user_id)
+    public = []
+    for item in listed["destinations"]:
+        dest_platform = str(item.get("platform") or session.platform).strip().lower()
+        already = (dest_platform, str(item["id"])) in existing
+        public.append(
+            {
+                **{k: v for k, v in item.items() if k != "access_token"},
+                "already_connected": already,
+            }
+        )
+    return {**listed, "destinations": public}
+
+
+def _active_accounts(db: Session, user_id: UUID) -> set[tuple[str, str]]:
+    rows = db.execute(
+        select(ConnectedAccount.platform, ConnectedAccount.platform_account_id).where(
+            ConnectedAccount.user_id == user_id, ConnectedAccount.is_active.is_(True)
+        )
+    ).all()
+    return {(str(platform).lower(), str(account_id)) for platform, account_id in rows}
+
+
+def _store_destination(db: Session, user_id: UUID, session, item: dict, parent_id):
+    access_token = decrypt_token(session.access_token_ciphertext)
+    refresh = (
+        decrypt_token(session.refresh_token_ciphertext)
+        if session.refresh_token_ciphertext
+        else None
+    )
+    dest_platform = str(item.get("platform") or session.platform).strip().lower()
+    page_token = item.get("access_token")
+    # A distinct Page token was minted from the long-lived user token already
+    # stored on this pick session, so the Page token does not expire.
+    uses_page_token = (
+        dest_platform in {"facebook", "instagram"}
+        and isinstance(page_token, str)
+        and bool(page_token)
+        and page_token != access_token
+    )
+    extra = {
+        key: value
+        for key, value in item.items()
+        if key
+        not in {
+            "id",
+            "name",
+            "account_type",
+            "access_token",
+            "platform",
+            "already_connected",
+        }
+    }
+    if uses_page_token:
+        token_for_dest = page_token
+        dest_refresh = None
+        dest_expires = None
+        extra["token_lifetime"] = "non_expiring"
+    else:
+        token_for_dest = page_token or access_token
+        dest_refresh = refresh
+        dest_expires = session.token_expires_at
+    return upsert_oauth_account(
+        db,
+        user_id,
+        platform=dest_platform,
+        platform_account_id=item["id"],
+        account_name=item["name"],
+        account_type=item.get("account_type") or default_account_type(dest_platform),
+        parent_account_id=parent_id if dest_platform == session.platform else None,
+        access_token=token_for_dest,
+        refresh_token=dest_refresh,
+        token_expires_at=dest_expires,
+        scopes=list(session.scopes or []),
+        extra_metadata=extra,
+    )
 
 
 def list_destinations(db: Session, user_id: UUID, session_id: UUID) -> dict:
@@ -55,9 +142,15 @@ def list_destinations(db: Session, user_id: UUID, session_id: UUID) -> dict:
 
 
 def save_destinations(
-    db: Session, user_id: UUID, session_id: UUID, destination_ids: list[str]
+    db: Session,
+    user_id: UUID,
+    session_id: UUID,
+    destination_ids: list[str],
+    refresh_existing: bool = False,
 ) -> list:
-    if not destination_ids:
+    """Add the ticked destinations; with refresh_existing, also refresh tokens/scopes of already-connected ones."""
+    destination_ids = [str(item) for item in destination_ids or []]
+    if not destination_ids and not refresh_existing:
         raise HTTPException(
             status_code=422, detail="Select at least one destination to save."
         )
@@ -98,47 +191,20 @@ def save_destinations(
             extra_metadata=parent_meta,
         )
         parent_id = parent.id
-    for dest_id in destination_ids:
+    chosen = list(dict.fromkeys(destination_ids))
+    if refresh_existing:
+        existing = _active_accounts(db, user_id)
+        for item in listed["destinations"]:
+            dest_platform = (
+                str(item.get("platform") or session.platform).strip().lower()
+            )
+            if (dest_platform, str(item["id"])) in existing and str(
+                item["id"]
+            ) not in chosen:
+                chosen.append(str(item["id"]))
+    for dest_id in chosen:
         item = by_id[dest_id]
-        dest_platform = str(item.get("platform") or session.platform).strip().lower()
-        page_token = item.get("access_token")
-        # A distinct Page token was minted from the long-lived user token already
-        # stored on this pick session, so the Page token does not expire.
-        uses_page_token = (
-            dest_platform in {"facebook", "instagram"}
-            and isinstance(page_token, str)
-            and bool(page_token)
-            and page_token != access_token
-        )
-        extra = {
-            key: value
-            for key, value in item.items()
-            if key not in {"id", "name", "account_type", "access_token", "platform"}
-        }
-        if uses_page_token:
-            token_for_dest = page_token
-            dest_refresh = None
-            dest_expires = None
-            extra["token_lifetime"] = "non_expiring"
-        else:
-            token_for_dest = page_token or access_token
-            dest_refresh = refresh
-            dest_expires = session.token_expires_at
-        account = upsert_oauth_account(
-            db,
-            user_id,
-            platform=dest_platform,
-            platform_account_id=item["id"],
-            account_name=item["name"],
-            account_type=item.get("account_type")
-            or default_account_type(dest_platform),
-            parent_account_id=parent_id if dest_platform == session.platform else None,
-            access_token=token_for_dest,
-            refresh_token=dest_refresh,
-            token_expires_at=dest_expires,
-            scopes=list(session.scopes or []),
-            extra_metadata=extra,
-        )
+        account = _store_destination(db, user_id, session, item, parent_id)
         saved.append(account)
     delete_pick_session(db, session)
     return saved

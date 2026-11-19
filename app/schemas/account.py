@@ -178,4 +178,6 @@ class DestinationSave(BaseModel):
     """The pick session and the destination ids the user chose to save."""
 
     pick_session_id: UUID
-    destination_ids: list[str] = Field(min_length=1)
+    destination_ids: list[str] = Field(default_factory=list)
+    # Reconnect: also refresh tokens/scopes of destinations that are already connected.
+    refresh_existing: bool = False

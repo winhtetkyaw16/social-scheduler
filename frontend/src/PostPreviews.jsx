@@ -484,7 +484,6 @@ function InstagramPreview({ account, caption, capCls, media, format, igCrop, onI
   const photoIdx = urls.map((_, i) => i).filter((i) => !vids[i] && urls[i]);
   const fitted = photoIdx.some((i) => igNeedsCrop(nats[i], box));
   const pos = curVid ? "50% 50%" : igObjectPosition(igCrop?.offsets?.[keys[idx]]);
-  const [rl] = igRatioLabel(box);
   const label = view === "feed" ? igRatioLabel(box).join(" · ") : "9:16 · 1080×1920";
   const urlCount = urls.length;
   const fm = (k, txt, show = true) =>
@@ -530,7 +529,6 @@ function InstagramPreview({ account, caption, capCls, media, format, igCrop, onI
             <Play size={18} fill="currentColor" />
           </span>
         )}
-        {cur && <span className="ig-dim">{rl}</span>}
         {urlCount > 1 && (
           <span className="ig-ct">
             {idx + 1}/{urlCount}
@@ -560,7 +558,6 @@ function InstagramPreview({ account, caption, capCls, media, format, igCrop, onI
           {fm("reel", "Reel", hasVideo)}
           {fm("story", "Story")}
         </div>
-        <span className="igp-lbl">{label}</span>
       </div>
       {view === "feed" && (
         <>
@@ -781,10 +778,9 @@ function useCarousel(media) {
     hasVideo: vi >= 0,
   };
 }
-// Media box at a given ratio with ratio pill, 1/N badge, dots, optional duration badge.
+// Media box at a given ratio with 1/N badge, dots, optional duration badge.
 /** Carousel frame: media, counter, arrows, and an optional duration. `c` is useCarousel() state. */
-function CarouselFrame({ c, ratio, radius, inset, dur, pill = true }) {
-  const [rl] = sizeLabel(ratio);
+function CarouselFrame({ c, ratio, radius, inset, dur }) {
   return (
     <div
       className={`md cnv${inset ? " cpv-inset" : ""}`}
@@ -797,7 +793,6 @@ function CarouselFrame({ c, ratio, radius, inset, dur, pill = true }) {
           <Play size={18} fill="currentColor" />
         </span>
       )}
-      {c.cur && pill && <span className="ig-dim">{rl}</span>}
       {c.n > 1 && (
         <span className="ig-ct">
           {c.idx + 1}/{c.n}
@@ -874,7 +869,6 @@ function PreviewShell({ net, tabs, view, setView, label, foot, children }) {
         ) : (
           <b className="cpv-net">{net}</b>
         )}
-        <span className="igp-lbl">{label}</span>
       </div>
       {children}
       <p className="igp-cap">{foot || `${net} real proportions`}</p>

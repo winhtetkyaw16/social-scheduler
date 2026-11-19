@@ -6,6 +6,8 @@ import {
   meta,
   Avatar,
   AccountAvatar,
+  IdAvatar,
+  accountDisplayName,
   StatusBadge,
   Empty,
   PageHead,
@@ -16,7 +18,13 @@ import {
   postTitle,
   PLATFORM_META,
 } from "./ui.jsx";
-import { PostRowMenu, DeletePostModal, failedBannerText } from "./PostActions.jsx";
+import {
+  PostRowMenu,
+  DeletePostModal,
+  DeleteFailedToast,
+  failedBannerText,
+} from "./PostActions.jsx";
+import { publishedDeleteController } from "../publishedDelete.js";
 import markPng from "../assets/brand/socialcastly-mark-256.png";
 import lockupLight from "../assets/brand/socialcastly-lockup-light.png";
 import lockupDark from "../assets/brand/socialcastly-lockup-dark.png";
@@ -89,10 +97,10 @@ function PostRow({ post, account, onOpen, onRetry, onDelete }) {
         <span className="upnext-date">{when2.date}</span>
         {when2.time && <span className="upnext-time">{when2.time}</span>}
       </div>
-      <AccountAvatar account={account} size={36} />
+      <IdAvatar account={account} size={36} />
       <div className="body">
         <div className="row" style={{ gap: 8, marginBottom: 4 }}>
-          <b className="sm">{account?.account_name || account?.platform || "Account"}</b>
+          <b className="sm">{account ? accountDisplayName(account) : "Account"}</b>
           <StatusBadge status={post.status} post={post} />
         </div>
         <div className="txt">{post.content || "Untitled post"}</div>
@@ -126,6 +134,7 @@ function PostRow({ post, account, onOpen, onRetry, onDelete }) {
         )}
         <PostRowMenu
           post={post}
+          account={account}
           onEdit={() => onOpen?.()}
           onDelete={onDelete ? () => onDelete(post) : null}
         />
@@ -235,6 +244,20 @@ export function Dashboard({
 }) {
   const [range, setRange] = useState("week");
   const [deleting, setDeleting] = useState(null);
+  const [deleteFail, setDeleteFail] = useState(null);
+  const [retryingDelete, setRetryingDelete] = useState(false);
+  async function retryFailedDelete() {
+    if (!deleteFail || !request) return;
+    const { post, network } = deleteFail;
+    if (publishedDeleteController.isBusy(post.id)) return;
+    setRetryingDelete(true);
+    const result = await publishedDeleteController.run(request, post);
+    setRetryingDelete(false);
+    if (result.status === "ok") {
+      setDeleteFail(null);
+      onPostDeleted?.(post, { remote: true, network });
+    }
+  }
   const acc = new Map(accounts.map((a) => [a.id, a]));
   const now = new Date();
   const hour = now.getHours();
@@ -450,6 +473,14 @@ export function Dashboard({
           request={request}
           onClose={() => setDeleting(null)}
           onDeleted={(p, info) => onPostDeleted?.(p, info)}
+          onRemoteFailed={(post, network) => setDeleteFail({ post, network })}
+        />
+      )}
+      {deleteFail && (
+        <DeleteFailedToast
+          network={deleteFail.network}
+          busy={retryingDelete}
+          onTryAgain={retryFailedDelete}
         />
       )}
     </>

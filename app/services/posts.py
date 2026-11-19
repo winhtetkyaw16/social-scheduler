@@ -346,8 +346,13 @@ def _metadata_value(mapping: object, account_id: UUID, default):
     return mapping[key] if key in mapping else default
 
 
-def _caption_for_account(metadata: dict, account_id: UUID, fallback: str) -> str:
-    """Per-account caption when custom mode is on and this account opted out of the shared one."""
+def _caption_for_account(
+    metadata: dict, account_id: UUID, fallback: str, platform: str | None = None
+) -> str:
+    """Resolve the caption for one account: account -> network -> default.
+
+    Older posts have no ``captionsByNetwork`` key and keep resolving exactly as before.
+    """
     universal = metadata.get("caption")
     if not isinstance(universal, str):
         universal = fallback or ""
@@ -359,6 +364,12 @@ def _caption_for_account(metadata: dict, account_id: UUID, fallback: str) -> str
             custom = _metadata_value(metadata.get("captionsByAccount"), account_id, "")
             if isinstance(custom, str) and custom.strip():
                 return custom
+        by_network = metadata.get("captionsByNetwork")
+        if platform and isinstance(by_network, dict):
+            key = "x" if platform == "twitter" else platform
+            network = by_network.get(key, by_network.get(platform))
+            if isinstance(network, str) and network.strip():
+                return network
     return universal
 
 
@@ -526,7 +537,9 @@ def materialize_draft_posts(
         if existing is not None:
             created.append(existing)
             continue
-        content = _caption_for_account(metadata, account.id, item.content).strip()
+        content = _caption_for_account(
+            metadata, account.id, item.content, account.platform
+        ).strip()
         if not content:
             raise HTTPException(
                 status_code=422,

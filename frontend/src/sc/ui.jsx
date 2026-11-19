@@ -9,6 +9,7 @@ import {
   Inbox,
   Receipt,
 } from "lucide-react";
+import { facebookKind, realHandle } from "../pagePicker.js";
 import facebookGlyph from "../assets/logos/facebook-glyph.svg";
 import instagramGlyph from "../assets/logos/instagram-glyph.svg";
 import linkedinGlyph from "../assets/logos/linkedin-glyph.svg";
@@ -17,6 +18,7 @@ import threadsGlyph from "../assets/logos/threads-glyph.svg";
 import tiktokGlyph from "../assets/logos/tiktok-glyph.svg";
 import xGlyph from "../assets/logos/x-glyph.svg";
 import youtubeGlyph from "../assets/logos/youtube-glyph.svg";
+import { needsHandle, networkLabel } from "../accountCaptions.js";
 
 /** Channel app-icon tiles: white glyph on brand background, identical in light and dark. */
 export const PLATFORM_GLYPHS = {
@@ -154,6 +156,9 @@ export function accountDisplayName(account) {
 }
 export function accountHandle(account) {
   const meta = account?.extra_metadata || {};
+  // Facebook Pages/Groups have no handle unless the API returns one: show the muted kind instead of a made-up @name.
+  if (String(account?.platform || "").toLowerCase() === "facebook")
+    return realHandle(account) || facebookKind(account);
   const explicit =
     account?.username || meta.username || meta.screen_name || meta.handle || meta.vanity_url || "";
   const fromName = /\(@([^)]+)\)\s*$/.exec(String(account?.account_name || ""))?.[1] || "";
@@ -221,6 +226,53 @@ export function AccountAvatar({ account, size = 26 }) {
         src={resolveAvatarUrl(account) || undefined}
       />
       <ChannelTile platform={account?.platform} size="badge" className="ch ch-badge" />
+    </span>
+  );
+}
+/** Avatar with the network logo at the bottom-right (about half the avatar size, ringed by the surface). */
+export function IdAvatar({ account, size = 28 }) {
+  const badge = Math.max(12, Math.round(size * 0.5));
+  return (
+    <span className="idv" style={{ width: size, height: size }}>
+      <Avatar
+        name={accountDisplayName(account)}
+        size={size}
+        src={resolveAvatarUrl(account) || undefined}
+      />
+      <ChannelTile platform={account?.platform} size={badge} className="idv-b" />
+    </span>
+  );
+}
+/**
+ * One account identity used everywhere: avatar + network logo, the name, and a muted @handle
+ * when another account's name is the same or could be confused (handle="auto"), or always (handle={true}).
+ */
+export function AccountIdentity({
+  account,
+  all = [],
+  size = 28,
+  handle = "auto",
+  sub = null,
+  inline = false,
+  className = "",
+  title,
+}) {
+  const show = handle === true || (handle === "auto" && needsHandle(account, all));
+  const name = accountDisplayName(account);
+  return (
+    <span
+      className={`aid${inline ? " inl" : ""} ${className}`.trim()}
+      title={
+        title ??
+        `${name} \u00b7 ${accountHandle(account)} \u00b7 ${networkLabel(account?.platform)}`
+      }
+    >
+      <IdAvatar account={account} size={size} />
+      <span className="aid-t">
+        <b className="aid-n">{name}</b>
+        {show && <span className="aid-h">{accountHandle(account)}</span>}
+        {sub && <span className="aid-s">{sub}</span>}
+      </span>
     </span>
   );
 }

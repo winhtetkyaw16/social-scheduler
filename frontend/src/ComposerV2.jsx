@@ -14,6 +14,7 @@ import {
   Plus,
   Scissors,
   Settings2,
+  Info,
   Smile,
   Sparkles,
   SpellCheck,
@@ -21,7 +22,24 @@ import {
   X as XIcon,
   AlertCircle,
 } from "lucide-react";
-import { AccountAvatar, ChannelTile, accountDisplayName, resolveAvatarUrl } from "./sc/ui.jsx";
+import {
+  Avatar,
+  ChannelTile,
+  IdAvatar,
+  AccountIdentity,
+  accountDisplayName,
+  accountHandle,
+  resolveAvatarUrl,
+} from "./sc/ui.jsx";
+import {
+  groupByNetwork,
+  needsHandle,
+  usedForLine,
+  captionSource,
+  groupWarnings,
+  networkLabel,
+  networkNoun,
+} from "./accountCaptions.js";
 import EmojiPicker from "./EmojiPicker.jsx";
 import PublishBar from "./sc/PublishBar.jsx";
 import PostPreview from "./PostPreviews.jsx";
@@ -132,6 +150,8 @@ export default function ComposerV2(props) {
     setCaptionsByAccount,
     useUniversalCaptionByAccount,
     setUseUniversalCaptionByAccount,
+    captionsByNetwork = {},
+    setCaptionsByNetwork = () => {},
     captionForAccount,
     mediaForAccount,
     channelWarnings,
@@ -180,7 +200,9 @@ export default function ComposerV2(props) {
     applyMediaFix = () => ({ count: 0, undo() {} }),
     applyMediaAction = () => {},
   } = props;
-  const [tab, setTab] = useState("all");
+  const [tab, setTab] = useState("all"); // "all" or a network key (one caption tab per network)
+  const [sub, setSub] = useState({}); // network -> "net" | account id being edited inside that tab
+  const [custOpen, setCustOpen] = useState({});
   const [aiOpen, setAiOpen] = useState(false);
   const [tplOpen, setTplOpen] = useState(false);
   const [optsOpen, setOptsOpen] = useState(false);
@@ -198,37 +220,120 @@ export default function ComposerV2(props) {
   const fileInput = useRef(null);
   const busy = saving || uploadBusy || loadingAccounts;
   const active = accounts.filter((a) => a.is_active);
-  const tabAccount =
-    captionMode === "custom" && tab !== "all" ? selectedAccounts.find((a) => a.id === tab) : null;
+  const groups = useMemo(() => groupByNetwork(selectedAccounts), [selectedAccounts]);
+  const group =
+    captionMode === "custom" && tab !== "all"
+      ? groups.find((g) => g.platform === tab) || null
+      : null;
   useEffect(() => {
-    if (tab !== "all" && !selectedAccounts.some((a) => a.id === tab)) setTab("all");
-  }, [selectedAccounts, tab]);
+    if (tab !== "all" && !groups.some((g) => g.platform === tab)) setTab("all");
+  }, [groups, tab]);
   useEffect(() => {
     if (captionMode !== "custom") setTab("all");
   }, [captionMode]);
-
-  const value = tabAccount ? captionForAccount(tabAccount) : caption;
+  const cs = {
+    captionMode,
+    caption,
+    captionsByNetwork,
+    captionsByAccount,
+    useUniversalCaptionByAccount,
+  };
+  const isOwn = (a) => captionSource(cs, a) === "account";
+  const netCustom = (p) => captionMode === "custom" && typeof captionsByNetwork[p] === "string";
+  const isCustomized = (a) => captionSource(cs, a) !== "default";
+  // Which caption the editor writes inside a network tab: the network default ("net") or one account.
+  const subKey = (() => {
+    if (!group) return "";
+    if (group.accounts.length === 1) return isOwn(group.accounts[0]) ? group.accounts[0].id : "net";
+    const k = sub[group.platform];
+    return k && k !== "net" && group.accounts.some((a) => a.id === k) ? k : "net";
+  })();
+  const pillsOpen = Boolean(group) && (Boolean(custOpen[group.platform]) || subKey !== "net");
+  const tabAccount =
+    group && subKey !== "net" ? group.accounts.find((a) => a.id === subKey) || null : null;
+  const groupLabel = group ? networkLabel(group.platform) : "";
+  const tabUsesDefault =
+    Boolean(group) && (tabAccount ? !isOwn(tabAccount) : !netCustom(group.platform));
+  const value = tabAccount
+    ? captionForAccount(tabAccount)
+    : group
+      ? netCustom(group.platform)
+        ? captionsByNetwork[group.platform]
+        : caption
+      : caption;
   const setValue = (next) => {
-    if (!tabAccount) {
-      setCaption(typeof next === "function" ? next(caption) : next);
+    const resolved = typeof next === "function" ? next(value) : next;
+    if (!group) {
+      setCaption(resolved);
       return;
     }
-    const resolved = typeof next === "function" ? next(value) : next;
-    setUseUniversalCaptionByAccount((c) => ({ ...c, [tabAccount.id]: false }));
-    setCaptionsByAccount((c) => ({ ...c, [tabAccount.id]: resolved }));
+    if (tabUsesDefault && resolved === value) return;
+    if (tabAccount) {
+      setUseUniversalCaptionByAccount((c) => ({ ...c, [tabAccount.id]: false }));
+      setCaptionsByAccount((c) => ({ ...c, [tabAccount.id]: resolved }));
+    } else setCaptionsByNetwork((c) => ({ ...c, [group.platform]: resolved }));
   };
   const limitOf = (account) =>
     Math.min(channels.find((c) => c.id === account.platform)?.limit || maxChars, maxChars);
-  const strictest = useMemo(() => {
-    const pool = tabAccount ? [tabAccount] : selectedAccounts;
-    return pool.reduce((best, a) => (!best || limitOf(a) < limitOf(best) ? a : best), null);
-  }, [tabAccount, selectedAccounts]);
+  const pool = tabAccount ? [tabAccount] : group ? group.accounts : selectedAccounts;
+  const strictest = pool.reduce(
+    (best, a) => (!best || limitOf(a) < limitOf(best) ? a : best),
+    null,
+  );
   const limit = strictest ? limitOf(strictest) : maxChars;
   const len = value.length;
   const cntCls = len > limit ? "over" : len >= limit * 0.9 ? "warn" : "";
+  const netName = (a) => LABELS[a?.platform] || a?.platform || "";
+  // Red dot only for real problems: caption over this network's limit, or the channel needs a video.
+  const problemFor = (a) => {
+    const over = captionForAccount(a).length - limitOf(a);
+    if (over > 0)
+      return `${accountDisplayName(a)} (${netName(a)}) is ${over.toLocaleString()} characters over its ${limitOf(a).toLocaleString()} limit — shorten it${captionMode === "custom" ? "" : " or customize it per channel"}.`;
+    if (
+      channelWarnings.some(
+        (w) =>
+          w.account.id === a.id && /video/i.test(w.message) && /(needs|include)/i.test(w.message),
+      ) &&
+      !mediaForAccount(a).some(isVideo)
+    )
+      return `${accountDisplayName(a)} (${netName(a)}) needs a video — add one or turn it off.`;
+    return "";
+  };
+  function resetAccount(a) {
+    setUseUniversalCaptionByAccount((c) => ({ ...c, [a.id]: true }));
+    setCaptionsByAccount((c) => {
+      const next = { ...c };
+      delete next[a.id];
+      return next;
+    });
+  }
+  function resetNetwork(p) {
+    setCaptionsByNetwork((c) => {
+      const next = { ...c };
+      delete next[p];
+      return next;
+    });
+  }
+  function openTab(p) {
+    setTab(p);
+    if (p === "all") return;
+    const g = groups.find((x) => x.platform === p);
+    const acc = g?.accounts.find((a) => a.id === sub[p]) || g?.accounts[0];
+    if (acc) setPreviewId(acc.id);
+  }
+  function pickSub(p, k) {
+    setSub((c) => ({ ...c, [p]: k }));
+    if (k !== "net") setPreviewId(k);
+  }
+  const sameCount = selectedAccounts.length;
+  const tabProblem = tabAccount
+    ? problemFor(tabAccount)
+    : group
+      ? group.accounts.map(problemFor).find(Boolean) || ""
+      : "";
+  const warnGroups = groupWarnings(channelWarnings, selectedAccounts.length);
   const mediaRow = (id) => mediaReport.find((r) => r.account.id === id);
-  const warnFor = (id) =>
-    channelWarnings.some((w) => w.account.id === id) || !!mediaRow(id)?.check.problems.length;
+  const mediaTargets = tabAccount ? [tabAccount] : group ? group.accounts : [];
   const summary = useMemo(
     () =>
       summarize(
@@ -375,6 +480,7 @@ export default function ComposerV2(props) {
             <div className="c2-chips" aria-label="Publish to">
               {active.map((a) => {
                 const on = selectedIds.includes(a.id);
+                const hd = needsHandle(a, active);
                 return (
                   <button
                     type="button"
@@ -382,14 +488,13 @@ export default function ComposerV2(props) {
                     className={`chip2 ${on ? "on" : ""}`}
                     aria-pressed={on}
                     onClick={() => toggleAccount(a.id)}
-                    title={a.account_name || LABELS[a.platform]}
+                    title={`${accountDisplayName(a)} · ${accountHandle(a)} · ${netName(a)}`}
                   >
-                    {resolveAvatarUrl(a) ? (
-                      <AccountAvatar account={a} size={24} />
-                    ) : (
-                      <ChannelTile platform={a.platform} size={24} />
-                    )}
-                    <span className="nm">{accountDisplayName(a)}</span>
+                    <IdAvatar account={a} size={24} />
+                    <span className="nm">
+                      {accountDisplayName(a)}
+                      {hd && <span className="hd">{accountHandle(a)}</span>}
+                    </span>
                     {on && (
                       <span className="ck">
                         <Check size={9} strokeWidth={3.5} />
@@ -440,73 +545,247 @@ export default function ComposerV2(props) {
               />
             )}
             <div className="ed">
-              {captionMode === "custom" && selectedAccounts.length > 0 && (
-                <div className="ctabs" role="tablist">
+              {captionMode === "custom" && groups.length > 0 && (
+                <div className="ctabs" role="tablist" aria-label="Caption per network">
                   <a
                     role="tab"
+                    aria-selected={tab === "all"}
+                    tabIndex={0}
                     className={tab === "all" ? "active" : ""}
-                    onClick={() => setTab("all")}
+                    onClick={() => openTab("all")}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        openTab("all");
+                      }
+                    }}
                   >
                     <LayoutGrid size={15} />
-                    All
+                    Default
                   </a>
-                  {selectedAccounts.map((a) => (
+                  {groups.map((g) => {
+                    const p = g.platform;
+                    const n = g.accounts.length;
+                    const lbl = networkLabel(p);
+                    const prob =
+                      g.accounts.map(problemFor).find(Boolean) ||
+                      (g.accounts.some((a) => mediaRow(a.id)?.check.problems.length)
+                        ? "media"
+                        : "");
+                    const custom = netCustom(p) || g.accounts.some(isOwn);
+                    return (
+                      <a
+                        role="tab"
+                        aria-selected={tab === p}
+                        tabIndex={0}
+                        key={p}
+                        className={tab === p ? "active" : ""}
+                        onClick={() => openTab(p)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            openTab(p);
+                          }
+                        }}
+                        title={
+                          prob ||
+                          (custom
+                            ? `Custom caption for ${lbl}`
+                            : n > 1
+                              ? `${usedForLine(p, n)}. Uses the default caption.`
+                              : `${lbl} uses the default caption`)
+                        }
+                      >
+                        <ChannelTile platform={p} size={18} />
+                        {lbl}
+                        {n > 1 && (
+                          <>
+                            <span className="cn">· {n}</span>
+                            <span className="stk" aria-hidden="true">
+                              {g.accounts.slice(0, 3).map((a) => (
+                                <Avatar
+                                  key={a.id}
+                                  name={accountDisplayName(a)}
+                                  size={16}
+                                  src={resolveAvatarUrl(a) || undefined}
+                                />
+                              ))}
+                            </span>
+                          </>
+                        )}
+                        {prob ? (
+                          <span className="dt e" aria-label="Needs attention" />
+                        ) : custom ? (
+                          <span className="dt f" aria-label="Customized" />
+                        ) : (
+                          <>
+                            <span className="dt h" aria-hidden="true" />
+                            <span className="st">Default</span>
+                          </>
+                        )}
+                      </a>
+                    );
+                  })}
+                </div>
+              )}
+              {group && group.accounts.length > 1 && (
+                <div className="netl">
+                  <span className="stk" aria-hidden="true">
+                    {group.accounts.slice(0, 3).map((a) => (
+                      <Avatar
+                        key={a.id}
+                        name={accountDisplayName(a)}
+                        size={16}
+                        src={resolveAvatarUrl(a) || undefined}
+                      />
+                    ))}
+                  </span>
+                  <span className="grow">{usedForLine(group.platform, group.accounts.length)}</span>
+                  <button
+                    type="button"
+                    className="cust"
+                    aria-expanded={pillsOpen}
+                    onClick={() => {
+                      setCustOpen((c) => ({ ...c, [group.platform]: !pillsOpen }));
+                      if (pillsOpen) pickSub(group.platform, "net");
+                    }}
+                  >
+                    {pillsOpen ? "Use one caption for all" : "Customize for this account"}
+                  </button>
+                </div>
+              )}
+              {group && group.accounts.length > 1 && pillsOpen && (
+                <div
+                  className="subp"
+                  role="tablist"
+                  aria-label={`Caption for each ${groupLabel} ${networkNoun(group.platform, 1)}`}
+                >
+                  <a
+                    role="tab"
+                    tabIndex={0}
+                    aria-selected={subKey === "net"}
+                    className={subKey === "net" ? "on" : ""}
+                    onClick={() => pickSub(group.platform, "net")}
+                  >
+                    {groupLabel} default
+                  </a>
+                  {group.accounts.map((a) => (
                     <a
                       role="tab"
+                      tabIndex={0}
                       key={a.id}
-                      className={tab === a.id ? "active" : ""}
-                      onClick={() => {
-                        setTab(a.id);
-                        setPreviewId(a.id);
-                      }}
+                      aria-selected={subKey === a.id}
+                      className={subKey === a.id ? "on" : ""}
+                      onClick={() => pickSub(group.platform, a.id)}
+                      title={
+                        isOwn(a)
+                          ? `Custom caption for ${accountDisplayName(a)}`
+                          : `Uses your ${groupLabel} default`
+                      }
                     >
-                      <ChannelTile platform={a.platform} size={18} />
-                      {LABELS[a.platform] || a.platform}
-                      {selectedAccounts.length > 0 && (
-                        <span
-                          className={`dot ${warnFor(a.id) ? "bad" : "ok"}`}
-                          title={warnFor(a.id) ? "Needs attention" : "Ready"}
-                        />
+                      <span
+                        className={`dt ${isOwn(a) ? "f" : "h"}`}
+                        aria-label={isOwn(a) ? "Has its own caption" : "Uses the network default"}
+                      />
+                      {accountDisplayName(a)}
+                      {needsHandle(a, group.accounts) && (
+                        <span className="hd">{accountHandle(a)}</span>
                       )}
                     </a>
                   ))}
                 </div>
               )}
+              {group &&
+                (tabAccount ? (
+                  tabUsesDefault ? (
+                    <div className="uban">
+                      <Info size={14} />
+                      Using your {groupLabel} default. Start typing to customize for{" "}
+                      {accountDisplayName(tabAccount)}.
+                    </div>
+                  ) : (
+                    <div className="edh">
+                      <span>Custom caption for {accountDisplayName(tabAccount)}</span>
+                      <button type="button" className="rs" onClick={() => resetAccount(tabAccount)}>
+                        Reset to {groupLabel} default
+                      </button>
+                    </div>
+                  )
+                ) : tabUsesDefault ? (
+                  <div className="uban">
+                    <Info size={14} />
+                    Using your default caption. Start typing to customize for {groupLabel}.
+                  </div>
+                ) : (
+                  <div className="edh">
+                    <span>Custom caption for {groupLabel}</span>
+                    <button
+                      type="button"
+                      className="rs"
+                      onClick={() => resetNetwork(group.platform)}
+                    >
+                      Reset to default
+                    </button>
+                  </div>
+                ))}
+              {captionMode === "custom" && groups.length > 0 && !group && (
+                <div className="edh">
+                  <span>Used for any channel you don't customize</span>
+                </div>
+              )}
               <textarea
                 ref={textarea}
+                className={tabUsesDefault ? "is-default" : ""}
                 value={value}
                 onChange={(e) => setValue(e.target.value)}
                 rows={7}
                 placeholder={
                   tabAccount
-                    ? `Write a caption for ${LABELS[tabAccount.platform]}…`
-                    : "What do you want to share?"
+                    ? `Write a caption for ${accountDisplayName(tabAccount)}…`
+                    : group
+                      ? `Write a caption for ${groupLabel}…`
+                      : "What do you want to share?"
                 }
-                aria-label="Caption"
+                aria-label={
+                  tabAccount
+                    ? `Caption for ${accountDisplayName(tabAccount)} (${groupLabel})`
+                    : group
+                      ? `Caption for ${groupLabel}`
+                      : "Caption"
+                }
               />
-              {tabAccount && sharedMedia.length > 0 ? (
+              {mediaTargets.length > 0 && sharedMedia.length > 0 ? (
                 (() => {
-                  const row = mediaRow(tabAccount.id);
+                  const lead = mediaTargets[0];
+                  const row = mediaRow(lead.id);
                   const on = new Set((row?.indices || []).map((i) => mediaKeyOf(sharedMedia[i])));
-                  const picked = Array.isArray(mediaSelectionByAccount[tabAccount.id]);
+                  const picked = mediaTargets.some((a) =>
+                    Array.isArray(mediaSelectionByAccount[a.id]),
+                  );
                   const toggle = (item) => {
                     const mediaKey = mediaKeyOf(item);
                     const next = sharedMedia
                       .map(mediaKeyOf)
                       .filter((x) => (x === mediaKey ? !on.has(x) : on.has(x)));
-                    setAccountMediaKeys(tabAccount.id, next);
+                    mediaTargets.forEach((a) => setAccountMediaKeys(a.id, next));
                   };
                   return (
                     <div className="mst">
                       <div className="mh">
                         <span className="sm muted">
-                          Media for {nameOf(tabAccount)} · tap to include or leave out
+                          Media for {tabAccount ? accountDisplayName(tabAccount) : nameOf(lead)}
+                          {!tabAccount && mediaTargets.length > 1
+                            ? ` (all ${mediaTargets.length})`
+                            : ""}{" "}
+                          · tap to include or leave out
                         </span>
                         {picked && (
                           <button
                             type="button"
                             className="btn btn-ghost btn-sm"
-                            onClick={() => setAccountMediaKeys(tabAccount.id, null)}
+                            onClick={() =>
+                              mediaTargets.forEach((a) => setAccountMediaKeys(a.id, null))
+                            }
                           >
                             Reset to default
                           </button>
@@ -705,7 +984,9 @@ export default function ComposerV2(props) {
                   className={`cnt ${cntCls}`}
                   title={
                     strictest
-                      ? `${LABELS[strictest.platform]} limit (strictest selected)`
+                      ? tabAccount || group
+                        ? `${netName(strictest)} limit`
+                        : `${netName(strictest)} limit (strictest selected)`
                       : "Character count"
                   }
                 >
@@ -714,7 +995,26 @@ export default function ComposerV2(props) {
                 </span>
               </div>
             </div>
-            {strictest && cntCls && !tabAccount && (
+            {!group && strictest && selectedAccounts.length > 1 && (
+              <p className="c2-lim">{netName(strictest)} has the shortest limit</p>
+            )}
+            {tabProblem && (
+              <p className="c2-hint over" role="status">
+                <AlertCircle size={14} />
+                {tabProblem}
+              </p>
+            )}
+            {captionMode !== "custom" && sameCount > 0 && (
+              <div className="c2-sline">
+                <span className="ics">
+                  {selectedAccounts.map((a) => (
+                    <ChannelTile key={a.id} platform={a.platform} size={14} />
+                  ))}
+                </span>
+                Posting the same caption to {sameCount} channel{sameCount === 1 ? "" : "s"}
+              </div>
+            )}
+            {strictest && cntCls && !group && (
               <p className={`c2-hint ${cntCls}`}>
                 <AlertCircle size={14} />
                 {len > limit
@@ -726,7 +1026,7 @@ export default function ComposerV2(props) {
                     <a
                       onClick={() => {
                         changeCaptionMode("custom");
-                        setTab(xAcc.id);
+                        setTab("x");
                         setPreviewId(xAcc.id);
                       }}
                     >
@@ -752,24 +1052,51 @@ export default function ComposerV2(props) {
                   />
                 </button>
                 {optsOpen && (
-                  <div className="c2-opts-l">
-                    {selectedAccounts.map((a) => (
-                      <div key={a.id} className="row" style={{ gap: 8 }}>
-                        <ChannelTile platform={a.platform} size={18} />
-                        <span className="sm grow">{a.account_name || LABELS[a.platform]}</span>
-                        <ChannelFormatSelector
-                          account={a}
-                          format={formatForAccount(a)}
-                          automatic={!formatOverridesByAccount[a.id]}
-                          onSelect={(f) => setAccountFormat(a.id, f)}
-                        />
-                        <PlatformSettingsPopover
-                          account={a}
-                          settings={platformSettingsByAccount[a.id] || {}}
-                          onChange={setPlatformSetting}
-                          open={settingsOpen === a.id}
-                          onToggle={() => setSettingsOpen((c) => (c === a.id ? "" : a.id))}
-                        />
+                  <div className="co">
+                    <p className="co-note">
+                      Format is picked for you from your media. Change it any time.
+                    </p>
+                    <div className="co-r co-hd" aria-hidden="true">
+                      <span>Account</span>
+                      <span>Format</span>
+                      <span />
+                    </div>
+                    {groups.map((g) => (
+                      <div
+                        key={g.platform}
+                        className="co-g"
+                        role="group"
+                        aria-label={networkLabel(g.platform)}
+                      >
+                        {g.accounts.length > 1 && (
+                          <div className="gh">
+                            <ChannelTile platform={g.platform} size={14} />
+                            {networkLabel(g.platform)}
+                            <span className="cn">· {g.accounts.length}</span>
+                          </div>
+                        )}
+                        {g.accounts.map((a) => (
+                          <div key={a.id} className="co-r">
+                            <span className="co-a">
+                              <AccountIdentity account={a} size={28} handle={true} />
+                              {isCustomized(a) && <span className="tag">Custom caption</span>}
+                            </span>
+                            <ChannelFormatSelector
+                              variant="plain"
+                              account={a}
+                              format={formatForAccount(a)}
+                              onSelect={(f) => setAccountFormat(a.id, f)}
+                            />
+                            <PlatformSettingsPopover
+                              compact
+                              account={a}
+                              settings={platformSettingsByAccount[a.id] || {}}
+                              onChange={setPlatformSetting}
+                              open={settingsOpen === a.id}
+                              onToggle={() => setSettingsOpen((c) => (c === a.id ? "" : a.id))}
+                            />
+                          </div>
+                        ))}
                       </div>
                     ))}
                   </div>
@@ -879,7 +1206,7 @@ export default function ComposerV2(props) {
               onApply={applyFix}
               onAddMedia={() => fileInput.current?.click()}
               nameOf={(a) => accountDisplayName(a)}
-              renderAvatar={(a) => <AccountAvatar account={a} size={36} />}
+              renderAvatar={(a) => <IdAvatar account={a} size={36} />}
             />
           )}
           {mtoast && (
@@ -906,19 +1233,23 @@ export default function ComposerV2(props) {
               </button>
             </div>
           )}
-          {channelWarnings.length > 0 && (
-            <div className="c2-blockers" role="alert">
-              {channelWarnings.map((w, i) => (
-                <p key={`${w.account.id}-${i}`} className="c2-hint over">
-                  <AlertCircle size={14} />
-                  <span>
-                    <b>
-                      {LABELS[w.account.platform] || w.account.platform}
-                      {w.account.account_name ? ` · ${w.account.account_name}` : ""}:
-                    </b>{" "}
-                    {w.message}
+          {warnGroups.length > 0 && (
+            <div className="c2-blockers gerr-l" role="alert">
+              {warnGroups.map((g) => (
+                <div key={g.key} className="gerr">
+                  <span className="bang" aria-hidden="true">
+                    !
                   </span>
-                </p>
+                  <span className="gerr-t">
+                    <b>{g.title}</b>
+                    {g.detail && <span className="xs subtle">{g.detail}</span>}
+                  </span>
+                  <span className="stk">
+                    {g.accounts.slice(0, 4).map((a) => (
+                      <IdAvatar key={a.id} account={a} size={22} />
+                    ))}
+                  </span>
+                </div>
               ))}
             </div>
           )}
@@ -928,7 +1259,10 @@ export default function ComposerV2(props) {
                 <p key={`n-${w.account.id}-${i}`} className="c2-hint warn">
                   <AlertCircle size={14} />
                   <span>
-                    <b>{LABELS[w.account.platform] || w.account.platform}:</b> {w.message}
+                    <b>
+                      {accountDisplayName(w.account)} ({netName(w.account)}):
+                    </b>{" "}
+                    {w.message}
                   </span>
                 </p>
               ))}
@@ -961,21 +1295,35 @@ export default function ComposerV2(props) {
         <aside className="c2-pv">
           {selectedAccounts.length ? (
             <>
-              <div className="pvh" role="tablist">
-                {selectedAccounts.map((account) => (
-                  <a
-                    role="tab"
-                    key={account.id}
-                    className={previewAccount?.id === account.id ? "active" : ""}
-                    onClick={() => setPreviewId(account.id)}
-                    title={account.account_name}
-                  >
-                    <ChannelTile platform={account.platform} size={18} />
-                    <span className={previewAccount?.id === account.id ? "" : "sr-only"}>
-                      {LABELS[account.platform]}
-                    </span>
-                  </a>
-                ))}
+              <div className="apv" role="tablist" aria-label="Preview account">
+                {selectedAccounts.map((a) => {
+                  const on = previewAccount?.id === a.id;
+                  return (
+                    <a
+                      role="tab"
+                      aria-selected={on}
+                      tabIndex={0}
+                      key={a.id}
+                      className={on ? "on" : ""}
+                      onClick={() => setPreviewId(a.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          setPreviewId(a.id);
+                        }
+                      }}
+                      aria-label={`${accountDisplayName(a)} ${accountHandle(a)} on ${netName(a)}`}
+                    >
+                      <IdAvatar account={a} size={28} />
+                      <span className="tip" role="tooltip">
+                        <b>{accountDisplayName(a)}</b>
+                        <span>
+                          {accountHandle(a)} · {netName(a)}
+                        </span>
+                      </span>
+                    </a>
+                  );
+                })}
               </div>
               {previewAccount && (
                 <PostPreview

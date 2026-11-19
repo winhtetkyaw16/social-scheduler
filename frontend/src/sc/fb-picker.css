@@ -1,0 +1,67 @@
+/* Post-OAuth destination picker ("Choose Facebook Pages"). Desktop modal / mobile bottom sheet. */
+.scd .fbp-wrap{position:fixed;inset:0;z-index:90;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:24px;overscroll-behavior:contain;touch-action:none}
+.scd .fbp{width:480px;max-width:100%;max-height:calc(100vh - 48px);display:flex;flex-direction:column;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:16px;box-shadow:0 24px 60px rgba(0,0,0,.35);overflow:hidden;touch-action:auto;transition:transform .18s ease}
+.scd .fbp-h{display:flex;align-items:flex-start;gap:12px;padding:20px 16px 14px 20px;border-bottom:1px solid var(--border)}
+.scd .fbp-ht{flex:1;min-width:0}
+.scd .fbp-ht h2{margin:2px 0 4px;font-size:18px;line-height:1.25;font-weight:700}
+.scd .fbp-ht p{margin:0}
+.scd .fbp-mark{flex:none}
+.scd .fbp-mark.cht-facebook,.scd .fbp-empty .cht-facebook{background:#1877F2!important}
+.scd .fbp-b{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding:8px 12px 6px}
+.scd .fbp-selall{background:none;border:0;padding:4px 8px 8px;font-size:13px;font-weight:600;color:var(--text);text-decoration:underline;text-underline-offset:2px;cursor:pointer}
+.scd .fbp-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px}
+.scd .fbp-row{display:flex;align-items:center;gap:12px;min-height:64px;padding:10px 12px;border-radius:12px;border:1.5px solid transparent;cursor:pointer;outline:none;transition:background .12s,border-color .12s}
+.scd .fbp-row:hover{background:var(--surface-2)}
+.scd .fbp-row:focus-visible{box-shadow:0 0 0 3px rgba(79,70,229,.25)}
+.scd .fbp-row.on{border-color:var(--border-strong);background:var(--surface-2)}
+.scd .fbp-row.dis{cursor:default;opacity:.72}.scd .fbp-row.dis:hover{background:transparent}
+.scd .fbp-t{flex:1;min-width:0;display:flex;flex-direction:column}
+.scd .fbp-n{font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.scd .fbp-s{font-size:12px;color:var(--text-3);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.scd .fbp-tag{font-size:12px;color:var(--text-3);flex:none}
+.scd .fbp-ck{width:20px;height:20px;flex:none;border-radius:6px;border:1.5px solid var(--border-strong);background:var(--surface);display:grid;place-items:center}
+.scd .fbp-row.on .fbp-ck{background:var(--text);border-color:var(--text);color:var(--surface)}
+.scd .fbp-f{position:sticky;bottom:0;display:flex;align-items:center;gap:8px;padding:14px 20px;border-top:1px solid var(--border);background:var(--surface)}
+.scd .fbp-count{flex:1}
+.scd .fbp-add:disabled{opacity:.5;cursor:not-allowed;pointer-events:none}
+.scd .fbp-state{display:flex;align-items:center;justify-content:center;gap:8px;padding:40px 0}
+.scd .fbp-empty{display:flex;flex-direction:column;align-items:center;text-align:center;gap:10px;padding:28px 24px 20px}
+.scd .fbp-empty h3{margin:4px 0 0;font-size:16px;font-weight:700}
+.scd .fbp-empty p{margin:0;max-width:320px}
+.scd .fbp-link{color:var(--text);font-weight:600;text-decoration:underline;text-underline-offset:2px}
+.scd .fbp-err{color:#B91C1C}html.dark .scd .fbp-err,.scd.dark .fbp-err{color:#FCA5A5}
+.scd .fbp-err-inline{margin:0;padding:6px 20px}
+/* Dark: raised surface + border, not pure black. */
+html.dark .scd .fbp,.scd.dark .fbp{background:var(--surface);border-color:var(--border-strong);box-shadow:0 24px 60px rgba(0,0,0,.6)}
+html.dark .scd .fbp-wrap,.scd.dark .fbp-wrap{background:rgba(2,6,23,.65)}
+/* Mobile bottom sheet. */
+.scd .fbp-wrap.m{align-items:flex-end;padding:0}
+.scd .fbp-wrap.m .fbp{width:100%;max-height:92vh;border-radius:18px 18px 0 0;border-bottom:0}
+.scd .fbp-grab{padding:8px 0 2px;display:flex;justify-content:center;touch-action:none;cursor:grab}
+.scd .fbp-grab i{width:40px;height:4px;border-radius:9px;background:var(--border-strong)}
+.scd .fbp-wrap.m .fbp-h{padding:10px 12px 12px 16px;touch-action:none}
+.scd .fbp-wrap.m .fbp-ht h2{font-size:17px}
+.scd .fbp-wrap.m .fbp-f{flex-direction:column;align-items:stretch;padding:12px 16px calc(14px + env(safe-area-inset-bottom))}
+.scd .fbp-wrap.m .fbp-f .btn{width:100%;justify-content:center;height:44px}
+.scd .fbp-wrap.m .fbp-count{text-align:center;order:-1}
+/* Reconnect mode: existing Pages read "Connected" with a checked, disabled box; the re-authed Page is highlighted. */
+.scd .fbp-row.conn{opacity:1;color:var(--text-2)}
+.scd .fbp-row.conn .fbp-n{color:var(--text-2)}
+.scd .fbp-ck.fbp-ck-on{background:var(--text-3);border-color:var(--text-3);color:var(--surface);opacity:.75}
+.scd .fbp-row.hl{border-color:var(--border-strong);background:var(--surface-2)}
+.scd .fbp-row.hl .fbp-n{color:var(--text)}
+.scd .fbp-note{margin:8px 8px 4px;text-align:center}
+/* Close (x): plain icon, no box border. Hover keeps the ghost background; keyboard-only ring on :focus-visible. */
+.scd .fbp-x{border:0;outline:none;box-shadow:none;background:transparent}
+.scd .fbp-x:hover{background:var(--surface-2)}
+.scd .fbp-x:focus{border:0;outline:none;box-shadow:none}
+.scd .fbp-x:focus-visible{outline:none;box-shadow:0 0 0 3px rgba(79,70,229,.25)}
+html.dark .scd .fbp-x:focus-visible,.scd.dark .fbp-x:focus-visible{box-shadow:0 0 0 3px rgba(129,140,248,.4)}
+/* Pre-OAuth Connect / Reconnect intro (narrower sheet, no header rule, plain bullets). */
+.scd .fbp-intro{width:440px}
+.scd .fbp-intro .fbp-h{border-bottom:0;padding-bottom:0}
+.scd .fbp-intro .fbp-b{padding:14px 20px 8px}
+.scd .fbp-bul{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px}
+.scd .fbp-bul li{display:flex;gap:10px;align-items:flex-start;font-size:13px;color:var(--text-2);line-height:1.4}
+.scd .fbp-bul li i{width:6px;height:6px;border-radius:99px;background:var(--text-3);margin-top:6px;flex:none;display:block;font-style:normal}
+.scd .fbp-stay{margin:12px 0 0;font-size:12px;color:var(--text-3);line-height:1.4}

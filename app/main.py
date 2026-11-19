@@ -1,4 +1,4 @@
-"""FastAPI application setup, lifecycle hooks, and frontend mounting."""
+﻿"""FastAPI application setup, lifecycle hooks, and frontend mounting."""
 
 import logging
 import re
@@ -201,3 +201,27 @@ async def handle_database_error(
         status_code=500,
         content={"detail": "A database operation failed. Please try again."},
     )
+
+
+_CHARSET_TYPES = (
+    "text/html",
+    "application/json",
+    "text/plain",
+    "text/css",
+    "application/javascript",
+    "text/javascript",
+)
+
+
+@app.middleware("http")
+async def ensure_utf8_charset(request: Request, call_next):
+    """Declare UTF-8 on text responses so browsers never mis-decode them ."""
+    response = await call_next(request)
+    content_type = response.headers.get("content-type")
+    if (
+        content_type
+        and "charset" not in content_type.lower()
+        and content_type.split(";")[0].strip().lower() in _CHARSET_TYPES
+    ):
+        response.headers["content-type"] = f"{content_type}; charset=utf-8"
+    return response

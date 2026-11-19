@@ -153,9 +153,30 @@ function ChannelFileThumb({ file, onRemove, onEdit, onDragStart, onDragOver, onD
   );
 }
 
-export function ChannelFormatSelector({ account, format, automatic, onSelect }) {
+export function ChannelFormatSelector({ account, format, automatic, onSelect, variant }) {
   const options = formatOptions(account?.platform);
   const known = options.some((option) => option.value === format);
+  const value = known ? format : format || options[0]?.value || "Post";
+  const unknownOption =
+    !known && format ? <option value={format}>{format} (not available)</option> : null;
+  // "plain": compact select for the Channel options table (no AUTO/CUSTOM badge).
+  if (variant === "plain")
+    return (
+      <label className="co-sel">
+        <span className="sr-only">
+          Format for {account?.account_name || CHANNEL_UI[account?.platform]?.label || "channel"}
+        </span>
+        <select className="sel" value={value} onChange={(event) => onSelect?.(event.target.value)}>
+          {unknownOption}
+          {options.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        <ChevronDown aria-hidden="true" size={12} />
+      </label>
+    );
   return (
     <label className="inline-flex shrink-0 items-center gap-1.5 text-xs font-bold text-slate-500">
       <span className="sr-only">
@@ -163,11 +184,11 @@ export function ChannelFormatSelector({ account, format, automatic, onSelect }) 
       </span>
       <span className="relative block">
         <select
-          value={known ? format : format || options[0]?.value || "Post"}
+          value={value}
           onChange={(event) => onSelect?.(event.target.value)}
           className="max-w-[132px] appearance-none rounded-xl border border-slate-200/80 bg-white/90 py-2 pl-3 pr-8 text-xs font-bold text-slate-700 shadow-sm outline-none backdrop-blur-md transition focus:border-indigo-400 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-900/90 dark:text-slate-200"
         >
-          {!known && format ? <option value={format}>{format} (not available)</option> : null}
+          {unknownOption}
           {options.map((option) => (
             <option key={option.value} value={option.value}>
               {option.label}
@@ -237,7 +258,14 @@ const MEDIA_LAYOUT_OPTIONS = {
   ],
 };
 
-export function PlatformSettingsPopover({ account, settings = {}, onChange, open, onToggle }) {
+export function PlatformSettingsPopover({
+  account,
+  settings = {},
+  onChange,
+  open,
+  onToggle,
+  compact = false,
+}) {
   const triggerRef = useRef(null);
   const panelRef = useRef(null);
   const [position, setPosition] = useState({ top: 12, left: 12, ready: false });
@@ -527,17 +555,32 @@ export function PlatformSettingsPopover({ account, settings = {}, onChange, open
 
   return (
     <>
-      <button
-        ref={triggerRef}
-        type="button"
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        onClick={onToggle}
-        className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-bold shadow-sm backdrop-blur-md transition focus:outline-none focus:ring-4 focus:ring-indigo-500/10 ${open ? "border-indigo-300 bg-indigo-50/90 text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950/80 dark:text-indigo-200" : "border-slate-200/80 bg-white/90 text-slate-600 hover:border-indigo-300 hover:text-indigo-700 dark:border-slate-700 dark:bg-slate-900/90 dark:text-slate-300"}`}
-      >
-        <Settings2 size={12} />
-        Platform settings
-      </button>
+      {compact ? (
+        <button
+          ref={triggerRef}
+          type="button"
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          onClick={onToggle}
+          className={`co-gear${open ? " on" : ""}`}
+          title="Settings for this account"
+          aria-label={`Settings for ${account?.account_name || "this account"}`}
+        >
+          <Settings2 size={15} />
+        </button>
+      ) : (
+        <button
+          ref={triggerRef}
+          type="button"
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          onClick={onToggle}
+          className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-bold shadow-sm backdrop-blur-md transition focus:outline-none focus:ring-4 focus:ring-indigo-500/10 ${open ? "border-indigo-300 bg-indigo-50/90 text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950/80 dark:text-indigo-200" : "border-slate-200/80 bg-white/90 text-slate-600 hover:border-indigo-300 hover:text-indigo-700 dark:border-slate-700 dark:bg-slate-900/90 dark:text-slate-300"}`}
+        >
+          <Settings2 size={12} />
+          Platform settings
+        </button>
+      )}
       {open &&
         typeof document !== "undefined" &&
         createPortal(

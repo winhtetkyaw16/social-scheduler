@@ -13,3 +13,7 @@ dist/
 .pip-tmp/
 .ruff-tool/
 frontend/static/uploads/
+
+# Local-only files - do not commit
+_run_api.py
+frontend/src/PublishSection.jsx.win-local

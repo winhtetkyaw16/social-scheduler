@@ -7,7 +7,8 @@ from uuid import uuid4
 
 from cryptography.fernet import Fernet
 
-_db_path = Path(tempfile.mkdtemp(prefix="social-scheduler-tests-")) / "test.db"
+_test_db_directory = tempfile.TemporaryDirectory(prefix="social-scheduler-tests-")
+_db_path = Path(_test_db_directory.name) / "test.db"
 os.environ["DATABASE_URL"] = f"sqlite:///{_db_path}"
 os.environ["SECRET_KEY"] = "test-secret-key-please-change-32b"
 os.environ["TOKEN_ENCRYPTION_KEY"] = Fernet.generate_key().decode()
@@ -39,6 +40,14 @@ import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from app.main import app  # noqa: E402
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """Close pooled connections and remove this run's temporary database."""
+    from app.db.session import engine
+
+    engine.dispose()
+    _test_db_directory.cleanup()
 
 
 @pytest.fixture()

@@ -262,6 +262,11 @@ def publish_post_task(post_id: str, post_format: str | None = None) -> dict[str,
             db.refresh(post)
             post.status = "published"
             post.provider_post_id = result.post_id
+            if account.platform == "facebook" and result.object_id:
+                metadata = dict(post.post_metadata or {})
+                metadata["facebook_object_id"] = result.object_id
+                metadata["facebook_object_type"] = result.object_type
+                post.post_metadata = metadata
             post.published_at = datetime.now(timezone.utc)
             post.last_error_code = post.last_error_message = None
             log.outcome, log.finished_at = "succeeded", post.published_at

@@ -16,6 +16,8 @@ class ProviderPublishResult:
     post_id: str
     request_id: str | None = None
     status_code: int | None = None
+    object_id: str | None = None
+    object_type: str | None = None
 
 
 class SocialPlatform(ABC):

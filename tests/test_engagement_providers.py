@@ -3,8 +3,10 @@
 from datetime import datetime, timezone
 from types import SimpleNamespace
 import httpx
+import pytest
 
 from app.core.security import encrypt_token
+from app.integrations.base import ProviderHTTPError
 from app.db.session import SessionLocal
 from app.models.connected_account import ConnectedAccount
 from app.services.engagement.base import CreditsRequired, NotSupported
@@ -64,6 +66,9 @@ def _account(platform, account_id="acct-1", scopes=None):
 def _post(provider_id="post-1"):
     return SimpleNamespace(
         provider_post_id=provider_id,
+        content="",
+        post_metadata={},
+        media_urls=[],
         published_at=datetime(2026, 1, 2, tzinfo=timezone.utc),
     )
 
@@ -182,6 +187,11 @@ def test_facebook_parses_comments_reply_and_insights(monkeypatch):
     )
     monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
     provider = FacebookEngagement()
+    assert provider.capabilities.required_scopes["insights"] == (
+        "read_insights",
+        "pages_read_engagement",
+        "pages_manage_engagement",
+    )
     account = _account("facebook", "page-1")
     comments = provider.fetch_comments(account, _post("PAGE_POST"))
     assert [item.provider_comment_id for item in comments] == ["c1", "c2"]
@@ -195,12 +205,380 @@ def test_facebook_parses_comments_reply_and_insights(monkeypatch):
     assert reply.provider_comment_id == "reply-1"
     assert script.calls[1]["json"] == {"message": "Thanks"}
     assert script.calls[1]["url"].endswith("/c2/comments")
-    insights = provider.fetch_insights(account, _post("PAGE_POST"))
+    photo_post = _post("PAGE_POST")
+    photo_post.post_metadata = {
+        "facebook_object_id": "PHOTO_OBJECT",
+        "facebook_object_type": "photo",
+    }
+    insights = provider.fetch_insights(account, photo_post)
     assert insights.impressions == 20
     assert insights.reach == 11
     assert insights.likes == 4
     assert "post_impressions" not in script.calls[2]["params"]["metric"]
     assert "post_media_view" in script.calls[2]["params"]["metric"]
+    assert script.calls[2]["url"].endswith("/PAGE_POST/insights")
+
+
+def test_facebook_video_insights_use_video_object_id(monkeypatch):
+    script = _Script(
+        [
+            _ok(
+                {
+                    "data": [
+                        {"name": "total_video_views", "values": [{"value": 42}]},
+                        {"name": "total_video_views_unique", "values": [{"value": 31}]},
+                        {"name": "total_video_impressions", "values": [{"value": 58}]},
+                        {
+                            "name": "total_video_reactions_by_type_total",
+                            "values": [{"value": {"like": 4, "love": 2}}],
+                        },
+                    ]
+                }
+            )
+        ]
+    )
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    post = _post("PAGE_POST")
+    post.post_metadata = {
+        "facebook_object_id": "VIDEO_OBJECT",
+        "facebook_object_type": "video",
+    }
+
+    insights = FacebookEngagement().fetch_insights(_account("facebook", "page-1"), post)
+
+    assert script.calls[0]["url"].endswith("/VIDEO_OBJECT/video_insights")
+    assert insights.video_views == 42
+    assert insights.reach == 31
+    assert insights.impressions == 58
+    assert insights.likes == 6
+
+
+def test_facebook_video_insights_preserve_http_400(monkeypatch):
+    script = _Script(
+        [
+            _ok({"error": {"message": "Unsupported metric", "code": 100}}, 400),
+            _ok({"error": {"message": "Fallback unavailable", "code": 100}}, 400),
+        ]
+    )
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    post = _post("PAGE_POST")
+    post.post_metadata = {
+        "facebook_object_id": "VIDEO_OBJECT",
+        "facebook_object_type": "video",
+    }
+
+    with pytest.raises(ProviderHTTPError) as error:
+        FacebookEngagement().fetch_insights(_account("facebook"), post)
+
+    assert error.value.status_code == 400
+    assert "Unsupported metric" in error.value.detail
+    assert script.calls[0]["url"].endswith("/VIDEO_OBJECT/video_insights")
+    assert script.calls[1]["url"].endswith("/PAGE_POST/insights")
+
+
+def test_facebook_video_insights_fall_back_to_page_post_metrics(monkeypatch):
+    script = _Script(
+        [
+            _ok({"error": {"message": "Tried accessing nonexisting field", "code": 100}}, 400),
+            _ok(
+                {
+                    "data": [
+                        {"name": "post_media_view", "values": [{"value": 28}]},
+                    ]
+                }
+            ),
+        ]
+    )
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    post = _post("PAGE_POST")
+    post.post_metadata = {
+        "facebook_object_id": "VIDEO_OBJECT",
+        "facebook_object_type": "video",
+    }
+
+    insights = FacebookEngagement().fetch_insights(
+        _account("facebook", "page-1"), post
+    )
+
+    assert script.calls[0]["url"].endswith("/VIDEO_OBJECT/video_insights")
+    assert script.calls[1]["url"].endswith("/PAGE_POST/insights")
+    assert script.calls[1]["params"] == {"metric": "post_media_view"}
+    assert insights.impressions == 28
+    assert insights.reach is None
+    assert insights.likes is None
+    assert insights.video_views is None
+    assert insights.raw["source"] == "page_post_fallback"
+
+
+def test_facebook_resolves_video_object_for_older_page_posts(monkeypatch):
+    script = _Script(
+        [
+            _ok(
+                {
+                    "id": "LEGACY_PAGE_POST",
+                    "attachments": {"data": [{"target": {"id": "LEGACY_VIDEO_OBJECT"}}]},
+                }
+            ),
+            _ok({"data": [{"name": "total_video_views", "values": [{"value": 7}]}]}),
+        ]
+    )
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    post = _post("LEGACY_PAGE_POST")
+    post.media_urls = ["https://cdn.example.com/clip.mp4"]
+
+    insights = FacebookEngagement().fetch_insights(_account("facebook"), post)
+
+    assert script.calls[0]["url"].endswith("/LEGACY_PAGE_POST")
+    assert script.calls[0]["params"] == {"fields": "id,attachments{target}"}
+    assert script.calls[1]["url"].endswith("/LEGACY_VIDEO_OBJECT/video_insights")
+    assert insights.video_views == 7
+
+
+def test_facebook_opaque_video_url_is_resolved_before_page_post_metrics(monkeypatch):
+    script = _Script(
+        [
+            _ok(
+                {
+                    "id": "LEGACY_PAGE_POST",
+                    "attachments": {
+                        "data": [
+                            {
+                                "media_type": "video",
+                                "target": {"id": "OPAQUE_VIDEO_OBJECT"},
+                            }
+                        ]
+                    },
+                }
+            ),
+            _ok(
+                {
+                    "error": {"message": "Unsupported metric", "code": 100},
+                },
+                400,
+            ),
+            _ok(
+                {
+                    "data": [
+                        {"name": "post_media_view", "values": [{"value": 23}]},
+                    ]
+                }
+            ),
+        ]
+    )
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    post = _post("LEGACY_PAGE_POST")
+    post.media_urls = ["https://cdn.example.com/opaque-media"]
+
+    insights = FacebookEngagement().fetch_insights(
+        _account("facebook", "page-1"), post
+    )
+
+    assert script.calls[0]["params"] == {"fields": "id,attachments{target}"}
+    assert script.calls[1]["url"].endswith("/OPAQUE_VIDEO_OBJECT/video_insights")
+    assert script.calls[1]["params"]["metric"] == ",".join(
+        (
+            "total_video_views",
+            "total_video_views_unique",
+            "total_video_impressions",
+            "total_video_reactions_by_type_total",
+        )
+    )
+    assert script.calls[2]["url"].endswith("/LEGACY_PAGE_POST/insights")
+    assert script.calls[2]["params"] == {"metric": "post_media_view"}
+    assert all(
+        call["params"] != {
+            "metric": ",".join(
+                (
+                    "post_media_view",
+                    "post_total_media_view_unique",
+                    "post_reactions_like_total",
+                    "post_reactions_love_total",
+                    "post_reactions_wow_total",
+                )
+            )
+        }
+        for call in script.calls
+        if call["url"].endswith("/LEGACY_PAGE_POST/insights")
+    )
+    assert insights.impressions == 23
+    assert insights.raw["source"] == "page_post_fallback"
+
+
+def test_facebook_failed_video_id_resolution_uses_only_fallback_metric(monkeypatch):
+    script = _Script(
+        [
+            _ok({"id": "UNRESOLVED_PAGE_POST", "attachments": {"data": []}}),
+            _ok(
+                {
+                    "data": [
+                        {"name": "post_media_view", "values": [{"value": 14}]},
+                    ]
+                }
+            ),
+        ]
+    )
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    post = _post("UNRESOLVED_PAGE_POST")
+    post.post_metadata = {"facebook_object_type": "video"}
+
+    insights = FacebookEngagement().fetch_insights(
+        _account("facebook", "page-1"), post
+    )
+
+    assert len(script.calls) == 2
+    assert script.calls[1]["params"] == {"metric": "post_media_view"}
+    assert script.calls[1]["url"].endswith("/UNRESOLVED_PAGE_POST/insights")
+    assert insights.impressions == 14
+    assert insights.raw["source"] == "page_post_fallback"
+
+
+def test_facebook_untyped_photo_attachment_does_not_enter_video_path(monkeypatch):
+    script = _Script(
+        [
+            _ok(
+                {
+                    "id": "PHOTO_PAGE_POST",
+                    "attachments": {
+                        "data": [
+                            {"target": {"id": "UNTYPED_PHOTO_OBJECT"}},
+                        ]
+                    },
+                }
+            ),
+            _ok(
+                {
+                    "data": [
+                        {"name": "post_media_view", "values": [{"value": 21}]},
+                    ]
+                }
+            ),
+        ]
+    )
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    post = _post("PHOTO_PAGE_POST")
+    post.media_urls = ["https://cdn.example.com/opaque-photo"]
+
+    insights = FacebookEngagement().fetch_insights(
+        _account("facebook", "page-1"), post
+    )
+
+    assert script.calls[1]["url"].endswith("/PHOTO_PAGE_POST/insights")
+    assert not any(call["url"].endswith("/video_insights") for call in script.calls)
+    assert insights.impressions == 21
+    assert insights.raw["source"] == "page_post"
+
+
+def test_facebook_opaque_photo_url_keeps_normal_page_post_metrics(monkeypatch):
+    script = _Script(
+        [
+            _ok(
+                {
+                    "id": "PHOTO_PAGE_POST",
+                    "attachments": {
+                        "data": [
+                            {
+                                "media_type": "photo",
+                                "target": {"id": "PHOTO_OBJECT"},
+                            }
+                        ]
+                    },
+                }
+            ),
+            _ok(
+                {
+                    "data": [
+                        {"name": "post_media_view", "values": [{"value": 19}]},
+                    ]
+                }
+            ),
+        ]
+    )
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    post = _post("PHOTO_PAGE_POST")
+    post.media_urls = ["https://cdn.example.com/opaque-photo"]
+
+    insights = FacebookEngagement().fetch_insights(
+        _account("facebook", "page-1"), post
+    )
+
+    assert script.calls[1]["url"].endswith("/PHOTO_PAGE_POST/insights")
+    assert script.calls[1]["params"]["metric"] != "post_media_view"
+    assert "post_media_view" in script.calls[1]["params"]["metric"]
+    assert insights.impressions == 19
+
+
+def test_facebook_resolves_wrong_legacy_id_via_published_posts(monkeypatch):
+    script = _Script(
+        [
+            _ok({"id": "STORED_VIDEO_ID"}),
+            _ok(
+                {
+                    "data": [
+                        {
+                            "id": "RESOLVED_PAGE_POST",
+                            "message": "A video caption",
+                            "created_time": "2026-01-02T00:00:00+0000",
+                            "attachments": {
+                                "data": [{"target": {"id": "RESOLVED_VIDEO_ID"}}]
+                            },
+                        }
+                    ]
+                }
+            ),
+            _ok({"data": []}),
+            _ok(
+                {
+                    "data": [
+                        {"name": "post_media_view", "values": [{"value": 33}]},
+                    ]
+                }
+            ),
+        ]
+    )
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    post = _post("STORED_VIDEO_ID")
+    post.content = "A video caption"
+    post.media_urls = ["https://cdn.example.com/clip.mp4"]
+
+    insights = FacebookEngagement().fetch_insights(
+        _account("facebook", "page-1"), post
+    )
+
+    assert script.calls[0]["params"] == {"fields": "id,attachments{target}"}
+    assert script.calls[1]["url"].endswith("/page-1/published_posts")
+    assert script.calls[2]["url"].endswith("/RESOLVED_VIDEO_ID/video_insights")
+    assert script.calls[3]["url"].endswith("/RESOLVED_PAGE_POST/insights")
+    assert script.calls[3]["params"] == {"metric": "post_media_view"}
+    assert insights.impressions == 33
+    assert insights.reach is None
+    assert insights.video_views is None
+    assert insights.raw["source"] == "page_post_fallback"
+
+
+def test_facebook_recovers_legacy_photo_object_id_after_http_400(monkeypatch):
+    script = _Script(
+        [
+            _ok({"error": {"message": "Unsupported object", "code": 100}}, 400),
+            _ok({"page_story_id": "RESOLVED_PAGE_POST"}),
+            _ok(
+                {
+                    "data": [
+                        {"name": "post_media_view", "values": [{"value": 18}]}
+                    ]
+                }
+            ),
+        ]
+    )
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+
+    insights = FacebookEngagement().fetch_insights(
+        _account("facebook"), _post("PHOTO_OBJECT")
+    )
+
+    assert script.calls[0]["url"].endswith("/PHOTO_OBJECT/insights")
+    assert script.calls[1]["params"] == {"fields": "page_story_id"}
+    assert script.calls[2]["url"].endswith("/RESOLVED_PAGE_POST/insights")
+    assert insights.impressions == 18
 
 
 def test_instagram_parses_replies_and_views(monkeypatch):

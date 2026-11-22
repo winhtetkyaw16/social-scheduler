@@ -40,26 +40,35 @@ def test_upsert_oauth_account_accepts_naive_token_expires_at(auth_headers):
         db.close()
 
 
-def test_save_destinations_with_sqlite_naive_expiry(monkeypatch, auth_headers):
+def test_save_destinations_with_database_datetime_roundtrip(monkeypatch, auth_headers):
     _headers, _tokens = auth_headers
     db = SessionLocal()
     try:
         user = db.scalars(select(User).order_by(User.created_at.desc())).first()
         assert user is not None
+        requested_expiry = datetime.now(timezone.utc) + timedelta(days=60)
         session = create_pick_session(
             db,
             user.id,
             platform="facebook",
             access_token=f"user-token-{uuid4().hex}",
             refresh_token=None,
-            token_expires_at=datetime.now(timezone.utc) + timedelta(days=60),
+            token_expires_at=requested_expiry,
             scopes=["pages_show_list", "pages_manage_posts"],
             identity_json={"id": "login-1", "name": "Win", "account_type": "login"},
         )
         db.expire(session)
         reloaded = db.get(type(session), session.id)
         assert reloaded.token_expires_at is not None
-        assert reloaded.token_expires_at.tzinfo is None
+        if db.bind.dialect.name == "sqlite":
+            assert reloaded.token_expires_at.tzinfo is None
+            round_tripped_expiry = reloaded.token_expires_at.replace(
+                tzinfo=timezone.utc
+            )
+        else:
+            assert reloaded.token_expires_at.tzinfo is not None
+            round_tripped_expiry = reloaded.token_expires_at.astimezone(timezone.utc)
+        assert round_tripped_expiry == requested_expiry
 
         page_id = f"page-{uuid4().hex[:10]}"
 

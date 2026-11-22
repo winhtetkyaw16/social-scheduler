@@ -1,4 +1,4 @@
-"""Isolated SQLite database for API tests."""
+"""Isolated database configuration for API tests."""
 
 import os
 import tempfile
@@ -6,16 +6,35 @@ from pathlib import Path
 from uuid import uuid4
 
 from cryptography.fernet import Fernet
+from sqlalchemy.engine import make_url
 
-_test_db_directory = tempfile.TemporaryDirectory(prefix="social-scheduler-tests-")
-_db_path = Path(_test_db_directory.name) / "test.db"
-os.environ["DATABASE_URL"] = f"sqlite:///{_db_path}"
+_test_database_url = os.getenv("TEST_DATABASE_URL", "").strip()
+_test_db_directory = None
+if _test_database_url:
+    _test_url = make_url(_test_database_url)
+    if (
+        _test_url.get_backend_name() != "postgresql"
+        or _test_url.database != "social_scheduler_test"
+    ):
+        raise RuntimeError(
+            "TEST_DATABASE_URL must target the dedicated PostgreSQL database "
+            "named social_scheduler_test"
+        )
+    os.environ["DATABASE_URL"] = _test_database_url
+else:
+    _test_db_directory = tempfile.TemporaryDirectory(
+        prefix="social-scheduler-tests-"
+    )
+    _db_path = Path(_test_db_directory.name) / "test.db"
+    os.environ["DATABASE_URL"] = f"sqlite:///{_db_path}"
 os.environ["SECRET_KEY"] = "test-secret-key-please-change-32b"
 os.environ["TOKEN_ENCRYPTION_KEY"] = Fernet.generate_key().decode()
 os.environ["APP_ENV"] = "test"
 os.environ["ACCESS_TOKEN_EXPIRE_MINUTES"] = "30"
 os.environ["REFRESH_TOKEN_EXPIRE_DAYS"] = "14"
-os.environ.setdefault("PUBLIC_BASE_URL", "http://localhost:8000")
+# Keep application behavior deterministic when Compose injects production URLs.
+os.environ["PUBLIC_BASE_URL"] = "http://localhost:8000"
+os.environ["FORWARDED_ALLOW_IPS"] = "127.0.0.1"
 for name in (
     "X_CLIENT_ID",
     "X_CLIENT_SECRET",
@@ -47,7 +66,8 @@ def pytest_sessionfinish(session, exitstatus):
     from app.db.session import engine
 
     engine.dispose()
-    _test_db_directory.cleanup()
+    if _test_db_directory is not None:
+        _test_db_directory.cleanup()
 
 
 @pytest.fixture()

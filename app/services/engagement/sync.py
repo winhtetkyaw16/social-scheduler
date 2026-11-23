@@ -24,12 +24,14 @@ from app.services.engagement.base import (
     CAPABILITY_COMMENTS_READ,
     AccountUnavailable,
     CreditsRequired,
+    EngagementRetryableError,
     NotSupported,
     ProviderAuthError,
     ProviderComment,
     ProviderInsights,
     ProviderReply,
     ReconnectRequired,
+    RemotePostDeleted,
 )
 from app.core.config import engagement_x_enabled
 from app.services.engagement.tokens import prepare_account
@@ -38,6 +40,9 @@ logger = logging.getLogger(__name__)
 
 # Periodic sweep only. Manual refresh passes force_insights=True.
 INSIGHTS_MIN_INTERVAL = timedelta(hours=1)
+ENGAGEMENT_RETRY_BASE = timedelta(minutes=15)
+ENGAGEMENT_RETRY_MAX = timedelta(hours=24)
+ENGAGEMENT_RETRY_AFTER_MAX = timedelta(days=7)
 
 
 def lookback_days() -> int:
@@ -231,13 +236,54 @@ def posts_in_lookback(
     activity = func.coalesce(ScheduledPost.published_at, ScheduledPost.updated_at)
     stmt = select(ScheduledPost).where(
         ScheduledPost.status == "published",
+        ScheduledPost.remote_status == "available",
         ScheduledPost.provider_post_id.is_not(None),
         ScheduledPost.provider_post_id != "",
+        (ScheduledPost.engagement_sync_retry_at.is_(None))
+        | (ScheduledPost.engagement_sync_retry_at <= current),
         activity >= cutoff,
     )
     if user_id is not None:
         stmt = stmt.where(ScheduledPost.user_id == user_id)
     return list(db.scalars(stmt).all())
+
+
+def _clear_engagement_retry(post: ScheduledPost) -> None:
+    post.engagement_sync_failures = 0
+    post.engagement_sync_retry_at = None
+    post.engagement_sync_error_code = None
+
+
+def _mark_remote_deleted(db: Session, post_id: UUID) -> None:
+    post = db.get(ScheduledPost, post_id)
+    if post is None:
+        return
+    post.remote_status = "deleted"
+    post.remote_deleted_at = datetime.now(timezone.utc)
+    _clear_engagement_retry(post)
+    db.commit()
+
+
+def _record_engagement_retry(db: Session, post_id: UUID, error: Exception) -> None:
+    post = db.get(ScheduledPost, post_id)
+    if post is None or post.remote_status == "deleted":
+        return
+    post.engagement_sync_failures = int(post.engagement_sync_failures or 0) + 1
+    exponent = min(post.engagement_sync_failures - 1, 7)
+    delay = min(ENGAGEMENT_RETRY_BASE * (2**exponent), ENGAGEMENT_RETRY_MAX)
+    retry_after = getattr(error, "retry_after_seconds", None)
+    if retry_after is not None:
+        provider_delay = timedelta(
+            seconds=max(0.0, min(float(retry_after), ENGAGEMENT_RETRY_AFTER_MAX.total_seconds()))
+        )
+        delay = max(delay, provider_delay)
+    post.engagement_sync_retry_at = datetime.now(timezone.utc) + delay
+    if isinstance(error, EngagementRetryableError):
+        code = error.provider_error_code or error.category
+    else:
+        code = f"http_{error.status_code}" if hasattr(error, "status_code") else type(error).__name__
+    post.engagement_sync_error_code = str(code)[:100]
+    db.commit()
 
 
 def _latest_comment_time(db: Session, post_id: UUID) -> datetime | None:
@@ -279,6 +325,7 @@ def _sync_one_post(
                 insights_captured = True
     elif not caps.supports_insights:
         skipped.append("insights")
+    _clear_engagement_retry(post)
     return {
         "comments_upserted": comments_upserted,
         "insights_captured": insights_captured,
@@ -352,6 +399,12 @@ def sync_posts(
             continue
         auth_failed = False
         for post in account_posts:
+            retry_at = _utc(getattr(post, "engagement_sync_retry_at", None))
+            if getattr(post, "remote_status", "available") == "deleted" or (
+                retry_at is not None and retry_at > datetime.now(timezone.utc)
+            ):
+                summary["skipped"] += 1
+                continue
             if auth_failed:
                 summary["skipped"] += 1
                 continue
@@ -384,8 +437,19 @@ def sync_posts(
                     account_id,
                 )
                 continue
-            except Exception:
+            except RemotePostDeleted as exc:
                 db.rollback()
+                _mark_remote_deleted(db, post.id)
+                summary["skipped"] += 1
+                logger.info(
+                    "Engagement sync stopped post=%s network=%s outcome=remote_deleted",
+                    post.id,
+                    exc.network,
+                )
+                continue
+            except Exception as exc:
+                db.rollback()
+                _record_engagement_retry(db, post.id, exc)
                 summary["errors"] += 1
                 logger.exception(
                     "Engagement sync failed post=%s account=%s network=%s outcome=error",
@@ -432,6 +496,9 @@ def sync_one_post(db: Session, post: ScheduledPost) -> dict:
     The hourly insight throttle does not apply here, so the user gets a new snapshot
     when the network supports insights.
     """
+    if getattr(post, "remote_status", "available") == "deleted":
+        network = getattr(getattr(post, "connected_account", None), "platform", "unknown")
+        raise RemotePostDeleted(network)
     account = db.get(ConnectedAccount, post.connected_account_id)
     if (
         account is not None
@@ -443,8 +510,15 @@ def sync_one_post(db: Session, post: ScheduledPost) -> dict:
     try:
         result = _sync_one_post(db, account, post, force_insights=True)
         db.commit()
-    except Exception:
+    except RemotePostDeleted as exc:
+        post_id = post.id
         db.rollback()
+        _mark_remote_deleted(db, post_id)
+        raise exc
+    except Exception as exc:
+        post_id = post.id
+        db.rollback()
+        _record_engagement_retry(db, post_id, exc)
         raise
     return {
         "post_id": post.id,

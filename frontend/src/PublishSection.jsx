@@ -20,6 +20,7 @@ import {
   accountHandle,
 } from "./sc/ui.jsx";
 import { needsHandle } from "./accountCaptions.js";
+import { filterPublishPosts } from "./postStatus.js";
 // Name plus a muted @handle when another connected account could be confused with this one.
 function AcctName({ account, accounts = [] }) {
   if (!account) return <b className="sm">Account</b>;
@@ -113,6 +114,7 @@ const STATUS_FILTERS = [
   { id: "draft", label: "Draft" },
   { id: "failed", label: "Failed" },
   { id: "published", label: "Published" },
+  { id: "remote_deleted", label: "Deleted remotely" },
 ];
 
 const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -146,33 +148,6 @@ function dateKey(value) {
 
 function postPlacementAt(post) {
   return post?.scheduled_at || post?.published_at || post?.created_at || null;
-}
-
-function statusMatchesFilter(status, filter) {
-  if (!filter || filter === "all") return true;
-  if (filter === "scheduled") return ["scheduled", "queued", "publishing"].includes(status);
-  return status === filter;
-}
-
-function filterPublishPosts(
-  posts,
-  accounts,
-  { status = "all", platform = "all", accountId = "all" } = {},
-) {
-  const accountMap = new Map(
-    (Array.isArray(accounts) ? accounts : []).map((account) => [account.id, account]),
-  );
-  return (Array.isArray(posts) ? posts : []).filter((post) => {
-    if (!post || post.status === "archived") return false;
-    if (!statusMatchesFilter(post.status, status)) return false;
-    if (accountId !== "all" && String(post.connected_account_id) !== String(accountId))
-      return false;
-    if (platform !== "all") {
-      const account = accountMap.get(post.connected_account_id);
-      if (!account || account.platform !== platform) return false;
-    }
-    return true;
-  });
 }
 
 function statusChipClass(status) {

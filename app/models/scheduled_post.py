@@ -39,6 +39,12 @@ class ScheduledPost(UUIDPrimaryKey, Timestamped, Base):
             name="valid_status",
         ),
         CheckConstraint(
+            "remote_status IN ('available','deleted')", name="valid_remote_status"
+        ),
+        CheckConstraint(
+            "engagement_sync_failures >= 0", name="valid_engagement_sync_failures"
+        ),
+        CheckConstraint(
             "attempt_count >= 0 AND max_attempts > 0", name="valid_attempt_limits"
         ),
         Index("ix_posts_due", "status", "scheduled_at"),
@@ -58,6 +64,17 @@ class ScheduledPost(UUIDPrimaryKey, Timestamped, Base):
         DateTime(timezone=True), nullable=False
     )
     status: Mapped[str] = mapped_column(String(20), default="draft", nullable=False)
+    remote_status: Mapped[str] = mapped_column(
+        String(20), default="available", server_default="available", nullable=False
+    )
+    remote_deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    engagement_sync_failures: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
+    engagement_sync_retry_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    engagement_sync_error_code: Mapped[str | None] = mapped_column(String(100))
     attempt_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     max_attempts: Mapped[int] = mapped_column(Integer, default=5, nullable=False)
     idempotency_key: Mapped[str] = mapped_column(

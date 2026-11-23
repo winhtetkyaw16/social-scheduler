@@ -45,6 +45,8 @@ class PostRead(BaseModel):
     media_urls: list[str]
     scheduled_at: datetime
     status: str
+    remote_status: str
+    remote_deleted_at: datetime | None
     attempt_count: int
     max_attempts: int
     idempotency_key: str

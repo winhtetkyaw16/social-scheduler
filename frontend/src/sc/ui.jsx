@@ -10,6 +10,7 @@ import {
   Receipt,
 } from "lucide-react";
 import { facebookKind, realHandle } from "../pagePicker.js";
+import { remotePostStatusLabel } from "../postStatus.js";
 import facebookGlyph from "../assets/logos/facebook-glyph.svg";
 import instagramGlyph from "../assets/logos/instagram-glyph.svg";
 import linkedinGlyph from "../assets/logos/linkedin-glyph.svg";
@@ -288,6 +289,10 @@ export function Ico({ d, children, style }) {
 // Status badges: neutral for anything still waiting (scheduled, queued, draft, pending),
 // green for done, amber for "needs a look soon", red only for failures.
 export function StatusBadge({ status, post }) {
+  const remoteStatusLabel = remotePostStatusLabel(post);
+  if (remoteStatusLabel) {
+    return <span className="badge b-warning">{remoteStatusLabel}</span>;
+  }
   const s = status === "published" && post && !post.provider_post_id ? "unconfirmed" : status;
   const cls =
     {

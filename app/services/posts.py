@@ -272,7 +272,11 @@ def delete_post(db: Session, post: ScheduledPost) -> None:
 
     provider_post_id = (post.provider_post_id or "").strip()
     # Only attempt remote delete when we have a real provider id (not drafts / never-sent).
-    if provider_post_id and not provider_post_id.startswith("inbox:"):
+    if (
+        provider_post_id
+        and not provider_post_id.startswith("inbox:")
+        and getattr(post, "remote_status", "available") != "deleted"
+    ):
         account = post.connected_account
         if account is None:
             raise HTTPException(

@@ -16,10 +16,15 @@ from app.services.engagement.base import (
     CAPABILITY_INSIGHTS,
     EngagementCapabilities,
     EngagementProvider,
+    EngagementRetryableError,
     ProviderComment,
     ProviderInsights,
     ProviderReply,
+    ProviderAuthError,
+    ReconnectRequired,
+    RemotePostDeleted,
 )
+from app.integrations.base import ProviderHTTPError
 from app.services.engagement.http import request_json
 from app.services.engagement.parsing import as_int, granted_scopes, is_own_author, parse_time
 from app.services.oauth_scopes import YOUTUBE_ANALYTICS, YOUTUBE_FORCE_SSL, YOUTUBE_READONLY
@@ -90,9 +95,14 @@ class YouTubeEngagement(EngagementProvider):
         comments: list[ProviderComment] = []
         seen: set[str] = set()
         for _ in range(5):
-            body = request_json(
-                "GET", f"{DATA}/commentThreads", access_token=token, params=params
-            )
+            try:
+                body = request_json(
+                    "GET", f"{DATA}/commentThreads", access_token=token, params=params
+                )
+            except ProviderHTTPError as exc:
+                if _is_video_missing_error(exc):
+                    self._verify_video_owner(account, video_id, token)
+                raise
             for item in body.get("items") or []:
                 if not isinstance(item, dict):
                     continue
@@ -145,12 +155,24 @@ class YouTubeEngagement(EngagementProvider):
     def fetch_insights(self, account, post) -> ProviderInsights:
         if YOUTUBE_ANALYTICS in granted_scopes(account):
             try:
-                return self._analytics(account, post)
+                result = self._analytics(account, post)
             except Exception as exc:
-                from app.services.engagement.base import CreditsRequired, ReconnectRequired
-
-                if isinstance(exc, (ReconnectRequired, CreditsRequired)):
+                if isinstance(
+                    exc,
+                    (
+                        ReconnectRequired,
+                        CreditsRequired,
+                        EngagementRetryableError,
+                        RemotePostDeleted,
+                    ),
+                ):
                     raise
+                return self._statistics(account, post)
+            if any(value is not None for value in (result.raw or {}).get("metrics", {}).values()):
+                return result
+            # Analytics may return no rows for an unavailable video. Verify
+            # visibility through Data API before treating an empty result as
+            # a deleted post or storing an empty snapshot.
         return self._statistics(account, post)
 
     def _analytics(self, account, post) -> ProviderInsights:
@@ -201,21 +223,87 @@ class YouTubeEngagement(EngagementProvider):
     def _statistics(self, account, post) -> ProviderInsights:
         token = self.access_token(account)
         video_id = str(post.provider_post_id or "").strip()
-        body = request_json(
-            "GET",
-            f"{DATA}/videos",
-            access_token=token,
-            params={"part": "statistics", "id": video_id},
-        )
+        try:
+            body = request_json(
+                "GET",
+                f"{DATA}/videos",
+                access_token=token,
+                params={"part": "snippet,status,statistics", "id": video_id},
+            )
+        except ProviderHTTPError as exc:
+            if _is_video_missing_error(exc):
+                self._verify_video_owner(account, video_id, token)
+            raise
         items = body.get("items") if isinstance(body.get("items"), list) else []
-        stats = {}
-        if items and isinstance(items[0], dict):
-            raw_stats = items[0].get("statistics")
-            if isinstance(raw_stats, dict):
-                stats = raw_stats
+        if not items or not isinstance(items[0], dict):
+            self._verify_video_owner(account, video_id, token, already_missing=True)
+        video = items[0]
+        snippet = video.get("snippet") if isinstance(video.get("snippet"), dict) else {}
+        expected_channel = str(getattr(account, "platform_account_id", "") or "").strip()
+        actual_channel = str(snippet.get("channelId") or "").strip()
+        if expected_channel and actual_channel and actual_channel != expected_channel:
+            raise ProviderAuthError(
+                "The connected YouTube channel does not own this video.", kind="permission"
+            )
+        stats = video.get("statistics") if isinstance(video.get("statistics"), dict) else {}
         return ProviderInsights(
             video_views=as_int(stats.get("viewCount")),
             likes=as_int(stats.get("likeCount")),
             comments=as_int(stats.get("commentCount")),
             raw={"source": "youtube_data_statistics", "statistics": stats},
         )
+
+    def _verify_video_owner(
+        self, account, video_id: str, token: str, *, already_missing: bool = False
+    ) -> None:
+        """Confirm visibility and the authenticated channel before marking deleted."""
+        expected_channel = str(getattr(account, "platform_account_id", "") or "").strip()
+        if not expected_channel:
+            raise ProviderAuthError(
+                "Reconnect YouTube to verify which channel owns this video.",
+                kind="permission",
+            )
+        if not already_missing:
+            video_body = request_json(
+                "GET",
+                f"{DATA}/videos",
+                access_token=token,
+                params={"part": "snippet,status", "id": video_id},
+            )
+            videos = video_body.get("items") if isinstance(video_body.get("items"), list) else []
+            if videos and isinstance(videos[0], dict):
+                video_snippet = (
+                    videos[0].get("snippet")
+                    if isinstance(videos[0].get("snippet"), dict)
+                    else {}
+                )
+                actual = str(video_snippet.get("channelId") or "").strip()
+                if actual and actual != expected_channel:
+                    raise ProviderAuthError(
+                        "The connected YouTube channel does not own this video.",
+                        kind="permission",
+                    )
+                return
+        channels = request_json(
+            "GET",
+            f"{DATA}/channels",
+            access_token=token,
+            params={"part": "id", "mine": "true"},
+        )
+        items = channels.get("items") if isinstance(channels.get("items"), list) else []
+        owned_ids = {
+            str(item.get("id") or "").strip()
+            for item in items
+            if isinstance(item, dict)
+        }
+        if expected_channel not in owned_ids:
+            raise ProviderAuthError(
+                "The connected YouTube account no longer matches the saved channel.",
+                kind="permission",
+            )
+        raise RemotePostDeleted("youtube")
+
+
+def _is_video_missing_error(exc: ProviderHTTPError) -> bool:
+    reason = str(exc.provider_reason or "").casefold()
+    return exc.status_code == 404 or "videonotfound" in reason

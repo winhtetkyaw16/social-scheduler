@@ -9,7 +9,13 @@ from app.core.security import encrypt_token
 from app.integrations.base import ProviderHTTPError
 from app.db.session import SessionLocal
 from app.models.connected_account import ConnectedAccount
-from app.services.engagement.base import CreditsRequired, NotSupported
+from app.services.engagement.base import (
+    CreditsRequired,
+    EngagementRetryableError,
+    NotSupported,
+    ProviderAuthError,
+    RemotePostDeleted,
+)
 from app.services.engagement.providers.facebook import FacebookEngagement
 from app.services.engagement.providers.instagram import InstagramEngagement
 from app.services.engagement.providers.pinterest import PinterestEngagement
@@ -893,7 +899,162 @@ def test_youtube_comments_analytics_and_statistics_fallback(monkeypatch):
     assert fallback.likes == 3
     assert fallback.comments == 1
     assert "/videos" in stats.calls[0]["url"]
-    assert stats.calls[0]["params"]["part"] == "statistics"
+    assert stats.calls[0]["params"]["part"] == "snippet,status,statistics"
+
+
+def test_youtube_missing_video_requires_channel_identity_verification(monkeypatch):
+    script = _Script(
+        [
+            _ok({"items": []}),
+            _ok({"items": [{"id": "chan-1"}]}),
+        ]
+    )
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    provider = YouTubeEngagement()
+    account = _account("youtube", "chan-1", scopes=["https://www.googleapis.com/auth/youtube.readonly"])
+    with pytest.raises(RemotePostDeleted):
+        provider.fetch_insights(account, _post("video-gone"))
+    assert "/videos" in script.calls[0]["url"]
+    assert script.calls[1]["params"] == {"part": "id", "mine": "true"}
+
+
+def test_youtube_missing_video_is_not_deleted_when_channel_verification_fails(monkeypatch):
+    script = _Script([_ok({"items": []}), _ok({"items": [{"id": "different-channel"}]})])
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    with pytest.raises(ProviderAuthError):
+        YouTubeEngagement().fetch_insights(
+            _account("youtube", "chan-1", scopes=["https://www.googleapis.com/auth/youtube.readonly"]),
+            _post("video-gone"),
+        )
+
+
+def test_youtube_video_from_another_channel_is_not_treated_as_owned(monkeypatch):
+    script = _Script(
+        [
+            _ok({"items": [{"snippet": {"channelId": "different-channel"}, "statistics": {}}]}),
+        ]
+    )
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    account = _account("youtube", "chan-1", scopes=["https://www.googleapis.com/auth/youtube.readonly"])
+    with pytest.raises(ProviderAuthError):
+        YouTubeEngagement().fetch_insights(account, _post("video-1"))
+    assert len(script.calls) == 1
+
+
+@pytest.mark.parametrize(
+    ("status", "body", "error_type", "category"),
+    [
+        (401, {"error": {"code": 401, "message": "Invalid Credentials"}}, ProviderAuthError, None),
+        (403, {"error": {"code": 403, "message": "insufficientPermissions"}}, ProviderAuthError, None),
+        (403, {"error": {"code": 403, "errors": [{"reason": "quotaExceeded"}]}}, EngagementRetryableError, "rate_limit"),
+        (429, {"error": {"message": "slow down"}}, EngagementRetryableError, "rate_limit"),
+        (503, {"error": {"message": "temporarily unavailable"}}, EngagementRetryableError, "transient"),
+    ],
+)
+def test_youtube_auth_permission_quota_and_transient_errors_are_never_deletion(
+    monkeypatch, status, body, error_type, category
+):
+    script = _Script([_ok(body, status_code=status)])
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    account = _account("youtube", "chan-1", scopes=["https://www.googleapis.com/auth/youtube.readonly"])
+    with pytest.raises(error_type) as raised:
+        YouTubeEngagement().fetch_insights(account, _post("video-1"))
+    assert not isinstance(raised.value, RemotePostDeleted)
+    if category:
+        assert raised.value.category == category
+    assert len(script.calls) == 1
+
+
+def test_threads_missing_post_requires_matching_account_and_listing_check(monkeypatch):
+    script = _Script(
+        [
+            _ok({"error": {"message": "missing object", "code": 100, "error_subcode": 33}}, 400),
+            _ok({"id": "acct-1"}),
+            _ok({"data": []}),
+        ]
+    )
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    with pytest.raises(RemotePostDeleted):
+        ThreadsEngagement().fetch_insights(_account("threads", "acct-1"), _post("thread-gone"))
+    assert script.calls[1]["url"].endswith("/me")
+    assert "/acct-1/threads" in script.calls[2]["url"]
+    assert script.calls[2]["params"]["fields"] == "id,owner,timestamp"
+    assert script.calls[2]["params"]["since"] < script.calls[2]["params"]["until"]
+
+
+def test_threads_missing_post_remains_retryable_if_listing_finds_it(monkeypatch):
+    script = _Script(
+        [
+            _ok({"error": {"message": "missing object", "code": 100, "error_subcode": 33}}, 400),
+            _ok({"id": "acct-1"}),
+            _ok({"data": [{"id": "thread-1", "owner": {"id": "acct-1"}}]}),
+        ]
+    )
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    with pytest.raises(ProviderHTTPError):
+        ThreadsEngagement().fetch_insights(_account("threads", "acct-1"), _post("thread-1"))
+
+
+def test_threads_missing_post_is_not_deleted_when_account_identity_differs(monkeypatch):
+    script = _Script(
+        [
+            _ok({"error": {"message": "missing object", "code": 100, "error_subcode": 33}}, 400),
+            _ok({"id": "different-account"}),
+        ]
+    )
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    with pytest.raises(ProviderAuthError):
+        ThreadsEngagement().fetch_insights(_account("threads", "acct-1"), _post("thread-gone"))
+    assert len(script.calls) == 2
+
+
+def test_threads_listing_owner_must_match_before_missing_media_is_classified(monkeypatch):
+    script = _Script(
+        [
+            _ok({"error": {"message": "missing object", "code": 100, "error_subcode": 33}}, 400),
+            _ok({"id": "acct-1"}),
+            _ok({"data": [{"id": "thread-1", "owner": {"id": "different-account"}}]}),
+        ]
+    )
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    with pytest.raises(ProviderAuthError):
+        ThreadsEngagement().fetch_insights(_account("threads", "acct-1"), _post("thread-1"))
+
+
+def test_retry_after_header_is_preserved_as_retryable_delay(monkeypatch):
+    response = httpx.Response(
+        429,
+        headers={"Retry-After": "120"},
+        json={"error": {"message": "Rate limited"}},
+    )
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", _Script([response]))
+    account = _account("youtube", "chan-1", scopes=["https://www.googleapis.com/auth/youtube.readonly"])
+    with pytest.raises(EngagementRetryableError) as raised:
+        YouTubeEngagement().fetch_insights(account, _post("video-1"))
+    assert raised.value.category == "rate_limit"
+    assert raised.value.retry_after_seconds == 120
+
+
+@pytest.mark.parametrize(
+    ("status", "body", "error_type", "category"),
+    [
+        (401, {"error": {"message": "Invalid OAuth access token", "code": 190}}, ProviderAuthError, None),
+        (403, {"error": {"message": "Insufficient permission", "code": 10}}, ProviderAuthError, None),
+        (429, {"error": {"message": "Rate limited"}}, EngagementRetryableError, "rate_limit"),
+        (503, {"error": {"message": "Temporary failure"}}, EngagementRetryableError, "transient"),
+    ],
+)
+def test_threads_auth_permission_rate_and_transient_errors_are_never_deletion(
+    monkeypatch, status, body, error_type, category
+):
+    script = _Script([_ok(body, status_code=status)])
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    with pytest.raises(error_type) as raised:
+        ThreadsEngagement().fetch_insights(_account("threads", "acct-1"), _post("thread-1"))
+    assert not isinstance(raised.value, RemotePostDeleted)
+    if category:
+        assert raised.value.category == category
+    assert len(script.calls) == 1
 
 
 def test_pinterest_analytics_only(monkeypatch):

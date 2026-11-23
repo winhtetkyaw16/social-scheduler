@@ -33,6 +33,7 @@ from app.services.engagement.base import (
     NotSupported,
     ProviderAuthError,
     ReconnectRequired,
+    RemotePostDeleted,
 )
 from app.services.engagement.copy import (
     comments_unavailable,
@@ -396,6 +397,11 @@ def sync_post_engagement(
 ) -> dict:
     """Refresh comments and insights for one owned published post."""
     post = get_owned_post(db, post_id, user.id)
+    if post.remote_status == "deleted":
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="This post is no longer available on the network.",
+        )
     if post.status != "published" or not (post.provider_post_id or "").strip():
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -403,6 +409,11 @@ def sync_post_engagement(
         )
     try:
         return sync_one_post(db, post)
+    except RemotePostDeleted:
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="This post is no longer available on the network.",
+        ) from None
     except NotSupported as exc:
         provider = registry.get_engagement_provider(exc.network)
         raise _unsupported(provider, exc.capability) from None

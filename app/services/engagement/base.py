@@ -52,6 +52,31 @@ class ProviderAuthError(ReconnectRequired):
         super().__init__(message)
 
 
+class RemotePostDeleted(Exception):
+    """The provider confirmed that an owned post is no longer available."""
+
+    def __init__(self, network: str):
+        self.network = network
+        super().__init__(f"The {network} post is no longer available.")
+
+
+class EngagementRetryableError(Exception):
+    """A rate limit or transient provider failure that should use backoff."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        category: str = "transient",
+        retry_after_seconds: float | None = None,
+        provider_error_code: str | None = None,
+    ):
+        self.category = category
+        self.retry_after_seconds = retry_after_seconds
+        self.provider_error_code = provider_error_code
+        super().__init__(message)
+
+
 class CreditsRequired(Exception):
     """X refused the call because the developer account has no API credits."""
 

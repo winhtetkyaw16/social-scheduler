@@ -74,9 +74,10 @@ def request_json(
     params: dict | None = None,
     json_body: dict | None = None,
     data: dict | None = None,
+    extra_headers: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Send one authenticated request and return a JSON object."""
-    headers = {"Authorization": f"Bearer {access_token}"}
+    headers = {**(extra_headers or {}), "Authorization": f"Bearer {access_token}"}
     try:
         response = httpx.request(
             method,
@@ -111,6 +112,7 @@ def collect_graph(
     params: dict,
     *,
     max_pages: int = 5,
+    require_complete: bool = False,
 ) -> list:
     """Follow Graph ``paging.cursors.after``. The cursor is not a full URL, so the token stays in the header."""
     rows: list = []
@@ -118,15 +120,26 @@ def collect_graph(
     seen: set[str] = set()
     for _ in range(max_pages):
         body = request_json("GET", url, access_token=access_token, params=query)
+        if require_complete:
+            data = body.get("data")
+            if not isinstance(data, list) or any(not isinstance(item, dict) or not item.get("id") for item in data):
+                raise EngagementRetryableError("The network returned an incomplete post list.")
         page = body.get("data") or []
         if isinstance(page, list):
             rows.extend(item for item in page if isinstance(item, dict))
         cursors = (body.get("paging") or {}).get("cursors") or {}
         after = cursors.get("after") if isinstance(cursors, dict) else None
+        if require_complete:
+            if not (body.get("paging") or {}).get("next") and not after:
+                return rows
+            if not after or after in seen or not page:
+                raise EngagementRetryableError("Could not finish checking the network's post list.")
         if not after or not page or after in seen:
             break
         seen.add(str(after))
         query["after"] = after
+    if require_complete:
+        raise EngagementRetryableError("Could not finish checking the network's post list.")
     return rows
 
 
@@ -269,9 +282,31 @@ def _classified(response: httpx.Response) -> Exception:
             return ProviderHTTPError(response.status_code, provider_error_summary(response))
         kind = "permission" if "permission" in blob or "scope" in blob else "expired"
         return ProviderAuthError(kind, kind=kind)
+    if code == 100 and str(provider_subcode or "") == "33":
+        # Threads reports a missing media object as HTTP 400. The provider
+        # adapter still verifies ownership/listing before deciding deleted.
+        # Don't label this preliminary response as a sync failure here.
+        logger.info(
+            "Engagement provider HTTP %s outcome=missing_object_candidate code=%s subcode=%s type=%s",
+            response.status_code,
+            provider_code,
+            provider_subcode,
+            provider_reason,
+        )
+        return ProviderHTTPError(
+            response.status_code,
+            provider_error_summary(response),
+            provider_code=provider_code,
+            provider_subcode=provider_subcode,
+            provider_reason=provider_reason,
+            retry_after_seconds=retry_after,
+        )
     logger.info(
-        "Engagement provider HTTP %s outcome=error",
+        "Engagement provider HTTP %s outcome=error provider_code=%s provider_subcode=%s provider_reason=%s",
         response.status_code,
+        provider_code,
+        provider_subcode,
+        provider_reason,
     )
     return ProviderHTTPError(
         response.status_code,

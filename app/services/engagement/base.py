@@ -52,6 +52,10 @@ class ProviderAuthError(ReconnectRequired):
         super().__init__(message)
 
 
+class PostStatusUnconfirmed(Exception):
+    """Safe, user-facing explanation when the provider cannot confirm availability."""
+
+
 class RemotePostDeleted(Exception):
     """The provider confirmed that an owned post is no longer available."""
 
@@ -171,6 +175,9 @@ class EngagementProvider:
 
     network: str = "unknown"
     capabilities: EngagementCapabilities = EngagementCapabilities()
+
+    def verify_post(self, account, post) -> None:
+        """Optional direct availability check before a manual engagement refresh."""
 
     def fetch_comments(self, account, post, since: datetime | None = None) -> list[ProviderComment]:
         """Return comments created or updated since ``since`` (None means a full read)."""

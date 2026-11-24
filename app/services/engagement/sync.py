@@ -27,6 +27,7 @@ from app.services.engagement.base import (
     EngagementRetryableError,
     NotSupported,
     ProviderAuthError,
+    PostStatusUnconfirmed,
     ProviderComment,
     ProviderInsights,
     ProviderReply,
@@ -310,6 +311,10 @@ def _sync_one_post(
             batch = provider.fetch_comments(account, post, _latest_comment_time(db, post.id))
         except NotSupported:
             skipped.append("comments_read")
+        except ProviderAuthError as exc:
+            if account.platform != "facebook" or exc.kind != "permission":
+                raise
+            skipped.append("comments_read")
         else:
             comments_upserted = upsert_comments(db, post, account, list(batch or []))
     else:
@@ -318,6 +323,10 @@ def _sync_one_post(
         try:
             payload = provider.fetch_insights(account, post)
         except NotSupported:
+            skipped.append("insights")
+        except ProviderAuthError as exc:
+            if account.platform != "facebook" or exc.kind != "permission":
+                raise
             skipped.append("insights")
         else:
             if payload is not None:
@@ -452,10 +461,15 @@ def sync_posts(
                 _record_engagement_retry(db, post.id, exc)
                 summary["errors"] += 1
                 logger.exception(
-                    "Engagement sync failed post=%s account=%s network=%s outcome=error",
+                    "Engagement sync failed post=%s account=%s network=%s outcome=error "
+                    "exception=%s http_status=%s provider_code=%s provider_subcode=%s",
                     post.id,
                     account_id,
                     getattr(account, "platform", ""),
+                    type(exc).__name__,
+                    getattr(exc, "status_code", None),
+                    getattr(exc, "provider_code", None),
+                    getattr(exc, "provider_subcode", None),
                 )
                 continue
             summary["posts_synced"] += 1
@@ -504,12 +518,21 @@ def sync_one_post(db: Session, post: ScheduledPost) -> dict:
         account is not None
         and registry.canonical_network(account.platform) == "x"
         and not engagement_x_enabled()
+        and os.getenv("X_ENABLE_POST_STATUS", "").lower() not in {"1", "true", "yes"}
     ):
         raise NotSupported("x", CAPABILITY_COMMENTS_READ)
+    if account is not None and account.platform == "linkedin" and "r_member_social" not in (account.scopes or []):
+        return {"post_id": post.id, "comments_upserted": 0, "insights_captured": False,
+                "skipped": ["comments_read", "insights"], "status_message": "Published (last known status)."}
     prepare_account(db, account)
     try:
+        registry.get_engagement_provider(account.platform).verify_post(account, post)
         result = _sync_one_post(db, account, post, force_insights=True)
         db.commit()
+    except PostStatusUnconfirmed as exc:
+        db.rollback()
+        return {"post_id": post.id, "comments_upserted": 0, "insights_captured": False,
+                "skipped": ["comments_read", "insights"], "status_message": str(exc)}
     except RemotePostDeleted as exc:
         post_id = post.id
         db.rollback()

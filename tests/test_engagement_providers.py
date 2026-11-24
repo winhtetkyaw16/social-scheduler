@@ -13,10 +13,12 @@ from app.services.engagement.base import (
     CreditsRequired,
     EngagementRetryableError,
     NotSupported,
+    PostStatusUnconfirmed,
     ProviderAuthError,
     RemotePostDeleted,
 )
 from app.services.engagement.providers.facebook import FacebookEngagement
+from app.services.engagement.providers.blocked import LinkedInEngagement, TikTokEngagement
 from app.services.engagement.providers.instagram import InstagramEngagement
 from app.services.engagement.providers.pinterest import PinterestEngagement
 from app.services.engagement.providers.threads import ThreadsEngagement
@@ -69,6 +71,69 @@ def _account(platform, account_id="acct-1", scopes=None):
     )
 
 
+@pytest.mark.parametrize("provider", [FacebookEngagement(), InstagramEngagement()])
+@pytest.mark.parametrize("listed", [True, False])
+def test_meta_refresh_checks_owner_and_all_pages(monkeypatch, provider, listed):
+    identity = {"id": "acct-1"}
+    if provider.network == "instagram":
+        identity = {"instagram_business_account": identity}
+    script = _Script([
+        _ok({"error": {"code": 100, "error_subcode": 33}}, 400),
+        _ok(identity),
+        _ok({"data": [{"id": "other"}], "paging": {"next": "next", "cursors": {"after": "cursor"}}}),
+        _ok({"data": [{"id": "post-1"}] if listed else []}),
+    ])
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    with pytest.raises(EngagementRetryableError if listed else RemotePostDeleted):
+        provider.verify_post(_account(provider.network), _post())
+    assert script.calls[-1]["params"]["after"] == "cursor"
+
+
+def test_facebook_permission_code_on_deleted_post_checks_page_listing(monkeypatch):
+    script = _Script([
+        _ok({"error": {"code": 10, "message": "Object does not exist or cannot be loaded"}}, 400),
+        _ok({"id": "acct-1"}),
+        _ok({"data": []}),
+    ])
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    with pytest.raises(RemotePostDeleted):
+        FacebookEngagement().verify_post(_account("facebook"), _post())
+
+
+def test_x_missing_post_checks_connected_user(monkeypatch):
+    script = _Script([_ok({"errors": [{"value": "123", "type": "https://api.x.com/2/problems/resource-not-found"}]}),
+                      _ok({"data": {"id": "acct-1"}})])
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    with pytest.raises(RemotePostDeleted):
+        XEngagement().verify_post(_account("x"), _post("123"))
+
+
+def test_linkedin_requires_approved_scope_and_encoded_member_post(monkeypatch):
+    provider = LinkedInEngagement()
+    urn = "urn:li:share:123"
+    with pytest.raises(PostStatusUnconfirmed):
+        provider.verify_post(_account("linkedin"), _post(urn))
+    script = _Script([_ok({"id": urn, "author": "urn:li:person:1"})])
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    provider.verify_post(_account("linkedin", "urn:li:person:1", scopes=["r_member_social"]), _post(urn))
+    assert script.calls[0]["url"].endswith("urn%3Ali%3Ashare%3A123")
+
+
+def test_pinterest_inaccessible_pin_is_not_confirmed_deleted(monkeypatch):
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", _Script([_ok({}, 404)]))
+    with pytest.raises(PostStatusUnconfirmed):
+        PinterestEngagement().verify_post(_account("pinterest"), _post("123"))
+
+
+def test_tiktok_inbox_upload_is_not_a_public_video_id(monkeypatch):
+    monkeypatch.setenv("TIKTOK_ENABLE_VIDEO_LIST", "false")
+    script = _Script([_ok({"data": {"status": "SEND_TO_USER_INBOX"}})])
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    with pytest.raises(PostStatusUnconfirmed, match="inbox"):
+        TikTokEngagement().verify_post(_account("tiktok"), _post("inbox:v_inbox_file~1"))
+    assert script.calls[0]["json"] == {"publish_id": "v_inbox_file~1"}
+
+
 def _post(provider_id="post-1"):
     return SimpleNamespace(
         provider_post_id=provider_id,
@@ -87,9 +152,10 @@ def _ok(payload, status_code=200):
     return httpx.Response(status_code, json=payload)
 
 
-def test_oauth_scope_constants_match_the_consoles():
+def test_oauth_scope_constants_match_the_consoles(monkeypatch):
     from app.services.oauth import _providers
 
+    monkeypatch.delenv("TIKTOK_ENABLE_VIDEO_LIST", raising=False)
     providers = _providers()
     assert providers["facebook"].scopes == FACEBOOK_SCOPES
     assert providers["instagram"].scopes == INSTAGRAM_SCOPES
@@ -109,6 +175,7 @@ def test_tiktok_video_list_stays_gated(monkeypatch):
     from app.services.engagement.registry import get_engagement_provider
     from app.services.oauth import _providers
 
+    monkeypatch.setenv("TIKTOK_ENABLE_VIDEO_LIST", "false")
     assert get_engagement_provider("tiktok").capabilities.supports_insights is False
     monkeypatch.setenv("TIKTOK_ENABLE_VIDEO_LIST", "true")
     assert tiktok_scopes()[-1] == "video.list"
@@ -787,7 +854,7 @@ def test_x_search_reply_metrics_hide_and_402(monkeypatch, client, auth_headers, 
 
     user_id = _user_id(headers)
     account_id = _connect(client, headers, "x")
-    post_id = _published(user_id, account_id)
+    post_id = _published(user_id, account_id, provider_post_id="123456789")
     response = client.post(f"/api/v1/posts/{post_id}/engagement/sync", headers=headers)
     assert response.status_code == 402, response.text
     assert response.json()["detail"] == "Comments from X aren't available in SocialCastly yet"
@@ -965,21 +1032,67 @@ def test_youtube_auth_permission_quota_and_transient_errors_are_never_deletion(
     assert len(script.calls) == 1
 
 
-def test_threads_missing_post_requires_matching_account_and_listing_check(monkeypatch):
+@pytest.mark.parametrize("capability", ["comments", "insights"])
+def test_threads_exact_missing_media_error_verifies_account_and_listing(
+    monkeypatch, caplog, capability
+):
+    caplog.set_level("INFO", logger="app.services.engagement.http")
+    media_id = "17920690284530677"
     script = _Script(
         [
-            _ok({"error": {"message": "missing object", "code": 100, "error_subcode": 33}}, 400),
+            _ok(
+                {
+                    "error": {
+                        "message": (
+                            "Unsupported get request. Object with ID "
+                            "'17920690284530677' does not exist, cannot be loaded due to "
+                            "missing permissions, or does not support this operation"
+                        ),
+                        "type": "THApiException",
+                        "code": 100,
+                        "error_subcode": 33,
+                        "fbtrace_id": "ARegressThreadDeletedErrorShape123456",
+                    }
+                },
+                400,
+            ),
             _ok({"id": "acct-1"}),
             _ok({"data": []}),
         ]
     )
     monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    provider = ThreadsEngagement()
+    account = _account("threads", "acct-1")
+    post = _post(media_id)
     with pytest.raises(RemotePostDeleted):
-        ThreadsEngagement().fetch_insights(_account("threads", "acct-1"), _post("thread-gone"))
+        if capability == "comments":
+            provider.fetch_comments(account, post)
+        else:
+            provider.fetch_insights(account, post)
     assert script.calls[1]["url"].endswith("/me")
     assert "/acct-1/threads" in script.calls[2]["url"]
     assert script.calls[2]["params"]["fields"] == "id,owner,timestamp"
     assert script.calls[2]["params"]["since"] < script.calls[2]["params"]["until"]
+    assert "outcome=missing_object_candidate code=100 subcode=33 type=THApiException" in caplog.text
+    assert "HTTP 400 outcome=error" not in caplog.text
+
+
+@pytest.mark.parametrize("cursors", [list(range(10)), ["same", "same"], [None]])
+def test_threads_incomplete_listing_does_not_mark_deleted(monkeypatch, cursors):
+    pages = [
+        _ok({"data": [{"id": "another-post"}],
+             "paging": {"next": "more", "cursors": {"after": str(cursor)} if cursor is not None else {}}})
+        for cursor in cursors
+    ]
+    script = _Script([
+        _ok({"error": {"code": 100, "error_subcode": 33}}, 400),
+        _ok({"id": "acct-1"}),
+        *pages,
+    ])
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    with pytest.raises(EngagementRetryableError):
+        ThreadsEngagement().fetch_insights(_account("threads", "acct-1"), _post("thread-1"))
+    assert not script.responses
 
 
 def test_threads_missing_post_remains_retryable_if_listing_finds_it(monkeypatch):

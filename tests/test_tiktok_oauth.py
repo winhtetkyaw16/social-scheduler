@@ -25,10 +25,23 @@ def _enable_tiktok(
     monkeypatch.setenv("TIKTOK_CLIENT_KEY", "tt-client-key")
     monkeypatch.setenv("TIKTOK_CLIENT_SECRET", "tt-client-secret")
     monkeypatch.setenv("TIKTOK_REDIRECT_URI", redirect_uri)
+    monkeypatch.setenv("TIKTOK_ENABLE_VIDEO_LIST", "false")
 
 
 def _query(url: str) -> dict[str, list[str]]:
     return parse_qs(urlparse(url).query, keep_blank_values=True)
+
+
+def test_tiktok_reconnect_shows_consent_for_added_video_scope(client, auth_headers, monkeypatch):
+    _enable_tiktok(monkeypatch)
+    monkeypatch.setenv("TIKTOK_ENABLE_VIDEO_LIST", "true")
+    headers, _ = auth_headers
+    basic = client.get("/api/v1/accounts/tiktok/connect", headers=headers)
+    assert "video.list" in _query(basic.json()["authorization_url"])["scope"][0].split(",")
+    res = client.get("/api/v1/accounts/tiktok/connect?reauth=creator", headers=headers)
+    query = _query(res.json()["authorization_url"])
+    assert query["disable_auto_auth"] == ["1"]
+    assert "video.list" in query["scope"][0].split(",")
 
 
 def test_tiktok_pkce_pair_is_hex_sha256_not_base64url():

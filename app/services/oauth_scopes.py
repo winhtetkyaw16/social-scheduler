@@ -63,6 +63,12 @@ YOUTUBE_SCOPES: tuple[str, ...] = (
 
 LINKEDIN_SCOPES: tuple[str, ...] = ("openid", "profile", "email", "w_member_social")
 
+
+def linkedin_scopes() -> tuple[str, ...]:
+    if os.getenv("LINKEDIN_ENABLE_MEMBER_POST_READ", "").lower() in {"1", "true", "yes"}:
+        return LINKEDIN_SCOPES + ("r_member_social",)
+    return LINKEDIN_SCOPES
+
 TIKTOK_SCOPES: tuple[str, ...] = (
     "user.info.basic",
     "user.info.profile",

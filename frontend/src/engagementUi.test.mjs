@@ -63,6 +63,7 @@ import {
   INBOX_VIEW_KEY,
 } from "./engagement/model.js";
 import { createEngagementClient } from "./api/engagement.js";
+import { syncPostsAndRefresh } from "./engagement/syncRefresh.js";
 
 const NOW = new Date("2026-11-10T11:00:00Z");
 
@@ -569,4 +570,31 @@ test("engagement client can post a comment and remove one", async () => {
   assert.equal(calls[1].options.method, "DELETE");
   assert.equal(calls[2].path, "/comments/comment%201/unread");
   assert.equal(calls[2].options.method, "POST");
+});
+
+test("manual sync reloads UI data after HTTP 410 confirms remote deletion", async () => {
+  const refreshes = [];
+  const result = await syncPostsAndRefresh(
+    async (postId) => {
+      assert.equal(postId, "youtube-post");
+      throw Object.assign(new Error("No longer available"), { status: 410 });
+    },
+    ["youtube-post"],
+    async (state) => refreshes.push(state),
+  );
+
+  assert.deepEqual(result, { deleted: true });
+  assert.deepEqual(refreshes, [{ deleted: true }]);
+});
+
+test("manual sync still reloads UI data after success", async () => {
+  const refreshes = [];
+  const result = await syncPostsAndRefresh(
+    async () => ({ ok: true }),
+    ["post-1"],
+    async (state) => refreshes.push(state),
+  );
+
+  assert.deepEqual(result, { deleted: false });
+  assert.deepEqual(refreshes, [{ deleted: false }]);
 });

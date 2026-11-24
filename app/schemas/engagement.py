@@ -204,6 +204,7 @@ class SyncPostResult(BaseModel):
     comments_upserted: int
     insights_captured: bool
     skipped: list[str]
+    status_message: str | None = None
 
 
 class NetworkCapabilities(BaseModel):

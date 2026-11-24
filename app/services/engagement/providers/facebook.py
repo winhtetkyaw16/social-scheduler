@@ -23,6 +23,7 @@ from app.services.engagement.base import (
     ProviderReply,
 )
 from app.services.engagement.http import collect_graph, request_json
+from app.services.engagement.providers.meta_status import verify_meta_post
 from app.services.engagement.parsing import insight_number, is_own_author, parse_time
 
 # Current names from the insights deprecation notes. Shares and saves were not verified.
@@ -77,6 +78,9 @@ class FacebookEngagement(EngagementProvider):
             "post_total_media_view_unique; videos use the Video Insights endpoint."
         ),
     )
+
+    def verify_post(self, account, post) -> None:
+        verify_meta_post(self.network, _graph, account, post, self.access_token(account))
 
     def fetch_comments(self, account, post, since=None) -> list[ProviderComment]:
         token = self.access_token(account)

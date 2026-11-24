@@ -10,6 +10,7 @@ A 402 or credits error is ``CreditsRequired``, not a reconnect.
 from __future__ import annotations
 
 from app.core.config import engagement_x_enabled
+from app.integrations.base import ProviderHTTPError
 from app.services.engagement.base import (
     CAPABILITY_COMMENT_REPLY,
     CAPABILITY_COMMENTS_READ,
@@ -18,6 +19,8 @@ from app.services.engagement.base import (
     EngagementCapabilities,
     EngagementProvider,
     NotSupported,
+    PostStatusUnconfirmed,
+    RemotePostDeleted,
     ProviderComment,
     ProviderInsights,
     ProviderReply,
@@ -87,6 +90,27 @@ class XEngagement(EngagementProvider):
     """
 
     network = "x"
+
+    def verify_post(self, account, post) -> None:
+        token = self.access_token(account)
+        tweet_id = str(post.provider_post_id)
+        if not tweet_id.isdecimal():
+            raise PostStatusUnconfirmed("X did not provide a valid post ID.")
+        try:
+            body = request_json("GET", f"{API}/tweets/{tweet_id}", access_token=token)
+        except ProviderHTTPError as exc:
+            if exc.status_code != 404:
+                raise
+        else:
+            if (body.get("data") or {}).get("id") == tweet_id:
+                return
+            if not any(isinstance(e, dict) and str(e.get("type", "")).endswith("/resource-not-found")
+                       and e.get("value") == tweet_id for e in body.get("errors", [])):
+                raise PostStatusUnconfirmed("X could not confirm this post's status.")
+        me = request_json("GET", f"{API}/users/me", access_token=token)
+        if (me.get("data") or {}).get("id") == account.platform_account_id:
+            raise RemotePostDeleted("x")
+        raise PostStatusUnconfirmed("X could not verify the connected account.")
 
     @property
     def capabilities(self) -> EngagementCapabilities:

@@ -32,7 +32,27 @@ def prepare_account(db: Session, account) -> None:
     if account is None or not getattr(account, "is_active", False):
         raise AccountUnavailable("This connected account is not active.")
     if getattr(account, "needs_reconnect", False):
-        raise ReconnectRequired(reconnect_message(account))
+        from app.services.engagement.copy import reconnect_for_comments
+
+        if account.platform != "facebook" or account.reconnect_reason != reconnect_for_comments("facebook"):
+            raise ReconnectRequired(reconnect_message(account))
+        # Older versions flagged a whole Page for a single missing post.
+        # Only clear that legacy flag after the saved token can read its own Page.
+        from app.core.security import decrypt_token
+        from app.services.engagement.providers.facebook import _graph
+        from app.services.engagement.http import request_json
+
+        token = decrypt_token(account.access_token_ciphertext)
+        identity = request_json("GET", _graph("me"), access_token=token, params={"fields": "id"})
+        if str(identity.get("id") or "") != account.platform_account_id:
+            raise ReconnectRequired(reconnect_message(account))
+        page = request_json("GET", _graph(f"{account.platform_account_id}/published_posts"),
+                            access_token=token, params={"fields": "id", "limit": "1"})
+        if not isinstance(page.get("data"), list):
+            raise ReconnectRequired(reconnect_message(account))
+        account.needs_reconnect = False
+        account.reconnect_reason = None
+        db.commit()
     refresh_connected_account(
         db,
         account,

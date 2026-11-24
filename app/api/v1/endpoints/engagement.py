@@ -78,6 +78,8 @@ def _remember_auth_failure(db: Session, account, exc: ReconnectRequired) -> None
     """Persist needs_reconnect when the network rejected the token or a permission."""
     if not isinstance(exc, ProviderAuthError) or account is None:
         return
+    if account.platform == "facebook" and exc.kind == "permission":
+        return
     from app.services.token_refresh import mark_needs_reconnect
 
     mark_needs_reconnect(db, account, auth_message(account, exc.kind))
@@ -421,7 +423,11 @@ def sync_post_engagement(
         raise
     except ReconnectRequired as exc:
         account = post.connected_account
+        if account.platform in {"linkedin", "tiktok", "x", "pinterest"} and isinstance(exc, ProviderAuthError) and exc.kind == "permission":
+            raise HTTPException(status_code=403, detail=f"This {account.platform} connection does not have access to this post.") from None
         _remember_auth_failure(db, account, exc)
+        if account.platform == "facebook" and isinstance(exc, ProviderAuthError) and exc.kind == "permission":
+            raise HTTPException(status_code=403, detail="Facebook did not allow SocialCastly to read this Page's posts.") from None
         detail = exc.message if not isinstance(exc, ProviderAuthError) else auth_message(account, exc.kind)
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail) from None
     except AccountUnavailable as exc:

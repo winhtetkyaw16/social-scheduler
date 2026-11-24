@@ -18,6 +18,7 @@ import {
 import { unreadAfterMarkAllRead } from "../navModel.js";
 import { Avatar, ChannelTile } from "../sc/ui.jsx";
 import { CommentBlock } from "./PostDetailDrawer.jsx";
+import { syncPostsAndRefresh } from "./syncRefresh.js";
 import {
   COPY,
   INBOX_FILTERS,
@@ -94,9 +95,11 @@ function PostThreadPane({
   onOpenDetails,
   onCounts,
   onActivity,
+  onRemotePostDeleted,
   notify,
 }) {
   const [thread, setThread] = useState([]);
+  const [statusNotice, setStatusNotice] = useState(null);
   const [phase, setPhase] = useState("loading");
   const [replyId, setReplyId] = useState(null);
   const [drafts, setDrafts] = useState({});
@@ -150,12 +153,40 @@ function PostThreadPane({
 
   async function refresh() {
     setBusy("refresh");
+    setStatusNotice(null);
     try {
-      if (client && !fixtures) await client.syncPost(post.id);
-      await loadThread();
-      if (!fixtures) tell(COPY.commentsUpdated, "success");
-    } catch {
-      tell(COPY.postsErrorTitle);
+      let deleted = false;
+      let commentsSkipped = false;
+      if (client && !fixtures) {
+        const result = await syncPostsAndRefresh(
+          async (postId) => {
+            const result = await client.syncPost(postId);
+            commentsSkipped = result?.skipped?.includes("comments_read");
+            return result;
+          },
+          [post.id],
+          async ({ deleted: wasDeleted }) => {
+            deleted = wasDeleted;
+            await loadThread();
+            if (wasDeleted) {
+              await onRemotePostDeleted?.();
+              await onActivity?.();
+            }
+          },
+        );
+        deleted = result.deleted;
+        if (result.message) {
+          setStatusNotice({ id: post.id, text: result.message });
+          return;
+        }
+      } else {
+        await loadThread();
+      }
+      if (deleted) tell("Post status updated", "success");
+      else if (commentsSkipped) tell("Post checked. Comments are unavailable.");
+      else if (!fixtures) tell(COPY.commentsUpdated, "success");
+    } catch (error) {
+      tell(error?.message || COPY.postsErrorTitle);
     } finally {
       setBusy("");
     }
@@ -290,6 +321,7 @@ function PostThreadPane({
             <b>{accountName}</b>
           </div>
           <p>{postCaption(post.caption)}</p>
+          {statusNotice?.id === post.id && <p role="status">{statusNotice.text}</p>}
           {when ? <div className="eng-postrow-date eng-post-head-date">{when}</div> : null}
           <button type="button" className="eng-link" onClick={onOpenDetails}>
             {COPY.postDetails}
@@ -453,6 +485,7 @@ export default function InboxPage({
   onReconnect,
   notify,
   onActivity,
+  onRemotePostDeleted,
   fixtures = null,
 }) {
   const [status, setStatus] = useState("all");
@@ -1459,6 +1492,10 @@ export default function InboxPage({
                 );
               }}
               onActivity={onActivity}
+              onRemotePostDeleted={async () => {
+                await loadPosts();
+                await onRemotePostDeleted?.();
+              }}
               notify={notify}
             />
           ) : null}

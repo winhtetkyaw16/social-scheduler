@@ -18,6 +18,8 @@ import {
 } from "lucide-react";
 import { Avatar, ChannelTile } from "../sc/ui.jsx";
 import useBodyScrollLock from "../useBodyScrollLock.js";
+import { syncPostsAndRefresh } from "./syncRefresh.js";
+import { remotePostStatusLabel } from "../postStatus.js";
 import {
   COPY,
   INSIGHT_METRICS,
@@ -151,6 +153,7 @@ export default function PostDetailDrawer({
   fixtures = null,
   pendingPost = false,
   onActivity,
+  onRemotePostDeleted,
 }) {
   useBodyScrollLock(true);
   const targets = useMemo(() => buildTargets(post, posts, accounts), [post, posts, accounts]);
@@ -169,6 +172,7 @@ export default function PostDetailDrawer({
   const [drafts, setDrafts] = useState({});
   const [composer, setComposer] = useState("");
   const [busy, setBusy] = useState("");
+  const [statusNotice, setStatusNotice] = useState(null);
   const [pending, setPending] = useState(null);
   const [menu, setMenu] = useState(false);
   const [now, setNow] = useState(() => new Date());
@@ -314,8 +318,9 @@ export default function PostDetailDrawer({
   });
   const tabCount = tabCommentCount(targets, threads, snapshots, xEnabled);
   const urls = [...new Set((targets.length ? targets : [{ post }]).flatMap((target) => target.post?.media_urls || post?.media_urls || []))];
-  const who = targets[0]?.name || "Account";
-  const when = publishedLabel(publishedAt);
+  const previewTarget = tab === "comments" ? selectedTarget : targets.find((target) => target.key === String(post?.id));
+  const who = previewTarget?.name || "Account";
+  const when = remotePostStatusLabel(previewTarget?.post || post) || publishedLabel(publishedAt);
   const compact = tab === "comments" && !expanded;
 
   function choose(key) {
@@ -338,15 +343,37 @@ export default function PostDetailDrawer({
       return;
     }
     setBusy("refresh");
+    setStatusNotice(null);
     setMenu(false);
     try {
+      let deleted = false;
       if (!fixtures && client) {
-        const syncable = targets.filter((target) => target.status === "published" && target.post?.provider_post_id);
-        await Promise.all(syncable.map((target) => client.syncPost(target.post.id)));
+        const scope = tab === "comments" && selectedTarget ? [selectedTarget] : targets;
+        const syncable = scope.filter((target) => target.status === "published" && target.post?.provider_post_id);
+        if (!syncable.length) {
+          tell("Only published posts with a network ID can be refreshed.");
+          return;
+        }
+        const result = await syncPostsAndRefresh(
+          (postId) => client.syncPost(postId),
+          syncable.map((target) => target.post.id),
+          async ({ deleted: wasDeleted }) => {
+            deleted = wasDeleted;
+            await load();
+            if (wasDeleted) await onRemotePostDeleted?.();
+          },
+        );
+        deleted = result.deleted;
+        if (result.message) {
+          setStatusNotice({ key: previewTarget?.key, text: result.message });
+          return;
+        }
+      } else {
+        await load();
       }
-      await load();
-    } catch {
-      tell(COPY.insightsErrorTitle);
+      tell(deleted ? "Post status updated" : "Post refreshed", "success");
+    } catch (error) {
+      tell(error?.message || COPY.insightsErrorTitle);
     } finally {
       setBusy("");
     }
@@ -486,6 +513,16 @@ export default function PostDetailDrawer({
           ) : null}
           <h2 id="eng-drawer-title">Post details</h2>
           <div className="eng-head-actions">
+            {previewTarget?.account?.needs_reconnect && onReconnect ? (
+              <button type="button" className="btn btn-sm btn-secondary" onClick={() => onReconnect(previewTarget.account)}>
+                Reconnect {viewOnName(previewTarget.network)}
+              </button>
+            ) : (
+              <button type="button" className="eng-iconbtn" title="Refresh post" aria-label="Refresh post"
+                disabled={busy === "refresh"} onClick={() => void refresh(true)}>
+                <RefreshCw size={18} />
+              </button>
+            )}
             {phone ? null : (
             <button type="button" className="btn btn-sm btn-ghost" onClick={onOpenInQueue}>
               <ExternalLink size={14} />
@@ -503,7 +540,7 @@ export default function PostDetailDrawer({
             </button>
             {menu ? (
               <div className="eng-menu" role="menu">
-                <button type="button" role="menuitem" onClick={() => void refresh(false)}>
+                <button type="button" role="menuitem" onClick={() => void refresh(true)}>
                   Refresh
                 </button>
                 <button type="button" role="menuitem" onClick={() => void copyLink()}>
@@ -525,6 +562,9 @@ export default function PostDetailDrawer({
         </header>
 
         <div className="eng-scroll">
+          {statusNotice && statusNotice.key === previewTarget?.key && (
+            <p className="eng-body" role="status">{statusNotice.text}</p>
+          )}
           {!post ? (
             pendingPost ? (
               <div className="eng-body">
@@ -541,7 +581,7 @@ export default function PostDetailDrawer({
                 <div className="eng-compact">
                   <div className="eng-compact-main">
                     <div className="eng-who">
-                      <Avatar name={who} size={28} src={targets[0]?.account?.avatar_url} />
+                      <Avatar name={who} size={28} src={previewTarget?.account?.avatar_url} />
                       <div>
                         <b>{who}</b>
                         <div>
@@ -559,7 +599,7 @@ export default function PostDetailDrawer({
               ) : (
                 <>
                   <div className="eng-who">
-                    <Avatar name={who} size={40} src={targets[0]?.account?.avatar_url} />
+                    <Avatar name={who} size={40} src={previewTarget?.account?.avatar_url} />
                     <div>
                       <b>{who}</b>
                       <div>
@@ -649,7 +689,7 @@ export default function PostDetailDrawer({
                     <button
                       type="button"
                       className="btn btn-sm btn-secondary"
-                      onClick={() => void refresh(false)}
+                      onClick={() => void refresh(true)}
                       disabled={busy === "refresh"}
                     >
                       <RefreshCw size={14} />

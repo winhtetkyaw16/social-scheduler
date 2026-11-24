@@ -45,7 +45,7 @@ from app.services.accounts import create_pick_session, upsert_oauth_account
 from app.services.oauth_scopes import (
     FACEBOOK_SCOPES,
     INSTAGRAM_SCOPES,
-    LINKEDIN_SCOPES,
+    linkedin_scopes,
     PINTEREST_SCOPES,
     THREADS_SCOPES,
     X_SCOPES,
@@ -127,7 +127,7 @@ def _providers() -> dict[str, _ProviderOAuth]:
             client_secret=linkedin_secret,
             redirect_uri=config.prefer_https(config.LINKEDIN_REDIRECT_URI),
             # Organization scopes are optional: keep personal connect working without Marketing Developer Platform approval.
-            scopes=LINKEDIN_SCOPES,
+            scopes=linkedin_scopes(),
             use_pkce=False,
             missing_env=tuple(
                 name
@@ -428,6 +428,8 @@ def start_oauth(
     }
     if provider.platform == "tiktok":
         params["client_key"] = provider.client_id
+        if reauth:
+            params["disable_auto_auth"] = "1"
     else:
         params["client_id"] = provider.client_id
     if provider.platform == "instagram":
@@ -455,7 +457,7 @@ def start_oauth(
         params["code_challenge_method"] = "S256"
     reauth_id = str(reauth or "").strip()[:255] or None
     params["state"] = _write_state(
-        user_id, provider.platform, verifier, return_to=safe_return, reauth=reauth_id
+        user_id, provider.platform, verifier, return_to=safe_return, reauth=reauth_id,
     )
     return {
         "platform": provider.platform,
@@ -479,6 +481,14 @@ def finish_oauth(
             return_base, connect_error="That platform cannot be connected."
         )
     if provider_error:
+        if normalized == "tiktok" and provider_error in {"invalid_scope", "scope_not_authorized", "invalid_redirect_uri", "invalid_client"}:
+            detail = {
+                "invalid_scope": "TikTok rejected the requested permissions. Check the scopes approved for this app version.",
+                "scope_not_authorized": "TikTok did not authorize the requested permissions for this app.",
+                "invalid_redirect_uri": "The TikTok Web redirect URI must match the callback URL registered in Login Kit.",
+                "invalid_client": "TikTok did not recognize the configured app credentials.",
+            }[provider_error]
+            return _studio_redirect(return_base, connect_error=detail)
         return _studio_redirect(
             return_base, connect_error="Authorization was cancelled or denied."
         )
@@ -498,7 +508,12 @@ def finish_oauth(
         user_id, verifier, state_return = _read_state(state, provider.platform)
         return_base = _safe_return_base(state_return) if state_return else return_base
         token_payload = _exchange_code(provider, code, verifier)
+        if (provider.platform == "tiktok" and "video.list" in provider.scopes
+                and "video.list" not in token_payload["scopes"]):
+            return _studio_redirect(return_base, connect_error="TikTok did not grant access to your video list. Select that permission when reconnecting.")
         identity = _identity(provider, token_payload["access_token"])
+        if provider.platform == "tiktok" and _peek_reauth(state) not in {None, identity["id"]}:
+            return _studio_redirect(return_base, connect_error="Choose the same TikTok account you are reconnecting.")
         if provider.platform == "instagram":
             from app.services.destinations import _instagram_destinations
 
@@ -537,7 +552,7 @@ def finish_oauth(
             access_token=token_payload["access_token"],
             refresh_token=token_payload.get("refresh_token"),
             token_expires_at=token_payload.get("expires_at"),
-            scopes=token_payload.get("scopes") or list(provider.scopes),
+            scopes=token_payload["scopes"],
             extra_metadata={
                 key: value
                 for key, value in identity.items()
@@ -646,7 +661,7 @@ def _exchange_code(provider: _ProviderOAuth, code: str, verifier: str | None) ->
     elif isinstance(scope, list):
         scopes = [str(item) for item in scope]
     else:
-        scopes = list(provider.scopes)
+        scopes = [] if provider.platform == "tiktok" else list(provider.scopes)
     refresh_token = payload.get("refresh_token")
     return {
         "access_token": access_token,

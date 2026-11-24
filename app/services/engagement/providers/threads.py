@@ -180,8 +180,12 @@ class ThreadsEngagement(EngagementProvider):
             raise original_error
         if published_at.tzinfo is None:
             published_at = published_at.replace(tzinfo=timezone.utc)
-        start = (published_at.astimezone(timezone.utc) - timedelta(days=1)).date()
-        end = (published_at.astimezone(timezone.utc) + timedelta(days=1)).date()
+        start = published_at - timedelta(days=1)
+        end = published_at + timedelta(days=1)
+        # For recent posts let Threads use its own clock as the upper bound.
+        window = {"since": int(start.timestamp())}
+        if end < datetime.now(timezone.utc) - timedelta(days=1):
+            window["until"] = int(end.timestamp())
 
         identity = request_json(
             "GET", f"{_base()}/me", access_token=token, params={"fields": "id"}
@@ -197,11 +201,11 @@ class ThreadsEngagement(EngagementProvider):
             token,
             {
                 "fields": "id,owner,timestamp",
-                "since": start.isoformat(),
-                "until": end.isoformat(),
+                **window,
                 "limit": "100",
             },
             max_pages=10,
+            require_complete=True,
         )
         matching = next(
             (item for item in owned_posts if str(item.get("id") or "").strip() == media_id),

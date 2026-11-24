@@ -425,6 +425,7 @@ def test_x_engagement_is_refused_until_the_flag_is_on(client, auth_headers, monk
     from app.services.engagement.providers.x import XEngagement
     from app.services.engagement.registry import get_engagement_provider
     from app.services.engagement.sync import sync_posts
+    monkeypatch.delenv("X_ENABLE_POST_STATUS", raising=False)
 
     monkeypatch.delenv("ENGAGEMENT_X_ENABLED", raising=False)
     assert engagement_x_enabled() is False
@@ -1190,6 +1191,47 @@ def test_insights_and_manual_sync(client, auth_headers, monkeypatch):
     assert facebook["reconnect_for_permissions"] is True
     assert facebook["message"] == "Reconnect your Facebook account to see comments and insights"
     assert "pages_read_engagement" in facebook["missing_scopes"]["comments_read"]
+
+
+def test_manual_sync_bypasses_sweep_lookback_and_retry_backoff(
+    client, auth_headers, monkeypatch
+):
+    headers, _ = auth_headers
+    user_id = _user_id(headers)
+    account_id = _connect(client, headers, "youtube")
+    post_id = _published(user_id, account_id, provider_post_id="video-gone")
+    db = SessionLocal()
+    try:
+        post = db.get(ScheduledPost, post_id)
+        post.published_at = datetime.now(timezone.utc) - timedelta(days=90)
+        post.engagement_sync_retry_at = datetime.now(timezone.utc) + timedelta(days=2)
+        post.engagement_sync_failures = 3
+        db.commit()
+    finally:
+        db.close()
+
+    class DeletedProvider(FakeProvider):
+        def fetch_comments(self, account, post, since=None):
+            self.calls.append("comments")
+            raise RemotePostDeleted("youtube")
+
+    provider = DeletedProvider("youtube", only={account_id})
+    _install(monkeypatch, {"youtube": provider}, unsupported_rest=True)
+    response = client.post(
+        f"/api/v1/posts/{post_id}/engagement/sync", headers=headers
+    )
+
+    assert response.status_code == 410
+    assert provider.calls == ["comments"]
+    db = SessionLocal()
+    try:
+        post = db.get(ScheduledPost, post_id)
+        assert post.remote_status == "deleted"
+        assert post.remote_deleted_at is not None
+        assert post.engagement_sync_failures == 0
+        assert post.engagement_sync_retry_at is None
+    finally:
+        db.close()
 
 
 def test_threaded_comments_endpoint_orders_replies(client, auth_headers):

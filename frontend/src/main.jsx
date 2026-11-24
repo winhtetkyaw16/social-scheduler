@@ -1659,6 +1659,11 @@ function App() {
       })
       .catch(() => {});
   }, [engagementClient, token]);
+  const refreshPostState = useCallback(async () => {
+    if (!token) return;
+    const data = await api("/posts", { token });
+    if (Array.isArray(data)) setPosts(data);
+  }, [token]);
   useEffect(() => {
     refreshInboxUnread();
   }, [refreshInboxUnread]);
@@ -3387,6 +3392,7 @@ function App() {
                   }}
                   notify={notify}
                   onActivity={refreshInboxUnread}
+                  onRemotePostDeleted={refreshPostState}
                 />
               </RenderErrorBoundary>
             ) : activeTab === "analytics" ? (
@@ -3618,10 +3624,13 @@ function App() {
           initialTab={detailTab}
           pendingPost={loadingAccounts && !posts.some((item) => item.id === detailPostId)}
           onActivity={refreshInboxUnread}
+          onRemotePostDeleted={refreshPostState}
           onClose={closePostDetails}
           onOpenInQueue={() => goToTab("queue")}
           onReconnect={(account) => {
-            if (account?.platform) void connectAccount(account.platform);
+            closePostDetails();
+            const channel = CHANNELS.find((item) => item.id === account?.platform);
+            if (channel) connect(channel, { reauthId: account.platform_account_id });
             else goToTab("accounts");
           }}
           notify={notify}

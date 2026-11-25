@@ -426,15 +426,18 @@ async function api(path, { token, _retried = false, ...options } = {}) {
   if (response.status === 204) return null;
   const text = await response.text();
   let body = null;
+  let detail;
   if (text) {
     try {
       body = JSON.parse(text);
+      if (typeof body?.detail === "string") detail = body.detail;
     } catch {
       body = { detail: text };
     }
   }
   if (!response.ok)
     throw Object.assign(new Error(getErrorMessage(body, `Request failed (${response.status})`)), {
+      detail,
       status: response.status,
     });
   return body;

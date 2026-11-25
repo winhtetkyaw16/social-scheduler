@@ -129,9 +129,12 @@ def upsert_comments(
         row.fetched_at = now
         row.provider_parent_id = (item.provider_parent_id or None) or None
         row.provider_thread_root_id = (item.provider_thread_root_id or None) or None
-        row.is_own = bool(item.is_own) or bool(row.is_own)
+        if network == "youtube" and item.author_provider_id:
+            row.is_own = item.author_provider_id == account.platform_account_id
+        else:
+            row.is_own = bool(item.is_own) or bool(row.is_own)
         row.is_hidden = bool(item.hidden)
-        row.is_deleted = bool(item.deleted)
+        row.is_deleted = row.is_deleted or bool(item.deleted)
         row.raw = dict(item.raw or {})
         touched.append(row)
     db.flush()

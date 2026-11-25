@@ -1,12 +1,16 @@
 """Authenticated comments, inbox, insights, and capability routes."""
 
 import logging
+from contextlib import contextmanager
+from math import ceil, isfinite
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_db
+from app.integrations.base import ProviderHTTPError
 from app.models import User
 from app.models.engagement import PostComment
 from app.schemas.engagement import (
@@ -30,6 +34,7 @@ from app.services.engagement import registry
 from app.services.engagement.base import (
     AccountUnavailable,
     CreditsRequired,
+    EngagementRetryableError,
     NotSupported,
     ProviderAuthError,
     ReconnectRequired,
@@ -83,6 +88,44 @@ def _remember_auth_failure(db: Session, account, exc: ReconnectRequired) -> None
     from app.services.token_refresh import mark_needs_reconnect
 
     mark_needs_reconnect(db, account, auth_message(account, exc.kind))
+
+
+@contextmanager
+def _comment_action_errors(db, account, provider, comment, capability, fallback):
+    try:
+        yield
+    except NotSupported:
+        if capability == "delete_comment":
+            raise HTTPException(501, "Comment deletion is unavailable on this network.") from None
+        raise _unsupported(provider, capability) from None
+    except (CreditsRequired, HTTPException):
+        raise
+    except ProviderAuthError as exc:
+        if exc.kind == "permission":
+            raise HTTPException(403, "The network did not grant permission for this action.") from None
+        _remember_auth_failure(db, account, exc)
+        raise HTTPException(409, auth_message(account, exc.kind)) from None
+    except (ReconnectRequired, AccountUnavailable) as exc:
+        raise HTTPException(409, str(exc)) from None
+    except EngagementRetryableError as exc:
+        if exc.category == "rate_limit":
+            delay = exc.retry_after_seconds
+            if delay is not None and isfinite(delay) and delay > 0:
+                seconds = ceil(delay)
+                raise HTTPException(429, f"The network is busy. Try again in {seconds} seconds.",
+                                    headers={"Retry-After": str(seconds)}) from None
+            raise HTTPException(429, "The network is limiting requests. Try again later.") from None
+        raise HTTPException(502, fallback) from None
+    except ProviderHTTPError as exc:
+        if exc.status_code in (404, 410):
+            raise HTTPException(409, "The network could not find this comment. Refresh the post.") from None
+        if exc.status_code == 403:
+            raise HTTPException(403, "The network did not grant permission for this action.") from None
+        raise HTTPException(502, fallback) from None
+    except Exception:
+        logger.exception("Comment action failed action=%s comment=%s network=%s",
+                         capability, comment.id, provider.network)
+        raise HTTPException(502, fallback) from None
 
 
 def _comment_read(row: PostComment, replies: list[CommentRead] | None = None) -> CommentRead:
@@ -281,34 +324,62 @@ def reply_to_comment(
     provider = registry.get_engagement_provider(comment.network or getattr(account, "platform", ""))
     if not provider.capabilities.supports_comment_reply:
         raise _unsupported(provider, "comment_reply")
-    try:
+    with _comment_action_errors(
+        db, account, provider, comment, "comment_reply",
+        "The network did not confirm your reply. Refresh the post before trying again.",
+    ):
         prepare_account(db, account)
         result = provider.reply_to_comment(account, comment, payload.text.strip())
         child = store_own_reply(db, comment, account, post, payload.text.strip(), result)
-    except NotSupported:
-        raise _unsupported(provider, "comment_reply") from None
-    except CreditsRequired:
-        raise
-    except ReconnectRequired as exc:
-        _remember_auth_failure(db, account, exc)
-        detail = exc.message if not isinstance(exc, ProviderAuthError) else auth_message(account, exc.kind)
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail) from None
-    except AccountUnavailable as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from None
-    except HTTPException:
-        raise
-    except Exception:
-        logger.exception(
-            "Comment reply failed comment=%s account=%s network=%s",
-            comment_id,
-            getattr(account, "id", None),
-            provider.network,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="The network could not post that reply. Try again.",
-        ) from None
     return CommentReplyResult(reply=_comment_read(child), parent=_comment_read(comment))
+
+
+@router.delete("/comments/{comment_id}", status_code=204)
+def delete_comment(
+    comment_id: UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> Response:
+    comment = get_owned_comment(db, comment_id, user.id)
+    if comment is None:
+        raise HTTPException(404, "Comment not found")
+    if comment.is_deleted:
+        return Response(status_code=204)
+    post = get_owned_post(db, comment.post_id, user.id)
+    account = post.connected_account
+    if (not account or account.user_id != user.id or comment.social_account_id != account.id
+            or registry.canonical_network(comment.network) != registry.canonical_network(account.platform)
+            or comment.provider_post_id != post.provider_post_id):
+        raise HTTPException(409, "The comment does not match this connected post.")
+    provider = registry.get_engagement_provider(account.platform)
+    if not provider.delete_scopes:
+        raise HTTPException(501, "This network does not support deleting comments in SocialCastly.")
+    if (provider.network == "youtube" and comment.author_provider_id and
+            comment.is_own != (comment.author_provider_id == account.platform_account_id)):
+        raise HTTPException(409, "Refresh this post to verify the comment author before removing it.")
+    if provider.deletes_own_only and not comment.is_own:
+        raise HTTPException(403, "Only your own replies can be deleted on this network.")
+    if not set(provider.delete_scopes).issubset(account.scopes or []):
+        raise HTTPException(403, "This account has not granted permission to remove comments.")
+    if not (comment.provider_comment_id or "").strip():
+        raise HTTPException(409, "This comment has no network ID.")
+    with _comment_action_errors(
+        db, account, provider, comment, "delete_comment",
+        "The network did not confirm comment removal. Refresh the post before trying again.",
+    ):
+        prepare_account(db, account)
+        provider.delete_comment(account, comment)
+    comment.is_deleted = True
+    if provider.network in {"youtube", "facebook", "instagram"}:
+        # A removed parent no longer has a visible discussion on these networks.
+        descendants = select(PostComment.id).where(PostComment.id == comment.id).cte(recursive=True)
+        descendants = descendants.union(select(PostComment.id).where(
+            PostComment.post_id == post.id, PostComment.parent_comment_id == descendants.c.id
+        ))
+        db.execute(update(PostComment).where(PostComment.id.in_(select(descendants.c.id)))
+                   .values(is_deleted=True).execution_options(synchronize_session=False))
+    db.commit()
+    return Response(status_code=204)
 
 
 @router.post("/comments/{comment_id}/hide", response_model=CommentRead)
@@ -322,11 +393,22 @@ def hide_comment(
     comment = get_owned_comment(db, comment_id, user.id)
     if comment is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Comment not found")
+    if comment.is_deleted:
+        raise HTTPException(409, "This comment was deleted and cannot be moderated.")
     post = get_owned_post(db, comment.post_id, user.id)
     account = comment.social_account or post.connected_account
     provider = registry.get_engagement_provider(comment.network or getattr(account, "platform", ""))
     if not provider.capabilities.supports_hide_reply:
         raise _unsupported(provider, "hide_reply")
+    if not account or not account.is_active:
+        raise HTTPException(409, "This connected account is not active.")
+    if not (comment.provider_comment_id or "").strip():
+        raise HTTPException(409, "Refresh this post before changing comment visibility.")
+    if provider.network == "threads" and (
+        comment.parent_comment_id or
+        (comment.provider_parent_id and comment.provider_parent_id != post.provider_post_id)
+    ):
+        raise HTTPException(status_code=409, detail="Threads only allows hiding top-level replies.")
     missing = [
         scope
         for scope in provider.capabilities.scopes_for("hide_reply")
@@ -337,27 +419,12 @@ def hide_comment(
             status_code=status.HTTP_409_CONFLICT,
             detail=reconnect_for_comments(getattr(account, "platform", None)),
         )
-    try:
+    with _comment_action_errors(
+        db, account, provider, comment, "hide_reply",
+        "The network did not confirm the visibility change. Refresh the post before trying again.",
+    ):
         prepare_account(db, account)
         provider.hide_reply(account, comment, payload.hidden)
-    except NotSupported:
-        raise _unsupported(provider, "hide_reply") from None
-    except CreditsRequired:
-        raise
-    except ReconnectRequired as exc:
-        _remember_auth_failure(db, account, exc)
-        detail = exc.message if not isinstance(exc, ProviderAuthError) else auth_message(account, exc.kind)
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail) from None
-    except AccountUnavailable as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from None
-    except HTTPException:
-        raise
-    except Exception:
-        logger.exception("Hide reply failed comment=%s network=%s", comment_id, provider.network)
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="The network could not update that reply. Try again.",
-        ) from None
     comment.is_hidden = payload.hidden
     db.commit()
     db.refresh(comment)

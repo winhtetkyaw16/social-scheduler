@@ -58,16 +58,8 @@ const RULES = {
   instagram: { reply: true, hide: true, delete: true },
   facebook: { reply: true, hide: true, delete: true },
   threads: { reply: true, hide: true, deleteOwn: true },
-  youtube: { reply: true, remove: true },
+  youtube: { reply: true, remove: true, deleteOwn: true },
   x: { reply: true, hide: true, deleteOwn: true },
-};
-
-const CAPABILITY_NOTES = {
-  instagram: "On Instagram you can reply to, hide and delete comments.",
-  facebook: "On Facebook Pages you can reply to, hide and delete comments.",
-  threads: "On Threads you can reply to and hide replies.",
-  youtube: "On YouTube you can reply to and remove comments.",
-  x: "On X you can reply to, hide and delete comments.",
 };
 
 export const NETWORK_ORDER = [
@@ -105,7 +97,7 @@ export const COPY = {
   pinterestLink: "Open in Pinterest",
   repliesUnsupported: "Replies aren't supported for this network.",
   hiddenBody: "Hidden from everyone except you and the commenter.",
-  actionFailed: "We couldn't send your reply. This is not your fault, please try again later.",
+  actionFailed: "Couldn't update the inbox. Please try again.",
   deleteTitle: "Delete this comment?",
   deleteButton: "Delete comment",
   removeTitle: "Remove this comment?",
@@ -275,14 +267,15 @@ export function replyHint(handle, network) {
   return `Replying to ${who} on ${networkName(network)}`;
 }
 
-export function replyPostedToast(network) {
-  return `Reply posted on ${networkName(network)}`;
+export function commentActionError(error) {
+  if (error?.status === 401) return "Sign in again to update this comment.";
+  if (error?.status === 404) return "This comment is unavailable. Refresh the post.";
+  if ([402, 403, 409, 429, 501, 502].includes(error?.status) && error.detail) return error.detail;
+  return "Couldn't confirm the comment update. Check your connection and refresh the post before trying again.";
 }
 
-export function capabilityNote(network, xEnabled = false) {
-  const key = canonicalNetwork(network);
-  if (key === "x" && !xEnabled) return "";
-  return CAPABILITY_NOTES[key] || "";
+export function replyPostedToast(network) {
+  return `Reply posted on ${networkName(network)}`;
 }
 
 export function commentsMode(network, xEnabled = false) {
@@ -354,9 +347,8 @@ export function commentsPresentation({ network, xEnabled = false, metrics = null
         : null;
   return {
     kind: "list",
-    note: capabilityNote(network, xEnabled),
     empty: noCommentsCopy(network),
-    composer: showComposer(network, xEnabled) && !banner,
+    composer: false,
     banner,
   };
 }
@@ -370,15 +362,23 @@ export function showRepliesUnsupported(network, xEnabled = false) {
   return commentsMode(network, xEnabled) === "list" && !showComposer(network, xEnabled);
 }
 
-export function commentActions(network, comment, xEnabled = false) {
-  if (!comment || comment.deleted) return [];
+export function commentActions(network, comment, xEnabled = false, capability) {
+  if (!comment?.providerCommentId || comment.deleted || !capability) return [];
   if (commentsMode(network, xEnabled) !== "list") return [];
-  const rule = RULES[canonicalNetwork(network)];
-  if (!rule) return [];
+  const networkRules = RULES[canonicalNetwork(network)];
+  if (!networkRules) return [];
+  const rule = {
+    reply: networkRules.reply && capability.can_reply && !(canonicalNetwork(network) === "youtube" && comment.nested),
+    hide: networkRules.hide && capability.can_hide_reply,
+    delete: networkRules.delete && capability.can_delete_comment,
+    deleteOwn: networkRules.deleteOwn && capability.can_delete_comment,
+    remove: networkRules.remove && capability.can_delete_comment,
+  };
   const own = !!comment.own;
+  const canHide = rule.hide && !(canonicalNetwork(network) === "threads" && comment.nested);
   if (comment.hidden) {
     const acts = [];
-    if (rule.hide) acts.push("unhide");
+    if (canHide) acts.push("unhide");
     if (rule.delete || (rule.deleteOwn && own)) acts.push("delete");
     else if (rule.remove) acts.push("remove");
     return acts;
@@ -390,14 +390,25 @@ export function commentActions(network, comment, xEnabled = false) {
   }
   const acts = [];
   if (rule.reply) acts.push("reply");
-  if (rule.hide) acts.push("hide");
+  if (canHide) acts.push("hide");
   if (rule.delete) acts.push("delete");
   if (rule.remove) acts.push("remove");
   return acts;
 }
 
+export function visibleDeleteConfirmation(roots, pending, network, xEnabled, capability) {
+  if (!pending) return null;
+  for (const root of roots) {
+    const comment = root.id === pending.id ? root : root.replies?.find((reply) => reply.id === pending.id);
+    if (!comment) continue;
+    const actions = commentActions(network, comment, xEnabled, capability);
+    if (actions.includes("delete") || actions.includes("remove")) return deleteConfirmCopy(comment, network);
+  }
+  return null;
+}
+
 export function deleteConfirmCopy(comment, network) {
-  if (canonicalNetwork(network) === "youtube") {
+  if (canonicalNetwork(network) === "youtube" && !comment?.own) {
     return {
       title: COPY.removeTitle,
       body: COPY.removeBody,
@@ -652,15 +663,16 @@ export function refreshAllowed(capturedAt, now = Date.now()) {
   return now - then >= REFRESH_MIN_MS;
 }
 
-export function normalizeComment(row, network) {
+export function normalizeComment(row, network, nested = false) {
   if (!row || typeof row !== "object") return null;
   const handle = atHandle(row.author_handle || row.handle || "");
   const replies = Array.isArray(row.replies)
-    ? row.replies.map((item) => normalizeComment(item, row.network || network)).filter(Boolean)
+    ? row.replies.map((item) => normalizeComment(item, row.network || network, true)).filter(Boolean)
     : [];
   return {
     id: String(row.id),
     postId: String(row.post_id || row.postId || ""),
+    providerCommentId: String(row.provider_comment_id ?? row.providerCommentId ?? "").trim(),
     network: canonicalNetwork(row.network || network),
     authorName: row.author_name || row.authorName || "Someone",
     handle,
@@ -670,6 +682,7 @@ export function normalizeComment(row, network) {
     likes: numberOrNull(row.like_count ?? row.likes),
     hidden: !!(row.is_hidden ?? row.hidden),
     own: !!(row.is_own ?? row.own),
+    nested: !!(nested || row.nested || row.parent_comment_id || (row.provider_parent_id && row.provider_parent_id !== row.provider_post_id)),
     deleted: !!(row.is_deleted ?? row.deleted),
     read: !!(row.is_read ?? row.read),
     replied: !!row.replied,

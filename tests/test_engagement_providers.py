@@ -31,6 +31,7 @@ from app.services.oauth_scopes import (
     TIKTOK_SCOPES,
     X_SCOPES,
     YOUTUBE_ANALYTICS,
+    YOUTUBE_FORCE_SSL,
     YOUTUBE_SCOPES,
     tiktok_scopes,
 )
@@ -87,6 +88,189 @@ def test_meta_refresh_checks_owner_and_all_pages(monkeypatch, provider, listed):
     with pytest.raises(EngagementRetryableError if listed else RemotePostDeleted):
         provider.verify_post(_account(provider.network), _post())
     assert script.calls[-1]["params"]["after"] == "cursor"
+
+
+@pytest.mark.parametrize("network,scopes,field", [
+    ("facebook", ["pages_manage_engagement"], "is_hidden"),
+    ("instagram", ["instagram_basic", "instagram_manage_comments", "pages_read_engagement"], "hide"),
+    ("threads", ["threads_basic", "threads_manage_replies"], "hide"),
+])
+def test_meta_comment_hide_and_unhide(client, auth_headers, monkeypatch, network, scopes, field):
+    from tests.test_engagement import _connect, _published, _user_id, _add_comment
+    from app.models.engagement import PostComment
+
+    headers, _ = auth_headers
+    account_id = _connect(client, headers, network, scopes=scopes)
+    post_id = _published(_user_id(headers), account_id)
+    comment_id = _add_comment(post_id, account_id, text="Comment", network=network, minutes_ago=1)
+    with SessionLocal() as db:
+        remote_id = db.get(PostComment, comment_id).provider_comment_id
+    script = _Script([_ok({"success": True}), _ok({"success": False}), _ok({"success": True})])
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    path = f"/api/v1/comments/{comment_id}/hide"
+    for hidden, status, saved in [(True, 200, True), (False, 502, True), (False, 200, False)]:
+        response = client.post(path, json={"hidden": hidden}, headers=headers)
+        assert response.status_code == status, response.text
+        assert script.calls[-1]["method"] == "POST"
+        call = script.calls[-1]
+        if network == "threads":
+            assert call["url"].endswith(f"/{remote_id}/manage_reply")
+            assert call["params"] == {"hide": str(hidden).lower()}
+        else:
+            assert call["url"].endswith(f"/{remote_id}")
+            assert call["json"] == {field: hidden}
+        with SessionLocal() as db:
+            assert db.get(PostComment, comment_id).is_hidden is saved
+
+
+@pytest.mark.parametrize("own,method", [(True, "DELETE"), (False, "POST")])
+def test_youtube_comment_removal(client, auth_headers, monkeypatch, own, method):
+    from tests.test_engagement import _connect, _published, _user_id, _add_comment
+    from app.models.engagement import PostComment
+
+    headers, _ = auth_headers
+    account = _connect(client, headers, "youtube", scopes=[YOUTUBE_FORCE_SSL])
+    post = _published(_user_id(headers), account, provider_post_id="provider-post")
+    comment = _add_comment(post, account, network="youtube", text="Comment", minutes_ago=0, is_own=own)
+    child = _add_comment(post, account, network="youtube", text="Reply", minutes_ago=0, parent_id=comment)
+    script = _Script([_ok({}, 500), httpx.Response(204)])
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    path = f"/api/v1/comments/{comment}"
+    assert client.delete(path, headers=headers).status_code == 502
+    with SessionLocal() as db:
+        row = db.get(PostComment, comment)
+        assert not row.is_deleted
+        remote_id = row.provider_comment_id
+    assert client.delete(path, headers=headers).status_code == 204
+    assert client.delete(path, headers=headers).status_code == 204
+    assert len(script.calls) == 2
+    call = script.calls[-1]
+    assert call["method"] == method
+    assert call["url"].endswith("/comments" if own else "/comments/setModerationStatus")
+    assert call["params"] == ({"id": remote_id} if own else {"id": remote_id, "moderationStatus": "rejected"})
+    with SessionLocal() as db:
+        assert db.get(PostComment, comment).is_deleted and db.get(PostComment, child).is_deleted
+
+
+@pytest.mark.parametrize("network,scopes,own,cascades", [
+    ("facebook", ["pages_manage_engagement"], False, True),
+    ("instagram", ["instagram_basic", "instagram_manage_comments", "pages_read_engagement"], False, True),
+    ("threads", ["threads_basic", "threads_delete"], True, False),
+    ("x", ["tweet.write"], True, False),
+])
+def test_provider_delete_requires_confirmation_and_is_idempotent(
+    client, auth_headers, monkeypatch, network, scopes, own, cascades
+):
+    from app.models.engagement import PostComment
+    from tests.test_engagement import _add_comment, _connect, _published, _user_id
+
+    monkeypatch.setenv("ENGAGEMENT_X_ENABLED", "true")
+    headers, _ = auth_headers
+    account = _connect(client, headers, network, scopes=scopes)
+    post = _published(_user_id(headers), account, provider_post_id="provider-post")
+    comment = _add_comment(post, account, network=network, text="Comment", minutes_ago=1, is_own=own)
+    child = _add_comment(post, account, network=network, text="Reply", minutes_ago=0, parent_id=comment)
+    with SessionLocal() as db:
+        remote_id = db.get(PostComment, comment).provider_comment_id
+
+    refused, confirmed = {"success": False}, {"success": True}
+    if network == "threads":
+        refused, confirmed = {"deleted_id": "another-reply"}, {"deleted_id": remote_id}
+    elif network == "x":
+        refused, confirmed = {"data": {"deleted": False}}, {"data": {"deleted": True}}
+    script = _Script([_ok(refused), _ok(confirmed)])
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    path = f"/api/v1/comments/{comment}"
+    assert client.delete(path, headers=headers).status_code == 502
+    with SessionLocal() as db:
+        assert not db.get(PostComment, comment).is_deleted
+        assert not db.get(PostComment, child).is_deleted
+
+    assert client.delete(path, headers=headers).status_code == 204
+    assert client.delete(path, headers=headers).status_code == 204
+    assert len(script.calls) == 2
+    suffix = f"/tweets/{remote_id}" if network == "x" else f"/{remote_id}"
+    assert all(call["method"] == "DELETE" and call["url"].endswith(suffix) for call in script.calls)
+    with SessionLocal() as db:
+        assert db.get(PostComment, comment).is_deleted
+        assert db.get(PostComment, child).is_deleted is cascades
+
+
+@pytest.mark.parametrize("network,scopes,own,action,status", [
+    ("threads", ["threads_basic", "threads_delete"], False, "delete", 403),
+    ("x", ["tweet.write"], False, "delete", 403),
+    ("facebook", ["pages_read_engagement"], True, "delete", 403),
+    ("instagram", ["instagram_basic", "pages_read_engagement"], True, "delete", 403),
+    ("youtube", [YOUTUBE_FORCE_SSL], False, "hide", 501),
+    ("threads", ["threads_basic", "threads_manage_replies"], False, "hide_nested", 409),
+    ("linkedin", ["w_member_social"], True, "delete", 501),
+    ("pinterest", ["pins:read"], True, "delete", 501),
+    ("tiktok", ["video.list"], True, "delete", 501),
+])
+def test_disallowed_moderation_stops_before_network(
+    client, auth_headers, monkeypatch, network, scopes, own, action, status
+):
+    from app.models.engagement import PostComment
+    from tests.test_engagement import _add_comment, _connect, _published, _user_id
+
+    monkeypatch.setenv("ENGAGEMENT_X_ENABLED", "true")
+    headers, _ = auth_headers
+    account = _connect(client, headers, network, scopes=scopes)
+    post = _published(_user_id(headers), account, provider_post_id="provider-post")
+    parent = None
+    if action == "hide_nested":
+        parent = _add_comment(post, account, network=network, text="Parent", minutes_ago=1)
+    comment = _add_comment(
+        post, account, network=network, text="Comment", minutes_ago=0, is_own=own, parent_id=parent
+    )
+    script = _Script([])
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    path = f"/api/v1/comments/{comment}"
+    if action == "delete":
+        response = client.delete(path, headers=headers)
+    else:
+        response = client.post(f"{path}/hide", headers=headers, json={"hidden": True})
+    assert response.status_code == status, response.text
+    assert not script.calls
+    with SessionLocal() as db:
+        row = db.get(PostComment, comment)
+        assert not row.is_hidden and not row.is_deleted
+
+
+@pytest.mark.parametrize("action,status,body,expected,recovery", [
+    ("hide", 403, {"error": {"code": 200}}, 403, "permission"),
+    ("delete", 429, {}, 429, "120 seconds"),
+    ("reply", 404, {}, 409, "Refresh the post"),
+    ("hide", 401, {}, 409, "Reconnect"),
+    ("hide", 200, {"data": {"hidden": False}}, 502, "Refresh the post"),
+])
+def test_comment_action_errors_preserve_state(client, auth_headers, monkeypatch, action, status, body, expected, recovery):
+    from app.models.engagement import PostComment
+    from tests.test_engagement import _add_comment, _connect, _published, _user_id
+
+    headers, _ = auth_headers
+    network = "x" if status == 200 else "facebook"
+    monkeypatch.setenv("ENGAGEMENT_X_ENABLED", "true")
+    account = _connect(client, headers, network, scopes=["pages_manage_engagement", "pages_read_user_content", "tweet.moderate.write"])
+    post = _published(_user_id(headers), account, provider_post_id="provider-post")
+    comment = _add_comment(post, account, network=network, text="Comment", minutes_ago=1)
+    script = _Script([httpx.Response(status, json=body, headers={"Retry-After": "120"})])
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    path = f"/api/v1/comments/{comment}"
+    if action == "delete":
+        response = client.delete(path, headers=headers)
+    else:
+        payload = {"hidden": True} if action == "hide" else {"text": "Hello"}
+        response = client.post(f"{path}/{action}", headers=headers, json=payload)
+    assert response.status_code == expected, response.text
+    assert recovery.lower() in response.json()["detail"].lower()
+    assert len(script.calls) == 1
+    if expected == 429:
+        assert response.headers["Retry-After"] == "120"
+    with SessionLocal() as db:
+        row = db.get(PostComment, comment)
+        assert not row.is_deleted and not row.is_hidden and not row.replied
+        assert db.get(ConnectedAccount, account).needs_reconnect is (status == 401)
 
 
 def test_facebook_permission_code_on_deleted_post_checks_page_listing(monkeypatch):
@@ -796,6 +980,7 @@ def test_x_search_reply_metrics_hide_and_402(monkeypatch, client, auth_headers, 
             ),
             _ok({"data": {"id": "our-reply"}}),
             _ok({"data": {"hidden": True}}),
+            _ok({"data": {"hidden": False}}),
             _ok(
                 {
                     "data": {
@@ -827,6 +1012,10 @@ def test_x_search_reply_metrics_hide_and_402(monkeypatch, client, auth_headers, 
     assert script.calls[2]["method"] == "PUT"
     assert script.calls[2]["url"].endswith("/tweets/reply-9/hidden")
     assert script.calls[2]["json"] == {"hidden": True}
+    provider.hide_reply(account, _comment("reply-9"), False)
+    assert script.calls[3]["method"] == "PUT"
+    assert script.calls[3]["url"].endswith("/tweets/reply-9/hidden")
+    assert script.calls[3]["json"] == {"hidden": False}
     insights = provider.fetch_insights(account, _post("root-tweet"))
     assert insights.impressions == 100
     assert insights.likes == 5

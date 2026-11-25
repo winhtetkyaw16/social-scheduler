@@ -22,6 +22,7 @@ import { syncPostsAndRefresh } from "./syncRefresh.js";
 import { remotePostStatusLabel } from "../postStatus.js";
 import {
   COPY,
+  commentActionError,
   INSIGHT_METRICS,
   NETWORK_MEMORY_KEY,
   accountAccess,
@@ -32,9 +33,7 @@ import {
   commentsPresentation,
   commentsTabEnabled,
   compactAge,
-  composerHint,
-  composerPlaceholder,
-  deleteConfirmCopy,
+  visibleDeleteConfirmation,
   displayMetric,
   externalHref,
   formatCount,
@@ -170,7 +169,6 @@ export default function PostDetailDrawer({
   const [expanded, setExpanded] = useState(false);
   const [replyId, setReplyId] = useState(null);
   const [drafts, setDrafts] = useState({});
-  const [composer, setComposer] = useState("");
   const [busy, setBusy] = useState("");
   const [statusNotice, setStatusNotice] = useState(null);
   const [pending, setPending] = useState(null);
@@ -402,8 +400,8 @@ export default function PostDetailDrawer({
       setReplyId(null);
       onActivity?.();
       await load();
-    } catch {
-      tell(COPY.actionFailed);
+    } catch (error) {
+      tell(commentActionError(error), "error");
     } finally {
       setBusy("");
     }
@@ -412,19 +410,18 @@ export default function PostDetailDrawer({
   async function toggleHide(comment, hidden) {
     const key = selectedTarget?.key;
     if (!key || !client) return;
-    setThreads((current) => ({
-      ...current,
-      [key]: mapComment(current[key], comment.id, (item) => ({ ...item, hidden })),
-    }));
+    setBusy(comment.id);
     try {
-      await client.hideReply(comment.id, hidden);
-      onActivity?.();
-    } catch {
+      const updated = await client.hideReply(comment.id, hidden);
       setThreads((current) => ({
         ...current,
-        [key]: mapComment(current[key], comment.id, (item) => ({ ...item, hidden: !hidden })),
+        [key]: mapComment(current[key], updated.id, (item) => ({ ...item, hidden: updated.is_hidden })),
       }));
-      tell(COPY.actionFailed);
+      onActivity?.();
+    } catch (error) {
+      tell(commentActionError(error), "error");
+    } finally {
+      setBusy("");
     }
   }
 
@@ -433,32 +430,11 @@ export default function PostDetailDrawer({
     setBusy(pending.id);
     try {
       await client.removeComment(pending.id);
-      const key = selectedTarget.key;
-      setThreads((current) => ({
-        ...current,
-        [key]: mapComment(current[key], pending.id, (item) => ({ ...item, deleted: true })),
-      }));
+      await load();
       setPending(null);
       onActivity?.();
-    } catch {
-      tell(COPY.actionFailed);
-    } finally {
-      setBusy("");
-    }
-  }
-
-  async function sendComposer() {
-    const text = composer.trim();
-    if (!text || !selectedTarget || !client) return;
-    setBusy("composer");
-    try {
-      await client.createComment(selectedTarget.post.id, text, selectedTarget.network);
-      setComposer("");
-      tell(replyPostedToast(selectedTarget.network), "success");
-      onActivity?.();
-      await load();
-    } catch {
-      tell(COPY.actionFailed);
+    } catch (error) {
+      tell(commentActionError(error), "error");
     } finally {
       setBusy("");
     }
@@ -474,7 +450,7 @@ export default function PostDetailDrawer({
     if (action === "delete" || action === "remove") setPending(comment);
   }
 
-  const capability = matrix?.accounts?.find((row) => row.account_id === selectedTarget?.account?.id);
+  const capability = matrix?.accounts?.find((row) => row.account_id === selectedTarget?.post?.connected_account_id);
   const access = accountAccess(selectedTarget?.account, capability);
   const metrics = metricsFromSnapshot(selectedTarget?.network, snapshots[selectedTarget?.key]);
   const presentation = selectedTarget
@@ -487,8 +463,7 @@ export default function PostDetailDrawer({
     : null;
   const mode = presentation?.kind || "muted";
   const roots = sortRoots(threads[selectedTarget?.key] || [], order);
-  const canCompose = !!(presentation?.composer && commentsOn);
-  const confirm = pending && selectedTarget ? deleteConfirmCopy(pending, selectedTarget.network) : null;
+  const confirm = visibleDeleteConfirmation(roots, pending, selectedTarget?.network, xEnabled, capability);
 
   return (
     <div className="eng-root">
@@ -769,9 +744,8 @@ export default function PostDetailDrawer({
                       onReconnect={() => onReconnect?.(selectedTarget.account)}
                     />
                   ) : null}
-                  {mode === "list" && presentation.note ? (
+                  {mode === "list" && roots.length > 1 ? (
                     <div className="eng-toolbar">
-                      <span className="eng-note">{presentation.note}</span>
                       <button
                         type="button"
                         className="eng-sort"
@@ -848,6 +822,7 @@ export default function PostDetailDrawer({
                           comment={comment}
                           network={selectedTarget.network}
                           xEnabled={xEnabled}
+                          capability={capability ?? null}
                           now={now}
                           replyId={replyId}
                           drafts={drafts}
@@ -872,35 +847,6 @@ export default function PostDetailDrawer({
           )}
         </div>
 
-        {tab === "comments" && canCompose ? (
-          <footer className="eng-composer">
-            <div className="eng-composer-row">
-              <input
-                className="input"
-                value={composer}
-                placeholder={composerPlaceholder(selectedTarget?.name)}
-                aria-label={composerPlaceholder(selectedTarget?.name)}
-                onChange={(event) => setComposer(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    void sendComposer();
-                  }
-                }}
-              />
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={!composer.trim() || busy === "composer"}
-                onClick={() => void sendComposer()}
-              >
-                <Send size={16} />
-                <span className="eng-send-label">Send</span>
-              </button>
-            </div>
-            <div className="eng-composer-note">{composerHint(selectedTarget.network)}</div>
-          </footer>
-        ) : null}
 
         {confirm ? (
           <div className="eng-confirm-layer" role="alertdialog" aria-labelledby="eng-confirm-title">
@@ -947,9 +893,10 @@ export function CommentBlock({
   onAction,
   onSend,
   onCancel,
+  capability,
   depth = 0,
 }) {
-  const acts = commentActions(network, comment, xEnabled);
+  const acts = commentActions(network, comment, xEnabled, capability);
   const name = comment.authorName || comment.handle || "";
   const showHandle = !comment.own && comment.handle && comment.handle !== comment.authorName;
   return (
@@ -972,6 +919,7 @@ export function CommentBlock({
               key={action}
               type="button"
               className={`eng-action${action === "delete" || action === "remove" ? " danger" : ""}`}
+              disabled={Boolean(busy)}
               onClick={() => onAction(comment, action)}
             >
               <ActionIcon action={action} />
@@ -987,7 +935,7 @@ export function CommentBlock({
             </button>
           ))}
         </div>
-        {replyId === comment.id ? (
+        {replyId === comment.id && acts.includes("reply") ? (
           <div className="eng-replybox">
             <div className="eng-note">{replyHint(comment.handle || comment.authorName, network)}</div>
             <textarea
@@ -1007,7 +955,7 @@ export function CommentBlock({
               <button
                 type="button"
                 className="btn btn-sm btn-primary"
-                disabled={!String(drafts[comment.id] || "").trim() || busy === comment.id}
+                disabled={!String(drafts[comment.id] || "").trim() || Boolean(busy)}
                 onClick={() => void onSend(comment)}
               >
                 <Send size={14} />
@@ -1024,6 +972,7 @@ export function CommentBlock({
                 comment={reply}
                 network={network}
                 xEnabled={xEnabled}
+                capability={capability}
                 now={now}
                 replyId={replyId}
                 drafts={drafts}

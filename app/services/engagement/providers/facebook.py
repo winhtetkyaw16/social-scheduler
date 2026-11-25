@@ -15,6 +15,7 @@ from app.integrations.media_urls import guess_media_kind
 from app.services.engagement.base import (
     CAPABILITY_COMMENT_REPLY,
     CAPABILITY_COMMENTS_READ,
+    CAPABILITY_HIDE_REPLY,
     CAPABILITY_INSIGHTS,
     EngagementCapabilities,
     EngagementProvider,
@@ -60,13 +61,21 @@ class FacebookEngagement(EngagementProvider):
     """Read Page comments, reply as the Page, and read current post insight metrics."""
 
     network = "facebook"
+    delete_scopes = ("pages_manage_engagement",)
+
+    def delete_comment(self, account, comment) -> None:
+        result = request_json("DELETE", _graph(comment.provider_comment_id), access_token=self.access_token(account))
+        if result.get("success") is not True:
+            raise RuntimeError("Facebook did not confirm comment deletion")
     capabilities = EngagementCapabilities(
         supports_comments_read=True,
         supports_comment_reply=True,
+        supports_hide_reply=True,
         supports_insights=True,
         required_scopes={
             CAPABILITY_COMMENTS_READ: ("pages_read_user_content", "pages_read_engagement"),
             CAPABILITY_COMMENT_REPLY: ("pages_manage_engagement", "pages_read_user_content"),
+            CAPABILITY_HIDE_REPLY: ("pages_manage_engagement",),
             CAPABILITY_INSIGHTS: (
                 "read_insights",
                 "pages_read_engagement",
@@ -81,6 +90,19 @@ class FacebookEngagement(EngagementProvider):
 
     def verify_post(self, account, post) -> None:
         verify_meta_post(self.network, _graph, account, post, self.access_token(account))
+
+    def hide_reply(self, account, comment, hidden: bool) -> None:
+        comment_id = str(comment.provider_comment_id or "").strip()
+        if not comment_id:
+            raise ValueError("Facebook comment ID is missing")
+        result = request_json(
+            "POST",
+            _graph(comment_id),
+            access_token=self.access_token(account),
+            json_body={"is_hidden": hidden},
+        )
+        if result.get("success") is not True:
+            raise RuntimeError("Facebook did not confirm the comment visibility change")
 
     def fetch_comments(self, account, post, since=None) -> list[ProviderComment]:
         token = self.access_token(account)

@@ -15,6 +15,7 @@ from datetime import datetime, timedelta, timezone
 from app.services.engagement.base import (
     CAPABILITY_COMMENT_REPLY,
     CAPABILITY_COMMENTS_READ,
+    CAPABILITY_HIDE_REPLY,
     CAPABILITY_INSIGHTS,
     EngagementCapabilities,
     EngagementProvider,
@@ -29,7 +30,7 @@ from app.services.engagement.http import collect_graph, request_json
 from app.services.engagement.parsing import insight_number, is_own_author, parse_time
 
 _REPLY_FIELDS = "id,text,username,timestamp,permalink,hide_status,replied_to,is_reply"
-_HIDDEN = {"HIDDEN", "COVERED", "BLOCKED", "RESTRICTED"}
+_HIDDEN = {"HUSHED", "HIDDEN", "COVERED", "BLOCKED", "RESTRICTED"}
 _METRICS = ("views", "likes", "replies", "reposts", "quotes", "shares")
 
 
@@ -54,12 +55,21 @@ class ThreadsEngagement(EngagementProvider):
     """Read and publish Threads replies, and read media insights."""
 
     network = "threads"
+    delete_scopes = ("threads_basic", "threads_delete")
+    deletes_own_only = True
+
+    def delete_comment(self, account, comment) -> None:
+        result = request_json("DELETE", f"{_base()}/{comment.provider_comment_id}", access_token=self.access_token(account))
+        if result.get("success") is not True and str(result.get("deleted_id") or "") != comment.provider_comment_id:
+            raise RuntimeError("Threads did not confirm reply deletion")
     capabilities = EngagementCapabilities(
         supports_comments_read=True,
         supports_comment_reply=True,
+        supports_hide_reply=True,
         supports_insights=True,
         required_scopes={
             CAPABILITY_COMMENTS_READ: ("threads_basic", "threads_read_replies"),
+            CAPABILITY_HIDE_REPLY: ("threads_basic", "threads_manage_replies"),
             CAPABILITY_COMMENT_REPLY: (
                 "threads_basic",
                 "threads_content_publish",
@@ -113,6 +123,17 @@ class ThreadsEngagement(EngagementProvider):
             seen.add(str(after))
             params["after"] = str(after)
         return comments
+
+    def hide_reply(self, account, comment, hidden: bool) -> None:
+        reply_id = str(comment.provider_comment_id or "").strip()
+        if not reply_id:
+            raise ValueError("Threads reply ID is missing")
+        body = request_json(
+            "POST", f"{_base()}/{reply_id}/manage_reply", access_token=self.access_token(account),
+            params={"hide": "true" if hidden else "false"},
+        )
+        if body.get("success") is not True:
+            raise RuntimeError("Threads did not confirm the reply visibility change")
 
     def reply_to_comment(self, account, comment, text: str) -> ProviderReply:
         token = self.access_token(account)

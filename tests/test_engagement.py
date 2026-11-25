@@ -358,9 +358,10 @@ def test_default_provider_raises_not_supported():
         provider.fetch_insights(None, None)
 
 
-def test_registry_capability_matrix():
+def test_registry_capability_matrix(monkeypatch):
     from app.services.engagement.registry import get_engagement_provider
 
+    monkeypatch.setenv("TIKTOK_ENABLE_VIDEO_LIST", "false")
     assert supported_networks() == (
         "facebook",
         "instagram",
@@ -372,9 +373,9 @@ def test_registry_capability_matrix():
         "pinterest",
     )
     expected = {
-        "facebook": (True, True, True, False),
-        "instagram": (True, True, True, False),
-        "threads": (True, True, True, False),
+        "facebook": (True, True, True, True),
+        "instagram": (True, True, True, True),
+        "threads": (True, True, True, True),
         "x": (False, False, False, False),
         "linkedin": (False, False, False, False),
         "youtube": (True, True, True, False),
@@ -757,6 +758,8 @@ def test_remote_deleted_post_is_persisted_and_excluded_from_later_sweeps(
 
     class DeletedProvider(FakeProvider):
         def fetch_comments(self, account, post, since=None):
+            if not self._selected(account):
+                return []
             self.calls.append("comments")
             raise RemotePostDeleted("youtube")
 

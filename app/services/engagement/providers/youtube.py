@@ -26,7 +26,7 @@ from app.services.engagement.base import (
 )
 from app.integrations.base import ProviderHTTPError
 from app.services.engagement.http import request_json
-from app.services.engagement.parsing import as_int, granted_scopes, is_own_author, parse_time
+from app.services.engagement.parsing import as_int, granted_scopes, parse_time
 from app.services.oauth_scopes import YOUTUBE_ANALYTICS, YOUTUBE_FORCE_SSL, YOUTUBE_READONLY
 
 DATA = "https://www.googleapis.com/youtube/v3"
@@ -62,7 +62,7 @@ def _from_snippet(account, comment_id: str, snippet: dict, *, parent_id: str | N
         author_provider_id=channel_id,
         created_at_provider=parse_time(snippet.get("publishedAt")),
         provider_parent_id=parent_id,
-        is_own=is_own_author(account, channel_id, snippet.get("authorDisplayName")),
+        is_own=bool(channel_id and channel_id == account.platform_account_id),
         raw={"id": comment_id, "snippet": snippet},
     )
 
@@ -71,6 +71,16 @@ class YouTubeEngagement(EngagementProvider):
     """Comment threads, replies, and per-video counts."""
 
     network = "youtube"
+    delete_scopes = (YOUTUBE_FORCE_SSL,)
+
+    def delete_comment(self, account, comment) -> None:
+        token = self.access_token(account)
+        params = {"id": comment.provider_comment_id}
+        if comment.is_own:
+            request_json("DELETE", f"{DATA}/comments", access_token=token, params=params)
+        else:
+            request_json("POST", f"{DATA}/comments/setModerationStatus", access_token=token,
+                         params={**params, "moderationStatus": "rejected"})
     capabilities = EngagementCapabilities(
         supports_comments_read=True,
         supports_comment_reply=True,

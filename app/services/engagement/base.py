@@ -174,6 +174,8 @@ class EngagementProvider:
     """
 
     network: str = "unknown"
+    delete_scopes: tuple[str, ...] = ()
+    deletes_own_only: bool = False
     capabilities: EngagementCapabilities = EngagementCapabilities()
 
     def verify_post(self, account, post) -> None:
@@ -194,6 +196,9 @@ class EngagementProvider:
     def hide_reply(self, account, comment, hidden: bool) -> None:
         """Hide or unhide a reply. Only networks that document this are implemented."""
         raise NotSupported(self.network, "hide_reply")
+
+    def delete_comment(self, account, comment) -> None:
+        raise NotSupported(self.network, "delete_comment")
 
     def access_token(self, account) -> str:
         """Decrypt the current access token after the caller has refreshed it.

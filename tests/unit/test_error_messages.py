@@ -65,7 +65,7 @@ CASES = [
         ["https://x.test/a.mp4"],
         "timeout",
     ),
-    ("provider_request_error", "TikTok request timed out", "tiktok", None, "timeout"),
+    ("provider_request_error", "TikTok request timed out", "tiktok", None, "network_unreachable"),
     (
         HTTP_ERROR,
         "Provider returned HTTP 401: Unauthorized",
@@ -195,10 +195,7 @@ def test_specific_copy_has_no_jargon_or_raw_text(
         a["label"] for a in result["actions"]
     ]:
         low = text.lower()
-        # The X credits copy names the "X API" on purpose: the fix happens in the X developer console.
         for word in BANNED_WORDS:
-            if expected == "x_credits_depleted" and word == "api":
-                continue
             assert not re.search(rf"\b{re.escape(word)}\b", low), (word, text)
         assert "{" not in text and "provider" not in low
         assert message.lower() not in low
@@ -244,9 +241,9 @@ def test_x_credits_copy_is_specific():
     )
     assert (
         result["banner"]
-        == "X API has no credits: add credits in the X developer console to post."
+        == "Publishing to X is temporarily unavailable."
     )
-    assert "credits" in result["what_happened"]
+    assert "SocialCastly" in result["what_happened"]
     assert [a["id"] for a in result["actions"]] == ["retry", "reschedule"]
     assert all("href" not in a for a in result["actions"])
 

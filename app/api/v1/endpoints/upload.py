@@ -50,7 +50,7 @@ async def upload_media(
     if extension is None:
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail="Only supported image and video files can be uploaded.",
+            detail="This file type can't be uploaded. Choose an image such as JPG or PNG, or a video such as MP4 or MOV.",
         )
 
     filename = f"{uuid4().hex}{extension}"

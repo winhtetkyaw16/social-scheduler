@@ -10,6 +10,7 @@ A 402 or credits error is ``CreditsRequired``, not a reconnect.
 from __future__ import annotations
 
 from app.core.config import engagement_x_enabled
+from app.integrations.base import ProviderHTTPError
 from app.services.engagement.base import (
     CAPABILITY_COMMENT_REPLY,
     CAPABILITY_COMMENTS_READ,
@@ -18,6 +19,8 @@ from app.services.engagement.base import (
     EngagementCapabilities,
     EngagementProvider,
     NotSupported,
+    PostStatusUnconfirmed,
+    RemotePostDeleted,
     ProviderComment,
     ProviderInsights,
     ProviderReply,
@@ -87,6 +90,35 @@ class XEngagement(EngagementProvider):
     """
 
     network = "x"
+    delete_scopes = ("tweet.write",)
+    deletes_own_only = True
+
+    def delete_comment(self, account, comment) -> None:
+        self._require_enabled("delete_comment")
+        result = request_json("DELETE", f"{API}/tweets/{comment.provider_comment_id}", access_token=self.access_token(account))
+        if (result.get("data") or {}).get("deleted") is not True:
+            raise RuntimeError("X did not confirm reply deletion")
+
+    def verify_post(self, account, post) -> None:
+        token = self.access_token(account)
+        tweet_id = str(post.provider_post_id)
+        if not tweet_id.isdecimal():
+            raise PostStatusUnconfirmed("X did not provide a valid post ID.")
+        try:
+            body = request_json("GET", f"{API}/tweets/{tweet_id}", access_token=token)
+        except ProviderHTTPError as exc:
+            if exc.status_code != 404:
+                raise
+        else:
+            if (body.get("data") or {}).get("id") == tweet_id:
+                return
+            if not any(isinstance(e, dict) and str(e.get("type", "")).endswith("/resource-not-found")
+                       and e.get("value") == tweet_id for e in body.get("errors", [])):
+                raise PostStatusUnconfirmed("X could not confirm this post's status.")
+        me = request_json("GET", f"{API}/users/me", access_token=token)
+        if (me.get("data") or {}).get("id") == account.platform_account_id:
+            raise RemotePostDeleted("x")
+        raise PostStatusUnconfirmed("X could not verify the connected account.")
 
     @property
     def capabilities(self) -> EngagementCapabilities:
@@ -169,12 +201,15 @@ class XEngagement(EngagementProvider):
         self._require_enabled(CAPABILITY_HIDE_REPLY)
         token = self.access_token(account)
         tweet_id = str(comment.provider_comment_id or "").strip()
-        request_json(
+        result = request_json(
             "PUT",
             f"{API}/tweets/{tweet_id}/hidden",
             access_token=token,
             json_body={"hidden": bool(hidden)},
         )
+
+        if (result.get("data") or {}).get("hidden") is not hidden:
+            raise RuntimeError("X did not confirm the reply visibility change")
 
     def fetch_insights(self, account, post) -> ProviderInsights:
         self._require_enabled(CAPABILITY_INSIGHTS)

@@ -47,7 +47,7 @@ import { ChannelFormatSelector, PlatformSettingsPopover } from "./ComposerChanne
 import { mediaKeyOf, summarize } from "./mediaRules.js";
 import useBodyScrollLock from "./useBodyScrollLock.js";
 import FixSheet from "./FixSheet.jsx";
-import { blockingGroups, buildFixPlan, publishBlock } from "./fixPlan.js";
+import { blockingGroups, buildFixPlan, publishBlock, shortMediaProblem } from "./fixPlan.js";
 
 const LABELS = {
   x: "X",
@@ -218,6 +218,7 @@ export default function ComposerV2(props) {
   const textarea = useRef(null);
   const emojiBtn = useRef(null);
   const fileInput = useRef(null);
+  const canAttachMedia = selectedAccounts.length > 0;
   const busy = saving || uploadBusy || loadingAccounts;
   const active = accounts.filter((a) => a.is_active);
   const groups = useMemo(() => groupByNetwork(selectedAccounts), [selectedAccounts]);
@@ -431,10 +432,10 @@ export default function ComposerV2(props) {
     });
   }
   function addFiles(list) {
+    if (!canAttachMedia) return;
     const incoming = Array.from(list || []).filter(
       (f) => f.type.startsWith("image/") || f.type.startsWith("video/"),
     );
-    setFiles((old) => [...old, ...incoming].slice(0, 35));
     if (incoming.length) onFilesAdded?.(incoming);
   }
 
@@ -805,6 +806,7 @@ export default function ComposerV2(props) {
                           type="button"
                           className="add"
                           aria-label="Add photos or videos"
+                          disabled={!canAttachMedia}
                           onClick={() => fileInput.current?.click()}
                         >
                           {uploadBusy ? (
@@ -818,6 +820,7 @@ export default function ComposerV2(props) {
                         ref={fileInput}
                         className="sr-only"
                         type="file"
+                        disabled={!canAttachMedia}
                         accept="image/*,video/*"
                         multiple
                         onChange={(e) => {
@@ -830,7 +833,16 @@ export default function ComposerV2(props) {
                 })()
               ) : (
                 <>
-                  <div className="med">
+                  <div className="med"
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = canAttachMedia ? "copy" : "none";
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      addFiles(e.dataTransfer.files);
+                    }}
+                  >
                     {files.map((f, i) => (
                       <Thumb
                         key={`${f.name}-${f.lastModified}-${i}`}
@@ -850,12 +862,8 @@ export default function ComposerV2(props) {
                       type="button"
                       className="add"
                       aria-label="Add photos or videos"
+                      disabled={!canAttachMedia}
                       onClick={() => fileInput.current?.click()}
-                      onDragOver={(e) => e.preventDefault()}
-                      onDrop={(e) => {
-                        e.preventDefault();
-                        addFiles(e.dataTransfer.files);
-                      }}
                     >
                       {uploadBusy ? (
                         <LoaderCircle size={18} className="animate-spin" />
@@ -867,6 +875,7 @@ export default function ComposerV2(props) {
                       ref={fileInput}
                       className="sr-only"
                       type="file"
+                      disabled={!canAttachMedia}
                       accept="image/*,video/*"
                       multiple
                       onChange={(e) => {
@@ -882,6 +891,7 @@ export default function ComposerV2(props) {
                   type="button"
                   className="btn btn-ghost btn-icon btn-sm"
                   aria-label="Add image or video"
+                  disabled={!canAttachMedia}
                   title="Image / video"
                   onClick={() => fileInput.current?.click()}
                 >
@@ -1104,7 +1114,10 @@ export default function ComposerV2(props) {
               </div>
             )}
           </div>
-          {fixCount > 0 && (
+          {fixCount > 0 && mediaReport.some((row) =>
+            row.check.problems.some((problem) => problem.code !== "no_video") ||
+            (row.check.problems.length > 0 && row.sharedInfos.some((item) => item.kind === "video"))
+          ) && (
             <div className="mp" role="region" aria-label="Media check">
               <div className="hd">
                 <span className="mk">
@@ -1112,10 +1125,10 @@ export default function ComposerV2(props) {
                 </span>
                 <div className="grow">
                   <b>
-                    Media needs a few changes for {fixCount} account{fixCount === 1 ? "" : "s"}
+                    Check media for {fixCount} account{fixCount === 1 ? "" : "s"}
                   </b>
                   <p className="sm muted">
-                    Each network accepts media a little differently. We can sort it out for you.
+                    Some accounts need different media before you can post.
                   </p>
                 </div>
                 <div className="acts">
@@ -1127,8 +1140,7 @@ export default function ComposerV2(props) {
                       setSheetOpen(true);
                     }}
                   >
-                    <Sparkles size={14} />
-                    Fix for me
+                    Choose media
                   </button>
                   <button
                     type="button"
@@ -1136,7 +1148,7 @@ export default function ComposerV2(props) {
                     aria-expanded={reviewOpen}
                     onClick={() => setReviewOpen((o) => !o)}
                   >
-                    {reviewOpen ? "Hide" : "Review"}
+                    {reviewOpen ? "Hide details" : "View details"}
                   </button>
                 </div>
               </div>
@@ -1149,8 +1161,7 @@ export default function ComposerV2(props) {
                       <span className="grow">
                         <b>{nameOf(r.account)}</b>{" "}
                         <span className="d">
-                          {pr.title}
-                          {pr.detail ? ` — ${pr.detail}` : ""}
+                          {shortMediaProblem(pr)}
                         </span>
                       </span>
                       {pr.action && (
@@ -1254,7 +1265,7 @@ export default function ComposerV2(props) {
             </div>
           )}
           {channelNotices.length > 0 && (
-            <div className="c2-blockers">
+            <div className="c2-blockers c2-channel-notices">
               {channelNotices.map((w, i) => (
                 <p key={`n-${w.account.id}-${i}`} className="c2-hint warn">
                   <AlertCircle size={14} />

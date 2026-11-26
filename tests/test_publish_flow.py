@@ -112,6 +112,55 @@ def test_schedule_does_not_mark_published_and_dispatch_is_mocked(
     assert body["post_metadata"].get("analytics", {}).get("source") != "simulated"
 
 
+def test_facebook_publishing_saves_page_and_video_object_ids(
+    client, auth_headers, monkeypatch
+):
+    headers, _tokens = auth_headers
+    monkeypatch.setattr(
+        "app.tasks.publish_post.publish_post_task.apply_async",
+        lambda *args, **kwargs: None,
+    )
+    account = _connect_x(client, headers, platform="facebook")
+    created = client.post(
+        "/api/v1/posts",
+        headers=headers,
+        json={
+            "connected_account_id": account["id"],
+            "content": "Video post",
+            "media_urls": ["https://cdn.example.com/clip.mp4"],
+            "scheduled_at": (
+                datetime.now(timezone.utc) - timedelta(minutes=1)
+            ).isoformat(),
+            "idempotency_key": uuid4().hex,
+            "post_metadata": {"format": "Post"},
+        },
+    )
+    assert created.status_code == 200, created.text
+
+    monkeypatch.setattr(
+        "app.tasks.publish_post.publish",
+        lambda *args, **kwargs: ProviderPublishResult(
+            post_id="PAGE_POST_ID",
+            status_code=200,
+            object_id="VIDEO_OBJECT_ID",
+            object_type="video",
+        ),
+    )
+    from app.tasks.publish_post import publish_post_task
+
+    result = publish_post_task.run(created.json()["id"])
+    assert result["status"] == "published"
+
+    confirmed = client.get(
+        f"/api/v1/posts/{created.json()['id']}", headers=headers
+    )
+    assert confirmed.status_code == 200, confirmed.text
+    post = confirmed.json()
+    assert post["provider_post_id"] == "PAGE_POST_ID"
+    assert post["post_metadata"]["facebook_object_id"] == "VIDEO_OBJECT_ID"
+    assert post["post_metadata"]["facebook_object_type"] == "video"
+
+
 def test_approved_draft_creates_scheduled_posts(client, auth_headers, monkeypatch):
     headers, _tokens = auth_headers
     monkeypatch.setattr(

@@ -11,15 +11,16 @@ import {
   RefreshCw,
   CircleDot,
   Search,
-  Send,
   Trash2,
   TriangleAlert,
 } from "lucide-react";
 import { unreadAfterMarkAllRead } from "../navModel.js";
 import { Avatar, ChannelTile } from "../sc/ui.jsx";
 import { CommentBlock } from "./PostDetailDrawer.jsx";
+import { syncPostsAndRefresh } from "./syncRefresh.js";
 import {
   COPY,
+  commentActionError,
   INBOX_FILTERS,
   accountAccess,
   audienceCommentCount,
@@ -30,10 +31,8 @@ import {
   commentedLine,
   commenterMeta,
   compactAge,
-  composerHint,
-  composerPlaceholder,
   countBadge,
-  deleteConfirmCopy,
+  visibleDeleteConfirmation,
   displayHandle,
   displayName,
   emptyInboxCopy,
@@ -55,7 +54,7 @@ import {
   replyHint,
   replyPostedToast,
   shortDay,
-  showComposer,
+  commentActions,
   sortRoots,
   unreadCount,
   viewOnName,
@@ -85,6 +84,7 @@ function writePostUrl(id, { push = false, open = false } = {}) {
 function PostThreadPane({
   post,
   accountName,
+  capability,
   client,
   fixtures,
   xEnabled,
@@ -94,13 +94,14 @@ function PostThreadPane({
   onOpenDetails,
   onCounts,
   onActivity,
+  onRemotePostDeleted,
   notify,
 }) {
   const [thread, setThread] = useState([]);
+  const [statusNotice, setStatusNotice] = useState(null);
   const [phase, setPhase] = useState("loading");
   const [replyId, setReplyId] = useState(null);
   const [drafts, setDrafts] = useState({});
-  const [composer, setComposer] = useState("");
   const [busy, setBusy] = useState("");
   const [pending, setPending] = useState(null);
 
@@ -145,17 +146,44 @@ function PostThreadPane({
   const roots = sortRoots(thread, "newest");
   const unreadIds = commentIdsByRead(thread, true);
   const readIds = commentIdsByRead(thread, false);
-  const canCompose = showComposer(post.network, xEnabled);
   const when = shortDay(post.publishedAt);
 
   async function refresh() {
     setBusy("refresh");
+    setStatusNotice(null);
     try {
-      if (client && !fixtures) await client.syncPost(post.id);
-      await loadThread();
-      if (!fixtures) tell(COPY.commentsUpdated, "success");
-    } catch {
-      tell(COPY.postsErrorTitle);
+      let deleted = false;
+      let commentsSkipped = false;
+      if (client && !fixtures) {
+        const result = await syncPostsAndRefresh(
+          async (postId) => {
+            const result = await client.syncPost(postId);
+            commentsSkipped = result?.skipped?.includes("comments_read");
+            return result;
+          },
+          [post.id],
+          async ({ deleted: wasDeleted }) => {
+            deleted = wasDeleted;
+            await loadThread();
+            if (wasDeleted) {
+              await onRemotePostDeleted?.();
+              await onActivity?.();
+            }
+          },
+        );
+        deleted = result.deleted;
+        if (result.message) {
+          setStatusNotice({ id: post.id, text: result.message });
+          return;
+        }
+      } else {
+        await loadThread();
+      }
+      if (deleted) tell("Post status updated", "success");
+      else if (commentsSkipped) tell("Post checked. Comments are unavailable.");
+      else if (!fixtures) tell(COPY.commentsUpdated, "success");
+    } catch (error) {
+      tell(error?.message || COPY.postsErrorTitle);
     } finally {
       setBusy("");
     }
@@ -208,24 +236,8 @@ function PostThreadPane({
       setReplyId(null);
       tell(replyPostedToast(post.network), "success");
       await loadThread();
-    } catch {
-      tell(COPY.actionFailed);
-    } finally {
-      setBusy("");
-    }
-  }
-
-  async function sendComposer() {
-    const text = composer.trim();
-    if (!text || !client) return;
-    setBusy("composer");
-    try {
-      await client.createComment(post.id, text, post.network);
-      setComposer("");
-      tell(replyPostedToast(post.network), "success");
-      await loadThread();
-    } catch {
-      tell(COPY.actionFailed);
+    } catch (error) {
+      tell(commentActionError(error), "error");
     } finally {
       setBusy("");
     }
@@ -233,12 +245,14 @@ function PostThreadPane({
 
   async function changeHidden(comment, hidden) {
     if (!client) return;
-    setThread((current) => mapComment(current, comment.id, (item) => ({ ...item, hidden })));
+    setBusy(comment.id);
     try {
-      await client.hideReply(comment.id, hidden);
-    } catch {
-      setThread((current) => mapComment(current, comment.id, (item) => ({ ...item, hidden: !hidden })));
-      tell(COPY.actionFailed);
+      const updated = await client.hideReply(comment.id, hidden);
+      setThread((current) => mapComment(current, updated.id, (item) => ({ ...item, hidden: updated.is_hidden })));
+    } catch (error) {
+      tell(commentActionError(error), "error");
+    } finally {
+      setBusy("");
     }
   }
 
@@ -249,19 +263,16 @@ function PostThreadPane({
       await client.removeComment(pending.id);
       setThread((current) => mapComment(current, pending.id, (item) => ({ ...item, deleted: true })));
       setPending(null);
-      const next = mapComment(thread, pending.id, (item) => ({ ...item, deleted: true }));
-      onCounts?.(post.id, {
-        commentCount: audienceCommentCount(next),
-        unreadCount: unreadCount(next),
-      });
-    } catch {
-      tell(COPY.actionFailed);
+      await loadThread();
+      onActivity?.();
+    } catch (error) {
+      tell(commentActionError(error), "error");
     } finally {
       setBusy("");
     }
   }
 
-  const confirm = pending ? deleteConfirmCopy(pending, post.network) : null;
+  const confirm = visibleDeleteConfirmation(roots, pending, post.network, xEnabled, capability);
 
   return (
     <section className="eng-post-detail card" data-engagement="post-comments" data-post-id={post.id}>
@@ -290,6 +301,7 @@ function PostThreadPane({
             <b>{accountName}</b>
           </div>
           <p>{postCaption(post.caption)}</p>
+          {statusNotice?.id === post.id && <p role="status">{statusNotice.text}</p>}
           {when ? <div className="eng-postrow-date eng-post-head-date">{when}</div> : null}
           <button type="button" className="eng-link" onClick={onOpenDetails}>
             {COPY.postDetails}
@@ -362,6 +374,7 @@ function PostThreadPane({
                 comment={comment}
                 network={post.network}
                 xEnabled={xEnabled}
+                capability={capability}
                 now={now}
                 replyId={replyId}
                 drafts={drafts}
@@ -380,35 +393,6 @@ function PostThreadPane({
           </div>
         ) : null}
       </div>
-      {canCompose && phase === "ready" ? (
-        <footer className="eng-composer">
-          <div className="eng-composer-row">
-            <input
-              className="input"
-              value={composer}
-              placeholder={composerPlaceholder(accountName)}
-              aria-label={composerPlaceholder(accountName)}
-              onChange={(event) => setComposer(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  void sendComposer();
-                }
-              }}
-            />
-            <button
-              type="button"
-              className="btn btn-primary"
-              disabled={!composer.trim() || busy === "composer"}
-              onClick={() => void sendComposer()}
-            >
-              <Send size={16} />
-              <span className="eng-send-label">Send</span>
-            </button>
-          </div>
-          <div className="eng-composer-note">{composerHint(post.network)}</div>
-        </footer>
-      ) : null}
       {confirm ? (
         <div className="eng-confirm-layer" role="alertdialog" aria-labelledby="eng-post-confirm">
           <div className="eng-confirm">
@@ -425,7 +409,7 @@ function PostThreadPane({
               <button type="button" className="btn btn-secondary" onClick={() => setPending(null)}>
                 Cancel
               </button>
-              <button type="button" className="btn btn-danger" onClick={() => void confirmDelete()}>
+              <button type="button" className="btn btn-danger" disabled={Boolean(busy)} onClick={() => void confirmDelete()}>
                 {confirm.confirm}
               </button>
             </div>
@@ -453,6 +437,7 @@ export default function InboxPage({
   onReconnect,
   notify,
   onActivity,
+  onRemotePostDeleted,
   fixtures = null,
 }) {
   const [status, setStatus] = useState("all");
@@ -478,8 +463,8 @@ export default function InboxPage({
   const [matrix, setMatrix] = useState(fixtures?.matrix || null);
   const [selectedId, setSelectedId] = useState("");
   const [thread, setThread] = useState([]);
-  const [replyOpen, setReplyOpen] = useState(false);
-  const [draft, setDraft] = useState("");
+  const [replyId, setReplyId] = useState(null);
+  const [drafts, setDrafts] = useState({});
   const [busy, setBusy] = useState("");
   const [menu, setMenu] = useState("");
   const [pending, setPending] = useState(null);
@@ -702,7 +687,7 @@ export default function InboxPage({
     setMenu("");
     if (next === "posts") {
       setDetailOpen(false);
-      setReplyOpen(false);
+      setReplyId(null);
     } else if (window.history.state?.inboxPost) {
       writePostUrl("");
       setPostDetailOpen(false);
@@ -719,7 +704,7 @@ export default function InboxPage({
     if (phase !== "ready") return;
     if (selectedId && items.some((item) => item.id === selectedId)) return;
     setSelectedId(items[0]?.id || "");
-    setReplyOpen(false);
+    setReplyId(null);
   }, [items, phase, selectedId]);
 
   useEffect(() => {
@@ -751,11 +736,17 @@ export default function InboxPage({
       ? { ...selected, replies: [] }
       : null;
   const account = accounts.find((item) => item.id === selected?.accountId);
+  const capability = matrix?.accounts?.find((row) => row.account_id === selected?.accountId) ?? null;
+  const shortcutComment = detailComment?.id === selected?.id
+    ? detailComment
+    : detailComment?.replies?.find((reply) => reply.id === selected?.id);
+  const canReplyToSelected = commentActions(selected?.network, shortcutComment, xEnabled, capability).includes("reply");
+  const confirm = visibleDeleteConfirmation(detailComment ? [detailComment] : [], pending, selected?.network, xEnabled, capability);
   const accountLabel = displayHandle(account) || atHandle(selected?.accountName) || displayName(account);
 
   function backToList() {
     setDetailOpen(false);
-    setReplyOpen(false);
+    setReplyId(null);
     if (window.history.state?.inboxComment) {
       window.history.back();
       return;
@@ -771,8 +762,8 @@ export default function InboxPage({
 
   async function openItem(item) {
     setSelectedId(item.id);
-    setReplyOpen(false);
-    setDraft("");
+    setReplyId(null);
+    setDrafts({});
     if (viewportTier(window.innerWidth) === "phone") {
       setDetailOpen(true);
       const url = new URL(window.location.href);
@@ -827,25 +818,29 @@ export default function InboxPage({
     }
   }
 
-  async function sendReply() {
-    const text = draft.trim();
+  async function sendReply(comment) {
+    const text = (drafts[comment.id] || "").trim();
     if (!text || !selected || !client) return;
     setBusy("reply");
     try {
-      await client.reply(selected.id, text);
-      setDraft("");
-      setReplyOpen(false);
+      await client.reply(comment.id, text);
+      setDrafts({});
+      setReplyId(null);
       setItems((current) =>
-        current.map((row) => (row.id === selected.id ? { ...row, replied: true, read: true } : row)),
+        current.map((row) => (row.id === comment.id ? { ...row, replied: true, read: true } : row)),
       );
       tell(replyPostedToast(selected.network), "success");
       onActivity?.();
       if (selected.postId) {
-        const payload = await client.listComments(selected.postId);
-        setThread(normalizeThread(payload, selected.network));
+        try {
+          const payload = await client.listComments(selected.postId);
+          setThread(normalizeThread(payload, selected.network));
+        } catch {
+          tell("Reply posted. Refresh the post to see it.");
+        }
       }
-    } catch {
-      tell(COPY.actionFailed);
+    } catch (error) {
+      tell(commentActionError(error), "error");
     } finally {
       setBusy("");
     }
@@ -861,7 +856,9 @@ export default function InboxPage({
         const next = event.key === "j" ? items[index + 1] : items[index - 1];
         if (next) void openItem(next);
       }
-      if (event.key === "r" && selected) setReplyOpen(true);
+      if (event.key === "r" && canReplyToSelected) {
+        setReplyId(selected.id);
+      }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -869,12 +866,15 @@ export default function InboxPage({
 
   async function changeHidden(comment, hidden) {
     if (!client) return;
-    setThread((current) => mapComment(current, comment.id, (item) => ({ ...item, hidden })));
+    setBusy(comment.id);
     try {
-      await client.hideReply(comment.id, hidden);
-    } catch {
-      setThread((current) => mapComment(current, comment.id, (item) => ({ ...item, hidden: !hidden })));
-      tell(COPY.actionFailed);
+      const updated = await client.hideReply(comment.id, hidden);
+      setThread((current) => mapComment(current, updated.id, (item) => ({ ...item, hidden: updated.is_hidden })));
+      setItems((current) => current.map((item) => item.id === updated.id ? { ...item, hidden: updated.is_hidden } : item));
+    } catch (error) {
+      tell(commentActionError(error), "error");
+    } finally {
+      setBusy("");
     }
   }
 
@@ -884,11 +884,11 @@ export default function InboxPage({
     try {
       await client.removeComment(pending.id);
       setThread((current) => mapComment(current, pending.id, (item) => ({ ...item, deleted: true })));
-      setItems((current) => current.filter((item) => item.id !== pending.id));
+      await loadPage();
       setPending(null);
       onActivity?.();
-    } catch {
-      tell(COPY.actionFailed);
+    } catch (error) {
+      tell(commentActionError(error), "error");
     } finally {
       setBusy("");
     }
@@ -1310,26 +1310,24 @@ export default function InboxPage({
                       comment={{ ...detailComment, open: false }}
                       network={selected.network}
                       xEnabled={xEnabled}
+                      capability={capability}
                       now={now}
-                      replyId={replyOpen ? detailComment.id : ""}
-                      drafts={{ [detailComment.id]: draft }}
-                      setDrafts={(updater) => {
-                        const next = typeof updater === "function" ? updater({ [detailComment.id]: draft }) : updater;
-                        setDraft(next[detailComment.id] || "");
-                      }}
-                      busy={busy === "reply" ? detailComment.id : ""}
+                      replyId={replyId}
+                      drafts={drafts}
+                      setDrafts={setDrafts}
+                      busy={busy}
                       onAction={(comment, action) => {
-                        if (action === "reply") setReplyOpen(true);
+                        if (action === "reply") setReplyId(comment.id);
                         if (action === "hide") void changeHidden(comment, true);
                         if (action === "unhide") void changeHidden(comment, false);
                         if (action === "delete" || action === "remove") setPending(comment);
                       }}
-                      onSend={() => void sendReply()}
-                      onCancel={() => setReplyOpen(false)}
+                      onSend={sendReply}
+                      onCancel={() => setReplyId(null)}
                     />
                   </div>
                 </div>
-                <div className="eng-inbox-tip">Tip: press R to reply, J / K to move between comments.</div>
+                <div className="eng-inbox-tip">{canReplyToSelected ? "Press R to reply. " : ""}Press J / K to move between comments.</div>
               </>
             ) : null}
           </div>
@@ -1446,6 +1444,7 @@ export default function InboxPage({
               key={selectedPost.id}
               post={selectedPost}
               accountName={selectedPostName}
+              capability={matrix?.accounts?.find((row) => row.account_id === selectedPost.accountId) ?? null}
               client={client}
               fixtures={fixtures}
               xEnabled={xEnabled}
@@ -1459,12 +1458,16 @@ export default function InboxPage({
                 );
               }}
               onActivity={onActivity}
+              onRemotePostDeleted={async () => {
+                await loadPosts();
+                await onRemotePostDeleted?.();
+              }}
               notify={notify}
             />
           ) : null}
         </div>
       ) : null}
-      {pending && selected ? (
+      {confirm ? (
         <div className="eng-confirm-layer eng-confirm-fixed" role="alertdialog" aria-labelledby="eng-inbox-confirm">
           <div className="eng-confirm">
             <div className="eng-confirm-row">
@@ -1472,16 +1475,16 @@ export default function InboxPage({
                 <Trash2 size={20} />
               </span>
               <div>
-                <h3 id="eng-inbox-confirm">{deleteConfirmCopy(pending, selected.network).title}</h3>
-                <p>{deleteConfirmCopy(pending, selected.network).body}</p>
+                <h3 id="eng-inbox-confirm">{confirm.title}</h3>
+                <p>{confirm.body}</p>
               </div>
             </div>
             <div className="eng-confirm-actions">
               <button type="button" className="btn btn-secondary" onClick={() => setPending(null)}>
                 Cancel
               </button>
-              <button type="button" className="btn btn-danger" onClick={() => void confirmDelete()}>
-                {deleteConfirmCopy(pending, selected.network).confirm}
+              <button type="button" className="btn btn-danger" disabled={Boolean(busy)} onClick={() => void confirmDelete()}>
+                {confirm.confirm}
               </button>
             </div>
           </div>

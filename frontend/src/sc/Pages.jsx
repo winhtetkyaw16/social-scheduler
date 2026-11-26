@@ -101,7 +101,7 @@ function PostRow({ post, account, onOpen, onRetry, onDelete }) {
       <div className="body">
         <div className="row" style={{ gap: 8, marginBottom: 4 }}>
           <b className="sm">{account ? accountDisplayName(account) : "Account"}</b>
-          <StatusBadge status={post.status} post={post} />
+          <StatusBadge status={post.status} post={post} account={account} />
         </div>
         <div className="txt">{post.content || "Untitled post"}</div>
         {post.status === "failed" && (
@@ -155,7 +155,11 @@ const failedSinceConnect = (account, posts) => {
 function healthOf(account, posts) {
   if (account.is_active === false) return ["Paused", ""];
   if (account.needs_reconnect) return ["Needs reconnect", "b-error"];
-  if (account.connection_warning) return ["Reconnect soon", "b-warning"];
+  if (account.connection_warning) {
+    return Date.parse(account.token_expires_at) <= Date.now()
+      ? ["Reconnect needed", "b-error"]
+      : ["Reconnect soon", "b-warning"];
+  }
   const exp = account.token_expires_at ? new Date(account.token_expires_at) : null;
   if (exp && exp < new Date() && !account.has_refresh_token && !("connection_warning" in account))
     return ["Reconnect needed", "b-error"];
@@ -1295,6 +1299,7 @@ export function MediaLibrary({ request, onUseAsset }) {
             type="button"
             className="btn btn-secondary"
             onClick={() => onUseAsset?.(selected)}
+            disabled={!onUseAsset}
           >
             Use in post
           </button>

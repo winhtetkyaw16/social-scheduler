@@ -15,9 +15,9 @@ import {
   visibleFeed,
   buildInsightView,
   buildTargets,
-  capabilityNote,
   chipCount,
   commentActions,
+  commentActionError,
   commentsMode,
   commentsPresentation,
   commentsTabEnabled,
@@ -26,6 +26,7 @@ import {
   containsBannedWord,
   countBadge,
   deleteConfirmCopy,
+  visibleDeleteConfirmation,
   displayMetric,
   insightsEmptyBody,
   longAge,
@@ -63,6 +64,7 @@ import {
   INBOX_VIEW_KEY,
 } from "./engagement/model.js";
 import { createEngagementClient } from "./api/engagement.js";
+import { syncPostsAndRefresh } from "./engagement/syncRefresh.js";
 
 const NOW = new Date("2026-11-10T11:00:00Z");
 
@@ -88,7 +90,6 @@ test("user-facing copy never mentions credits, APIs, permissions, or scopes", ()
     assert.equal(containsBannedWord(mutedInsightCopy(network)), false);
     assert.equal(containsBannedWord(reconnectBanner(network, "@northwind.sample").body), false);
     assert.equal(containsBannedWord(turnOnBanner(network).body), false);
-    assert.equal(containsBannedWord(capabilityNote(network, true)), false);
   }
   assert.equal(containsBannedWord("needs API credits and the scope"), true);
 });
@@ -187,31 +188,54 @@ test("refresh waits 15 minutes and ages are compact on comments", () => {
   assert.match(publishedLabel("2026-11-10T09:00:00Z"), /^Published /);
 });
 
+test("comment errors show a recovery step and ignore unstructured server output", () => {
+  const detail = "The network is busy. Try again in 120 seconds.";
+  assert.equal(commentActionError({ status: 429, detail }), detail);
+  assert.match(commentActionError({ status: 404 }), /Refresh the post/);
+  assert.match(commentActionError({ status: 502, message: "<html>proxy failure</html>" }), /Check your connection/);
+  assert.match(commentActionError(new Error("offline")), /refresh the post/);
+});
+
 test("comment actions follow the network and there is no Like button", () => {
-  const other = { own: false, hidden: false, deleted: false, text: "Hi" };
+  const other = { providerCommentId: "c1", own: false, hidden: false, deleted: false, text: "Hi" };
   const own = { ...other, own: true };
   const hidden = { ...other, hidden: true, text: "spam" };
-  assert.deepEqual(commentActions("instagram", other), ["reply", "hide", "delete"]);
-  assert.deepEqual(commentActions("instagram", own), ["delete"]);
-  assert.deepEqual(commentActions("instagram", hidden), ["unhide", "delete"]);
-  assert.deepEqual(commentActions("facebook", other), ["reply", "hide", "delete"]);
-  assert.deepEqual(commentActions("threads", other), ["reply", "hide"]);
-  assert.deepEqual(commentActions("threads", own), ["delete"]);
-  assert.deepEqual(commentActions("youtube", other), ["reply", "remove"]);
-  assert.deepEqual(commentActions("youtube", own), ["remove"]);
-  assert.deepEqual(commentActions("tiktok", other), []);
-  assert.deepEqual(commentActions("pinterest", other), []);
-  assert.deepEqual(commentActions("x", other), []);
-  assert.deepEqual(commentActions("x", other, true), ["reply", "hide"]);
-  assert.deepEqual(commentActions("linkedin", other), []);
+  const replyOnly = { can_reply: true, can_hide_reply: false, can_delete_comment: false };
+  assert.deepEqual(commentActions("instagram", other, false, replyOnly), ["reply"]);
+  assert.deepEqual(commentActions("instagram", own, false, replyOnly), []);
+  assert.deepEqual(commentActions("facebook", other, false, null), []);
+  assert.deepEqual(commentActions("youtube", other, false, { can_delete_comment: true }), ["remove"]);
+  const full = { can_reply: true, can_hide_reply: true, can_delete_comment: true };
+  const child = { ...other, id: "child" };
+  const roots = [{ ...other, id: "root", replies: [child] }];
+  assert.deepEqual(visibleDeleteConfirmation(roots, child, "facebook", false, full), deleteConfirmCopy(child, "facebook"));
+  assert.equal(visibleDeleteConfirmation(roots, child, "facebook", false, replyOnly), null);
+  assert.equal(visibleDeleteConfirmation([], child, "facebook", false, full), null);
+  assert.deepEqual(commentActions("instagram", other), []);
+  assert.deepEqual(commentActions("facebook", { ...other, providerCommentId: "" }, false, full), []);
+  assert.deepEqual(commentActions("youtube", { ...other, nested: true }, false, full), ["remove"]);
+  assert.deepEqual(commentActions("instagram", other, false, full), ["reply", "hide", "delete"]);
+  assert.deepEqual(commentActions("instagram", own, false, full), ["delete"]);
+  assert.deepEqual(commentActions("instagram", hidden, false, full), ["unhide", "delete"]);
+  assert.deepEqual(commentActions("facebook", other, false, full), ["reply", "hide", "delete"]);
+  assert.deepEqual(commentActions("threads", other, false, full), ["reply", "hide"]);
+  assert.deepEqual(commentActions("threads", { ...other, nested: true }, false, full), ["reply"]);
+  assert.deepEqual(commentActions("threads", { ...hidden, nested: true }, false, full), []);
+  assert.deepEqual(commentActions("threads", own, false, full), ["delete"]);
+  assert.deepEqual(commentActions("youtube", other, false, full), ["reply", "remove"]);
+  assert.deepEqual(commentActions("youtube", own, false, full), ["delete"]);
+  assert.deepEqual(commentActions("tiktok", other, false, full), []);
+  assert.deepEqual(commentActions("pinterest", other, false, full), []);
+  assert.deepEqual(commentActions("x", other, false, full), []);
+  assert.deepEqual(commentActions("x", other, true, full), ["reply", "hide"]);
+  assert.deepEqual(commentActions("linkedin", other, false, full), []);
   for (const network of ["instagram", "facebook", "threads", "youtube", "x"]) {
-    assert.equal(commentActions(network, other, true).includes("like"), false);
+    assert.equal(commentActions(network, other, true, full).includes("like"), false);
   }
   assert.equal(showComposer("instagram"), true);
   assert.equal(showComposer("tiktok"), false);
   assert.equal(showComposer("x"), false);
   assert.equal(showComposer("youtube"), true);
-  assert.equal(capabilityNote("facebook"), "On Facebook Pages you can reply to, hide and delete comments.");
   assert.equal(noCommentsCopy("instagram"), "No comments on Instagram yet.");
   assert.equal(pinCommentsCopy(2), "This Pin has 2 comments.");
   assert.equal(pinCommentsCopy(null), "");
@@ -252,7 +276,7 @@ test("each network's comments tab uses the spec copy and hides the list when it 
   assert.equal(ig.banner.button, "Reconnect");
   const open = commentsPresentation({ network: "instagram" });
   assert.equal(open.kind, "list");
-  assert.equal(open.composer, true);
+  assert.equal(open.composer, false);
   assert.equal(open.empty, "No comments on Instagram yet.");
   assert.equal(open.banner, null);
   for (const state of [x, linkedin, tiktok, pin, threads, ig, open]) {
@@ -553,20 +577,47 @@ test("a published post row shows counts, a snippet, and hides a missing date", (
   }
 });
 
-test("engagement client can post a comment and remove one", async () => {
+test("engagement client can reply to a comment and remove one", async () => {
   const calls = [];
   const client = createEngagementClient(async (path, options = {}) => {
     calls.push({ path, options });
     return { ok: true };
   });
-  await client.createComment("post 1", "Hello", "instagram");
+  await client.reply("comment 1", "Hello");
   await client.removeComment("comment 1");
   await client.markUnread("comment 1");
-  assert.equal(calls[0].path, "/posts/post%201/comments");
+  assert.equal(calls[0].path, "/comments/comment%201/reply");
   assert.equal(calls[0].options.method, "POST");
-  assert.equal(calls[0].options.body, JSON.stringify({ text: "Hello", network: "instagram" }));
+  assert.equal(calls[0].options.body, JSON.stringify({ text: "Hello" }));
   assert.equal(calls[1].path, "/comments/comment%201");
   assert.equal(calls[1].options.method, "DELETE");
   assert.equal(calls[2].path, "/comments/comment%201/unread");
   assert.equal(calls[2].options.method, "POST");
+});
+
+test("manual sync reloads UI data after HTTP 410 confirms remote deletion", async () => {
+  const refreshes = [];
+  const result = await syncPostsAndRefresh(
+    async (postId) => {
+      assert.equal(postId, "youtube-post");
+      throw Object.assign(new Error("No longer available"), { status: 410 });
+    },
+    ["youtube-post"],
+    async (state) => refreshes.push(state),
+  );
+
+  assert.deepEqual(result, { deleted: true });
+  assert.deepEqual(refreshes, [{ deleted: true }]);
+});
+
+test("manual sync still reloads UI data after success", async () => {
+  const refreshes = [];
+  const result = await syncPostsAndRefresh(
+    async () => ({ ok: true }),
+    ["post-1"],
+    async (state) => refreshes.push(state),
+  );
+
+  assert.deepEqual(result, { deleted: false });
+  assert.deepEqual(refreshes, [{ deleted: false }]);
 });

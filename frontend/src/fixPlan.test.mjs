@@ -24,6 +24,16 @@ const G = { kind: "gif", name: "a.gif" };
 const MIX = [P(1), P(2), P(3), P(4), P(5), P(6), V];
 const acc = (id, platform, extra = {}) => ({ id, platform, account_name: `Acct ${id}`, ...extra });
 
+test("YouTube Video and Short each show one missing-video message", () => {
+  for (const format of ["Reel / Video", "Short"]) {
+    for (const infos of [[], [P(1)]]) {
+      const warnings = channelErrors({ platform: "youtube", format, text: "Hello", mediaCount: infos.length });
+      const check = checkMedia("youtube", infos, { format });
+      assert.deepEqual([...warnings, ...check.problems.map((p) => p.title)], ["Add a video to this post."]);
+    }
+  }
+});
+
 test("toggle shows only when both photos and video exist; X adds GIF", () => {
   assert.deepEqual(choiceOptions("facebook", MIX), ["Photos", "Video"]);
   assert.deepEqual(choiceOptions("linkedin", MIX), ["Photos", "Video"]);
@@ -228,7 +238,7 @@ test("savedPostBlock: same rules as the composer for a saved post; auto-fixed is
   // Composer and panel share channelErrors.
   assert.deepEqual(
     channelErrors({ platform: "threads", format: "Story", text: "x", limit: 500, mediaCount: 1 }),
-    ["Story is not available for threads; choose a supported format."],
+    ["This format is not available for Threads. Choose Post."],
   );
 });
 
@@ -402,11 +412,11 @@ test("auto format never offers YouTube Community, TikTok Story, or Story", () =>
       hasVideo: true,
       mediaCount: 1,
     })[0],
-    "Post is not available for youtube; choose a supported format.",
+    "SocialCastly can't publish YouTube Community posts. Choose Video or Short.",
   );
   assert.equal(
     channelErrors({ platform: "tiktok", format: "Story", text: "hi", mediaCount: 1 })[0],
-    "Story is not available for tiktok; choose a supported format.",
+    "SocialCastly can't publish TikTok Stories. Choose Photo post or Video.",
   );
   assert.match(
     channelErrors({ platform: "facebook", format: "", text: "hi", mediaCount: 1 })[0],

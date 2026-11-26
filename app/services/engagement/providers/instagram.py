@@ -12,6 +12,7 @@ import os
 from app.services.engagement.base import (
     CAPABILITY_COMMENT_REPLY,
     CAPABILITY_COMMENTS_READ,
+    CAPABILITY_HIDE_REPLY,
     CAPABILITY_INSIGHTS,
     EngagementCapabilities,
     EngagementProvider,
@@ -20,9 +21,10 @@ from app.services.engagement.base import (
     ProviderReply,
 )
 from app.services.engagement.http import collect_graph, request_json
+from app.services.engagement.providers.meta_status import verify_meta_post
 from app.services.engagement.parsing import insight_number, is_own_author, parse_time
 
-_FIELDS = "id,text,username,timestamp,replies{id,text,username,timestamp}"
+_FIELDS = "id,text,username,timestamp,hidden,replies{id,text,username,timestamp,hidden}"
 _METRICS = ("views", "reach", "likes", "comments", "saved", "shares")
 
 
@@ -46,6 +48,7 @@ def _comment(account, row: dict, *, parent_id: str | None) -> ProviderComment | 
         author_handle=username,
         created_at_provider=parse_time(row.get("timestamp")),
         provider_parent_id=parent_id,
+        hidden=row.get("hidden") is True,
         is_own=is_own_author(account, username),
         raw=row,
     )
@@ -55,9 +58,16 @@ class InstagramEngagement(EngagementProvider):
     """Instagram professional account comments, replies, and media insights."""
 
     network = "instagram"
+    delete_scopes = ("instagram_basic", "instagram_manage_comments", "pages_read_engagement")
+
+    def delete_comment(self, account, comment) -> None:
+        result = request_json("DELETE", _graph(comment.provider_comment_id), access_token=self.access_token(account))
+        if result.get("success") is not True:
+            raise RuntimeError("Instagram did not confirm comment deletion")
     capabilities = EngagementCapabilities(
         supports_comments_read=True,
         supports_comment_reply=True,
+        supports_hide_reply=True,
         supports_insights=True,
         required_scopes={
             CAPABILITY_COMMENTS_READ: (
@@ -66,6 +76,7 @@ class InstagramEngagement(EngagementProvider):
                 "pages_read_engagement",
             ),
             CAPABILITY_COMMENT_REPLY: ("instagram_manage_comments", "instagram_basic"),
+            CAPABILITY_HIDE_REPLY: ("instagram_basic", "instagram_manage_comments", "pages_read_engagement"),
             CAPABILITY_INSIGHTS: (
                 "instagram_basic",
                 "instagram_manage_insights",
@@ -74,6 +85,20 @@ class InstagramEngagement(EngagementProvider):
         },
         notes="Facebook Login path. Insights request views, not deprecated impressions.",
     )
+
+    def verify_post(self, account, post) -> None:
+        verify_meta_post(self.network, _graph, account, post, self.access_token(account))
+
+    def hide_reply(self, account, comment, hidden: bool) -> None:
+        comment_id = str(comment.provider_comment_id or "").strip()
+        if not comment_id:
+            raise ValueError("Instagram comment ID is missing")
+        result = request_json(
+            "POST", _graph(comment_id), access_token=self.access_token(account),
+            json_body={"hide": hidden},
+        )
+        if result.get("success") is not True:
+            raise RuntimeError("Instagram did not confirm the comment visibility change")
 
     def fetch_comments(self, account, post, since=None) -> list[ProviderComment]:
         token = self.access_token(account)

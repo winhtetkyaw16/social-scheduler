@@ -58,16 +58,13 @@ SUPPORTED: dict[str, tuple[str, ...]] = {
     "threads": (POST,),
 }
 
-_REMOVED = {
-    ("youtube", POST): (
-        "YouTube Community posts are not available through YouTube's API. "
-        "Choose Video or Short. Nothing was uploaded."
-    ),
-    ("tiktok", STORY): (
-        "TikTok Story is not part of TikTok's Content Posting API. "
-        "Choose Photo post or Video. Nothing was posted."
-    ),
-}
+YOUTUBE_COMMUNITY_MESSAGE = "SocialCastly can't publish YouTube Community posts. Choose Video or Short."
+TIKTOK_STORY_MESSAGE = "SocialCastly can't publish TikTok Stories. Choose Photo post or Video."
+
+_REMOVED = {("youtube", POST): YOUTUBE_COMMUNITY_MESSAGE, ("tiktok", STORY): TIKTOK_STORY_MESSAGE}
+_VIDEO_LABEL = {"instagram": "Reel", "facebook": "Reel / video", "pinterest": "Video Pin"}
+_POST_LABEL = {"pinterest": "Pin", "tiktok": "Photo post"}
+
 
 _NINE_SIXTEEN = 9 / 16
 _ASPECT_TOLERANCE = 0.03
@@ -164,7 +161,10 @@ def publish_problem(
         return media_requirement_error(platform, media, content)
     if fmt not in allowed:
         label = network_name(key) if key else "this channel"
-        return f"{fmt} is not available for {label}. Choose a supported format. Nothing was published."
+        labels = {POST: _POST_LABEL.get(key, POST), REEL: _VIDEO_LABEL.get(key, "Video")}
+        choices = [labels.get(item, item) for item in allowed]
+        options = " or ".join([", ".join(choices[:-1]), choices[-1]]) if len(choices) > 1 else choices[0]
+        return f"This format is not available for {label}. Choose {options}."
     if fmt == STORY and not media:
         return "Add a photo or video to create this Story."
     # Mix, count, and "this network needs a video" stay in the shared media check so the
@@ -187,19 +187,18 @@ def short_problem(facts: MediaFacts | None) -> str | None:
     if facts is None or facts.duration is None or not facts.width or not facts.height:
         return (
             "Couldn't confirm this video is square or vertical and at most 3 minutes. "
-            "YouTube has no API flag that forces a Short, so it was not uploaded. "
             "Choose Video, or attach a file this app can measure."
         )
     if facts.width > facts.height:
         return (
             f"YouTube Shorts must be square or vertical and at most 3 minutes. "
             f"This video is {facts.width}×{facts.height}. "
-            "YouTube has no API flag that forces a Short, so it was not uploaded. Choose Video to post it as a regular video."
+            "Choose Video to post it as a regular video."
         )
     if facts.duration > 180:
         return (
             f"YouTube Shorts must be at most 3 minutes. This video is {_clock(facts.duration)}. "
-            "YouTube has no API flag that forces a Short, so it was not uploaded. Choose Video to post it as a regular video."
+            "Choose Video to post it as a regular video."
         )
     return None
 

@@ -204,6 +204,7 @@ class SyncPostResult(BaseModel):
     comments_upserted: int
     insights_captured: bool
     skipped: list[str]
+    status_message: str | None = None
 
 
 class NetworkCapabilities(BaseModel):
@@ -236,6 +237,7 @@ class AccountCapabilities(BaseModel):
     can_read_comments: bool
     can_reply: bool
     can_read_insights: bool
+    can_delete_comment: bool = False
     can_hide_reply: bool = False
     missing_scopes: dict[str, list[str]]
     reconnect_for_permissions: bool

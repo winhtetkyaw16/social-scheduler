@@ -52,6 +52,35 @@ class ProviderAuthError(ReconnectRequired):
         super().__init__(message)
 
 
+class PostStatusUnconfirmed(Exception):
+    """Safe, user-facing explanation when the provider cannot confirm availability."""
+
+
+class RemotePostDeleted(Exception):
+    """The provider confirmed that an owned post is no longer available."""
+
+    def __init__(self, network: str):
+        self.network = network
+        super().__init__(f"The {network} post is no longer available.")
+
+
+class EngagementRetryableError(Exception):
+    """A rate limit or transient provider failure that should use backoff."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        category: str = "transient",
+        retry_after_seconds: float | None = None,
+        provider_error_code: str | None = None,
+    ):
+        self.category = category
+        self.retry_after_seconds = retry_after_seconds
+        self.provider_error_code = provider_error_code
+        super().__init__(message)
+
+
 class CreditsRequired(Exception):
     """X refused the call because the developer account has no API credits."""
 
@@ -145,7 +174,12 @@ class EngagementProvider:
     """
 
     network: str = "unknown"
+    delete_scopes: tuple[str, ...] = ()
+    deletes_own_only: bool = False
     capabilities: EngagementCapabilities = EngagementCapabilities()
+
+    def verify_post(self, account, post) -> None:
+        """Optional direct availability check before a manual engagement refresh."""
 
     def fetch_comments(self, account, post, since: datetime | None = None) -> list[ProviderComment]:
         """Return comments created or updated since ``since`` (None means a full read)."""
@@ -162,6 +196,9 @@ class EngagementProvider:
     def hide_reply(self, account, comment, hidden: bool) -> None:
         """Hide or unhide a reply. Only networks that document this are implemented."""
         raise NotSupported(self.network, "hide_reply")
+
+    def delete_comment(self, account, comment) -> None:
+        raise NotSupported(self.network, "delete_comment")
 
     def access_token(self, account) -> str:
         """Decrypt the current access token after the caller has refreshed it.

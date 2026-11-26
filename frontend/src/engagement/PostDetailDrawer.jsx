@@ -18,8 +18,11 @@ import {
 } from "lucide-react";
 import { Avatar, ChannelTile } from "../sc/ui.jsx";
 import useBodyScrollLock from "../useBodyScrollLock.js";
+import { syncPostsAndRefresh } from "./syncRefresh.js";
+import { remotePostStatusLabel } from "../postStatus.js";
 import {
   COPY,
+  commentActionError,
   INSIGHT_METRICS,
   NETWORK_MEMORY_KEY,
   accountAccess,
@@ -30,9 +33,7 @@ import {
   commentsPresentation,
   commentsTabEnabled,
   compactAge,
-  composerHint,
-  composerPlaceholder,
-  deleteConfirmCopy,
+  visibleDeleteConfirmation,
   displayMetric,
   externalHref,
   formatCount,
@@ -151,6 +152,7 @@ export default function PostDetailDrawer({
   fixtures = null,
   pendingPost = false,
   onActivity,
+  onRemotePostDeleted,
 }) {
   useBodyScrollLock(true);
   const targets = useMemo(() => buildTargets(post, posts, accounts), [post, posts, accounts]);
@@ -167,8 +169,8 @@ export default function PostDetailDrawer({
   const [expanded, setExpanded] = useState(false);
   const [replyId, setReplyId] = useState(null);
   const [drafts, setDrafts] = useState({});
-  const [composer, setComposer] = useState("");
   const [busy, setBusy] = useState("");
+  const [statusNotice, setStatusNotice] = useState(null);
   const [pending, setPending] = useState(null);
   const [menu, setMenu] = useState(false);
   const [now, setNow] = useState(() => new Date());
@@ -314,8 +316,9 @@ export default function PostDetailDrawer({
   });
   const tabCount = tabCommentCount(targets, threads, snapshots, xEnabled);
   const urls = [...new Set((targets.length ? targets : [{ post }]).flatMap((target) => target.post?.media_urls || post?.media_urls || []))];
-  const who = targets[0]?.name || "Account";
-  const when = publishedLabel(publishedAt);
+  const previewTarget = tab === "comments" ? selectedTarget : targets.find((target) => target.key === String(post?.id));
+  const who = previewTarget?.name || "Account";
+  const when = remotePostStatusLabel(previewTarget?.post || post, previewTarget?.account) || publishedLabel(publishedAt);
   const compact = tab === "comments" && !expanded;
 
   function choose(key) {
@@ -338,15 +341,37 @@ export default function PostDetailDrawer({
       return;
     }
     setBusy("refresh");
+    setStatusNotice(null);
     setMenu(false);
     try {
+      let deleted = false;
       if (!fixtures && client) {
-        const syncable = targets.filter((target) => target.status === "published" && target.post?.provider_post_id);
-        await Promise.all(syncable.map((target) => client.syncPost(target.post.id)));
+        const scope = tab === "comments" && selectedTarget ? [selectedTarget] : targets;
+        const syncable = scope.filter((target) => target.status === "published" && target.post?.provider_post_id);
+        if (!syncable.length) {
+          tell("Only published posts with a network ID can be refreshed.");
+          return;
+        }
+        const result = await syncPostsAndRefresh(
+          (postId) => client.syncPost(postId),
+          syncable.map((target) => target.post.id),
+          async ({ deleted: wasDeleted }) => {
+            deleted = wasDeleted;
+            await load();
+            if (wasDeleted) await onRemotePostDeleted?.();
+          },
+        );
+        deleted = result.deleted;
+        if (result.message) {
+          setStatusNotice({ key: previewTarget?.key, text: result.message });
+          return;
+        }
+      } else {
+        await load();
       }
-      await load();
-    } catch {
-      tell(COPY.insightsErrorTitle);
+      tell(deleted ? "Post status updated" : "Post refreshed", "success");
+    } catch (error) {
+      tell(error?.message || COPY.insightsErrorTitle);
     } finally {
       setBusy("");
     }
@@ -375,8 +400,8 @@ export default function PostDetailDrawer({
       setReplyId(null);
       onActivity?.();
       await load();
-    } catch {
-      tell(COPY.actionFailed);
+    } catch (error) {
+      tell(commentActionError(error), "error");
     } finally {
       setBusy("");
     }
@@ -385,19 +410,18 @@ export default function PostDetailDrawer({
   async function toggleHide(comment, hidden) {
     const key = selectedTarget?.key;
     if (!key || !client) return;
-    setThreads((current) => ({
-      ...current,
-      [key]: mapComment(current[key], comment.id, (item) => ({ ...item, hidden })),
-    }));
+    setBusy(comment.id);
     try {
-      await client.hideReply(comment.id, hidden);
-      onActivity?.();
-    } catch {
+      const updated = await client.hideReply(comment.id, hidden);
       setThreads((current) => ({
         ...current,
-        [key]: mapComment(current[key], comment.id, (item) => ({ ...item, hidden: !hidden })),
+        [key]: mapComment(current[key], updated.id, (item) => ({ ...item, hidden: updated.is_hidden })),
       }));
-      tell(COPY.actionFailed);
+      onActivity?.();
+    } catch (error) {
+      tell(commentActionError(error), "error");
+    } finally {
+      setBusy("");
     }
   }
 
@@ -406,32 +430,11 @@ export default function PostDetailDrawer({
     setBusy(pending.id);
     try {
       await client.removeComment(pending.id);
-      const key = selectedTarget.key;
-      setThreads((current) => ({
-        ...current,
-        [key]: mapComment(current[key], pending.id, (item) => ({ ...item, deleted: true })),
-      }));
+      await load();
       setPending(null);
       onActivity?.();
-    } catch {
-      tell(COPY.actionFailed);
-    } finally {
-      setBusy("");
-    }
-  }
-
-  async function sendComposer() {
-    const text = composer.trim();
-    if (!text || !selectedTarget || !client) return;
-    setBusy("composer");
-    try {
-      await client.createComment(selectedTarget.post.id, text, selectedTarget.network);
-      setComposer("");
-      tell(replyPostedToast(selectedTarget.network), "success");
-      onActivity?.();
-      await load();
-    } catch {
-      tell(COPY.actionFailed);
+    } catch (error) {
+      tell(commentActionError(error), "error");
     } finally {
       setBusy("");
     }
@@ -447,7 +450,7 @@ export default function PostDetailDrawer({
     if (action === "delete" || action === "remove") setPending(comment);
   }
 
-  const capability = matrix?.accounts?.find((row) => row.account_id === selectedTarget?.account?.id);
+  const capability = matrix?.accounts?.find((row) => row.account_id === selectedTarget?.post?.connected_account_id);
   const access = accountAccess(selectedTarget?.account, capability);
   const metrics = metricsFromSnapshot(selectedTarget?.network, snapshots[selectedTarget?.key]);
   const presentation = selectedTarget
@@ -460,8 +463,7 @@ export default function PostDetailDrawer({
     : null;
   const mode = presentation?.kind || "muted";
   const roots = sortRoots(threads[selectedTarget?.key] || [], order);
-  const canCompose = !!(presentation?.composer && commentsOn);
-  const confirm = pending && selectedTarget ? deleteConfirmCopy(pending, selectedTarget.network) : null;
+  const confirm = visibleDeleteConfirmation(roots, pending, selectedTarget?.network, xEnabled, capability);
 
   return (
     <div className="eng-root">
@@ -486,6 +488,16 @@ export default function PostDetailDrawer({
           ) : null}
           <h2 id="eng-drawer-title">Post details</h2>
           <div className="eng-head-actions">
+            {previewTarget?.account?.needs_reconnect && onReconnect ? (
+              <button type="button" className="btn btn-sm btn-secondary" onClick={() => onReconnect(previewTarget.account)}>
+                Reconnect {viewOnName(previewTarget.network)}
+              </button>
+            ) : (
+              <button type="button" className="eng-iconbtn" title="Refresh post" aria-label="Refresh post"
+                disabled={busy === "refresh"} onClick={() => void refresh(true)}>
+                <RefreshCw size={18} />
+              </button>
+            )}
             {phone ? null : (
             <button type="button" className="btn btn-sm btn-ghost" onClick={onOpenInQueue}>
               <ExternalLink size={14} />
@@ -503,7 +515,7 @@ export default function PostDetailDrawer({
             </button>
             {menu ? (
               <div className="eng-menu" role="menu">
-                <button type="button" role="menuitem" onClick={() => void refresh(false)}>
+                <button type="button" role="menuitem" onClick={() => void refresh(true)}>
                   Refresh
                 </button>
                 <button type="button" role="menuitem" onClick={() => void copyLink()}>
@@ -525,6 +537,9 @@ export default function PostDetailDrawer({
         </header>
 
         <div className="eng-scroll">
+          {statusNotice && statusNotice.key === previewTarget?.key && (
+            <p className="eng-body" role="status">{statusNotice.text}</p>
+          )}
           {!post ? (
             pendingPost ? (
               <div className="eng-body">
@@ -541,7 +556,7 @@ export default function PostDetailDrawer({
                 <div className="eng-compact">
                   <div className="eng-compact-main">
                     <div className="eng-who">
-                      <Avatar name={who} size={28} src={targets[0]?.account?.avatar_url} />
+                      <Avatar name={who} size={28} src={previewTarget?.account?.avatar_url} />
                       <div>
                         <b>{who}</b>
                         <div>
@@ -559,7 +574,7 @@ export default function PostDetailDrawer({
               ) : (
                 <>
                   <div className="eng-who">
-                    <Avatar name={who} size={40} src={targets[0]?.account?.avatar_url} />
+                    <Avatar name={who} size={40} src={previewTarget?.account?.avatar_url} />
                     <div>
                       <b>{who}</b>
                       <div>
@@ -649,7 +664,7 @@ export default function PostDetailDrawer({
                     <button
                       type="button"
                       className="btn btn-sm btn-secondary"
-                      onClick={() => void refresh(false)}
+                      onClick={() => void refresh(true)}
                       disabled={busy === "refresh"}
                     >
                       <RefreshCw size={14} />
@@ -729,9 +744,8 @@ export default function PostDetailDrawer({
                       onReconnect={() => onReconnect?.(selectedTarget.account)}
                     />
                   ) : null}
-                  {mode === "list" && presentation.note ? (
+                  {mode === "list" && roots.length > 1 ? (
                     <div className="eng-toolbar">
-                      <span className="eng-note">{presentation.note}</span>
                       <button
                         type="button"
                         className="eng-sort"
@@ -808,6 +822,7 @@ export default function PostDetailDrawer({
                           comment={comment}
                           network={selectedTarget.network}
                           xEnabled={xEnabled}
+                          capability={capability ?? null}
                           now={now}
                           replyId={replyId}
                           drafts={drafts}
@@ -832,35 +847,6 @@ export default function PostDetailDrawer({
           )}
         </div>
 
-        {tab === "comments" && canCompose ? (
-          <footer className="eng-composer">
-            <div className="eng-composer-row">
-              <input
-                className="input"
-                value={composer}
-                placeholder={composerPlaceholder(selectedTarget?.name)}
-                aria-label={composerPlaceholder(selectedTarget?.name)}
-                onChange={(event) => setComposer(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    void sendComposer();
-                  }
-                }}
-              />
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={!composer.trim() || busy === "composer"}
-                onClick={() => void sendComposer()}
-              >
-                <Send size={16} />
-                <span className="eng-send-label">Send</span>
-              </button>
-            </div>
-            <div className="eng-composer-note">{composerHint(selectedTarget.network)}</div>
-          </footer>
-        ) : null}
 
         {confirm ? (
           <div className="eng-confirm-layer" role="alertdialog" aria-labelledby="eng-confirm-title">
@@ -907,9 +893,10 @@ export function CommentBlock({
   onAction,
   onSend,
   onCancel,
+  capability,
   depth = 0,
 }) {
-  const acts = commentActions(network, comment, xEnabled);
+  const acts = commentActions(network, comment, xEnabled, capability);
   const name = comment.authorName || comment.handle || "";
   const showHandle = !comment.own && comment.handle && comment.handle !== comment.authorName;
   return (
@@ -932,6 +919,7 @@ export function CommentBlock({
               key={action}
               type="button"
               className={`eng-action${action === "delete" || action === "remove" ? " danger" : ""}`}
+              disabled={Boolean(busy)}
               onClick={() => onAction(comment, action)}
             >
               <ActionIcon action={action} />
@@ -947,7 +935,7 @@ export function CommentBlock({
             </button>
           ))}
         </div>
-        {replyId === comment.id ? (
+        {replyId === comment.id && acts.includes("reply") ? (
           <div className="eng-replybox">
             <div className="eng-note">{replyHint(comment.handle || comment.authorName, network)}</div>
             <textarea
@@ -967,7 +955,7 @@ export function CommentBlock({
               <button
                 type="button"
                 className="btn btn-sm btn-primary"
-                disabled={!String(drafts[comment.id] || "").trim() || busy === comment.id}
+                disabled={!String(drafts[comment.id] || "").trim() || Boolean(busy)}
                 onClick={() => void onSend(comment)}
               >
                 <Send size={14} />
@@ -984,6 +972,7 @@ export function CommentBlock({
                 comment={reply}
                 network={network}
                 xEnabled={xEnabled}
+                capability={capability}
                 now={now}
                 replyId={replyId}
                 drafts={drafts}

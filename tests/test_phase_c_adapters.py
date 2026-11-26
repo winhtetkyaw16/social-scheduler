@@ -50,11 +50,29 @@ def test_facebook_text_and_photo(monkeypatch):
         "tok", "111", "Caption", ["https://cdn.example.com/a.jpg"]
     )
     assert photo.post_id == "page_ph_1"
+    assert photo.object_id == "ph-1"
+    assert photo.object_type == "photo"
     assert seen["url"].endswith("/111/photos")
     assert seen["json"]["url"] == "https://cdn.example.com/a.jpg"
 
     with pytest.raises(ProviderConfigurationError):
         FacebookPlatform().publish("tok", "111", "x", ["a.jpg", "b.jpg"])
+
+
+def test_facebook_video_publish_keeps_page_post_and_video_ids(monkeypatch):
+    def fake_request(method, url, **kwargs):
+        assert method == "POST"
+        assert url.endswith("/111/videos")
+        return _Response({"id": "video-object-1", "post_id": "page-post-1"})
+
+    monkeypatch.setattr(httpx, "request", fake_request)
+    result = FacebookPlatform().publish(
+        "tok", "111", "Video caption", ["https://cdn.example.com/clip.mp4"]
+    )
+
+    assert result.post_id == "page-post-1"
+    assert result.object_id == "video-object-1"
+    assert result.object_type == "video"
 
 
 def test_pinterest_requires_one_image(monkeypatch):

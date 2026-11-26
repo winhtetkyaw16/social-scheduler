@@ -18,12 +18,17 @@ from app.services.error_messages import (
         ("threads", "Could not connect to the social platform"),
         ("youtube", "Could not connect to YouTube"),
         ("tiktok", "Could not connect to TikTok"),
+        ("instagram", "Provider request timed out"),
+        ("linkedin", "LinkedIn upload failed: could not send the photo to LinkedIn"),
+        ("pinterest", "Could not upload the video to Pinterest"),
     ],
 )
-def test_connection_failures_say_no_internet_not_platform_down(platform, message):
+def test_connection_failures_ask_user_to_check_before_retrying(platform, message):
     fe = friendly_error("provider_request_error", message, platform)
     assert fe["category"] == "network_unreachable"
-    assert "internet" in fe["banner"].lower()
+    assert fe["network"] in fe["banner"]
+    assert "couldn't confirm" in fe["what_happened"]
+    assert "profile" in fe["what_to_do"]
     assert "problem on its side" not in fe["banner"]
     assert fe["actions"][0]["id"] == "retry"
     assert not any(
@@ -54,7 +59,7 @@ def test_expired_token_and_permission_keep_specific_copy_with_reason():
     )
     assert (
         fe["category"] == "connection_expired"
-        and "Session has expired" in fe["platform_reason"]
+        and fe["platform_reason"] is None
     )
     fe = friendly_error(
         "provider_http_error",
@@ -63,7 +68,7 @@ def test_expired_token_and_permission_keep_specific_copy_with_reason():
     )
     assert (
         fe["category"] == "permission_missing"
-        and "pages_manage_posts" in fe["platform_reason"]
+        and fe["platform_reason"] is None
     )
 
 
@@ -72,6 +77,14 @@ def test_non_http_errors_do_not_quote_raw():
         "provider_request_error", "Could not connect to TikTok", "tiktok"
     )
     assert "said:" not in fe["what_happened"] and fe["platform_reason"] is None
+
+
+@pytest.mark.parametrize("code", ["media_invalid", "format_invalid"])
+def test_blocked_content_preserves_correction_and_offers_edit(code):
+    reason = "A Facebook Story needs one photo or one video."
+    fe = friendly_error(code, reason, "facebook")
+    assert fe["what_happened"] == reason
+    assert [action["id"] for action in fe["actions"]] == ["edit"]
 
 
 @pytest.mark.parametrize(

@@ -76,11 +76,11 @@ def test_unsupported_platform_is_rejected(client, auth_headers):
 
     missing = client.get("/api/v1/accounts/x/connect", headers=headers)
     assert missing.status_code == 503
-    assert "X_CLIENT_ID" in missing.text
+    assert "contact support" in missing.json()["detail"]
 
     facebook_missing = client.get("/api/v1/accounts/facebook/connect", headers=headers)
     assert facebook_missing.status_code == 503
-    assert "FACEBOOK_CLIENT_ID" in facebook_missing.text
+    assert "contact support" in facebook_missing.json()["detail"]
 
     catalog = client.get("/api/v1/accounts/catalog", headers=headers)
     assert catalog.status_code == 200

@@ -10,22 +10,27 @@ from __future__ import annotations
 
 import os
 import time
+from datetime import datetime, timedelta, timezone
 
 from app.services.engagement.base import (
     CAPABILITY_COMMENT_REPLY,
     CAPABILITY_COMMENTS_READ,
+    CAPABILITY_HIDE_REPLY,
     CAPABILITY_INSIGHTS,
     EngagementCapabilities,
     EngagementProvider,
+    ProviderAuthError,
     ProviderComment,
     ProviderInsights,
     ProviderReply,
+    RemotePostDeleted,
 )
-from app.services.engagement.http import request_json
+from app.integrations.base import ProviderHTTPError
+from app.services.engagement.http import collect_graph, request_json
 from app.services.engagement.parsing import insight_number, is_own_author, parse_time
 
 _REPLY_FIELDS = "id,text,username,timestamp,permalink,hide_status,replied_to,is_reply"
-_HIDDEN = {"HIDDEN", "COVERED", "BLOCKED", "RESTRICTED"}
+_HIDDEN = {"HUSHED", "HIDDEN", "COVERED", "BLOCKED", "RESTRICTED"}
 _METRICS = ("views", "likes", "replies", "reposts", "quotes", "shares")
 
 
@@ -50,12 +55,21 @@ class ThreadsEngagement(EngagementProvider):
     """Read and publish Threads replies, and read media insights."""
 
     network = "threads"
+    delete_scopes = ("threads_basic", "threads_delete")
+    deletes_own_only = True
+
+    def delete_comment(self, account, comment) -> None:
+        result = request_json("DELETE", f"{_base()}/{comment.provider_comment_id}", access_token=self.access_token(account))
+        if result.get("success") is not True and str(result.get("deleted_id") or "") != comment.provider_comment_id:
+            raise RuntimeError("Threads did not confirm reply deletion")
     capabilities = EngagementCapabilities(
         supports_comments_read=True,
         supports_comment_reply=True,
+        supports_hide_reply=True,
         supports_insights=True,
         required_scopes={
             CAPABILITY_COMMENTS_READ: ("threads_basic", "threads_read_replies"),
+            CAPABILITY_HIDE_REPLY: ("threads_basic", "threads_manage_replies"),
             CAPABILITY_COMMENT_REPLY: (
                 "threads_basic",
                 "threads_content_publish",
@@ -74,7 +88,12 @@ class ThreadsEngagement(EngagementProvider):
         comments: list[ProviderComment] = []
         seen: set[str] = set()
         for _ in range(5):
-            body = request_json("GET", url, access_token=token, params=params)
+            try:
+                body = request_json("GET", url, access_token=token, params=params)
+            except ProviderHTTPError as exc:
+                if _is_missing_media_error(exc):
+                    self._verify_owned_media(account, media_id, token, post, exc)
+                raise
             for row in body.get("data") or []:
                 if not isinstance(row, dict):
                     continue
@@ -104,6 +123,17 @@ class ThreadsEngagement(EngagementProvider):
             seen.add(str(after))
             params["after"] = str(after)
         return comments
+
+    def hide_reply(self, account, comment, hidden: bool) -> None:
+        reply_id = str(comment.provider_comment_id or "").strip()
+        if not reply_id:
+            raise ValueError("Threads reply ID is missing")
+        body = request_json(
+            "POST", f"{_base()}/{reply_id}/manage_reply", access_token=self.access_token(account),
+            params={"hide": "true" if hidden else "false"},
+        )
+        if body.get("success") is not True:
+            raise RuntimeError("Threads did not confirm the reply visibility change")
 
     def reply_to_comment(self, account, comment, text: str) -> ProviderReply:
         token = self.access_token(account)
@@ -136,12 +166,17 @@ class ThreadsEngagement(EngagementProvider):
     def fetch_insights(self, account, post) -> ProviderInsights:
         token = self.access_token(account)
         media_id = str(post.provider_post_id or "").strip()
-        body = request_json(
-            "GET",
-            f"{_base()}/{media_id}/insights",
-            access_token=token,
-            params={"metric": ",".join(_METRICS)},
-        )
+        try:
+            body = request_json(
+                "GET",
+                f"{_base()}/{media_id}/insights",
+                access_token=token,
+                params={"metric": ",".join(_METRICS)},
+            )
+        except ProviderHTTPError as exc:
+            if _is_missing_media_error(exc):
+                self._verify_owned_media(account, media_id, token, post, exc)
+            raise
         metrics: dict[str, int] = {}
         for entry in body.get("data") or []:
             if not isinstance(entry, dict):
@@ -157,6 +192,56 @@ class ThreadsEngagement(EngagementProvider):
             shares=metrics.get("shares"),
             raw={"metrics": metrics},
         )
+
+    def _verify_owned_media(self, account, media_id, token, post, original_error) -> None:
+        """Verify the same Threads user and their dated post list before deletion."""
+        user_id = str(getattr(account, "platform_account_id", "") or "").strip()
+        published_at = getattr(post, "published_at", None)
+        if not user_id or not isinstance(published_at, datetime):
+            raise original_error
+        if published_at.tzinfo is None:
+            published_at = published_at.replace(tzinfo=timezone.utc)
+        start = published_at - timedelta(days=1)
+        end = published_at + timedelta(days=1)
+        # For recent posts let Threads use its own clock as the upper bound.
+        window = {"since": int(start.timestamp())}
+        if end < datetime.now(timezone.utc) - timedelta(days=1):
+            window["until"] = int(end.timestamp())
+
+        identity = request_json(
+            "GET", f"{_base()}/me", access_token=token, params={"fields": "id"}
+        )
+        if str(identity.get("id") or "").strip() != user_id:
+            raise ProviderAuthError(
+                "The connected Threads account no longer matches the saved profile.",
+                kind="permission",
+            )
+
+        owned_posts = collect_graph(
+            f"{_base()}/{user_id}/threads",
+            token,
+            {
+                "fields": "id,owner,timestamp",
+                **window,
+                "limit": "100",
+            },
+            max_pages=10,
+            require_complete=True,
+        )
+        matching = next(
+            (item for item in owned_posts if str(item.get("id") or "").strip() == media_id),
+            None,
+        )
+        if matching is not None:
+            owner = matching.get("owner")
+            owner_id = str(owner.get("id") or "").strip() if isinstance(owner, dict) else ""
+            if owner_id and owner_id != user_id:
+                raise ProviderAuthError(
+                    "The connected Threads account does not own this post.",
+                    kind="permission",
+                )
+            raise original_error
+        raise RemotePostDeleted("threads")
 
 
 def _wait_until_ready(access_token: str, creation_id: str) -> None:
@@ -178,3 +263,12 @@ def _wait_until_ready(access_token: str, creation_id: str) -> None:
         if attempt < 2:
             time.sleep(1)
     raise RuntimeError("Threads is still preparing that reply. Try again in a moment.")
+
+
+def _is_missing_media_error(exc: ProviderHTTPError) -> bool:
+    if exc.status_code == 404:
+        return True
+    return (
+        str(exc.provider_code or "") == "100"
+        and str(exc.provider_subcode or "") == "33"
+    )

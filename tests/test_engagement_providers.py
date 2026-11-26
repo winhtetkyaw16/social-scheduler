@@ -3,12 +3,22 @@
 from datetime import datetime, timezone
 from types import SimpleNamespace
 import httpx
+import pytest
 
 from app.core.security import encrypt_token
+from app.integrations.base import ProviderHTTPError
 from app.db.session import SessionLocal
 from app.models.connected_account import ConnectedAccount
-from app.services.engagement.base import CreditsRequired, NotSupported
+from app.services.engagement.base import (
+    CreditsRequired,
+    EngagementRetryableError,
+    NotSupported,
+    PostStatusUnconfirmed,
+    ProviderAuthError,
+    RemotePostDeleted,
+)
 from app.services.engagement.providers.facebook import FacebookEngagement
+from app.services.engagement.providers.blocked import LinkedInEngagement, TikTokEngagement
 from app.services.engagement.providers.instagram import InstagramEngagement
 from app.services.engagement.providers.pinterest import PinterestEngagement
 from app.services.engagement.providers.threads import ThreadsEngagement
@@ -21,6 +31,7 @@ from app.services.oauth_scopes import (
     TIKTOK_SCOPES,
     X_SCOPES,
     YOUTUBE_ANALYTICS,
+    YOUTUBE_FORCE_SSL,
     YOUTUBE_SCOPES,
     tiktok_scopes,
 )
@@ -61,9 +72,273 @@ def _account(platform, account_id="acct-1", scopes=None):
     )
 
 
+@pytest.mark.parametrize("provider", [FacebookEngagement(), InstagramEngagement()])
+@pytest.mark.parametrize("listed", [True, False])
+def test_meta_refresh_checks_owner_and_all_pages(monkeypatch, provider, listed):
+    identity = {"id": "acct-1"}
+    if provider.network == "instagram":
+        identity = {"instagram_business_account": identity}
+    script = _Script([
+        _ok({"error": {"code": 100, "error_subcode": 33}}, 400),
+        _ok(identity),
+        _ok({"data": [{"id": "other"}], "paging": {"next": "next", "cursors": {"after": "cursor"}}}),
+        _ok({"data": [{"id": "post-1"}] if listed else []}),
+    ])
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    with pytest.raises(EngagementRetryableError if listed else RemotePostDeleted):
+        provider.verify_post(_account(provider.network), _post())
+    assert script.calls[-1]["params"]["after"] == "cursor"
+
+
+@pytest.mark.parametrize("network,scopes,field", [
+    ("facebook", ["pages_manage_engagement"], "is_hidden"),
+    ("instagram", ["instagram_basic", "instagram_manage_comments", "pages_read_engagement"], "hide"),
+    ("threads", ["threads_basic", "threads_manage_replies"], "hide"),
+])
+def test_meta_comment_hide_and_unhide(client, auth_headers, monkeypatch, network, scopes, field):
+    from tests.test_engagement import _connect, _published, _user_id, _add_comment
+    from app.models.engagement import PostComment
+
+    headers, _ = auth_headers
+    account_id = _connect(client, headers, network, scopes=scopes)
+    post_id = _published(_user_id(headers), account_id)
+    comment_id = _add_comment(post_id, account_id, text="Comment", network=network, minutes_ago=1)
+    with SessionLocal() as db:
+        remote_id = db.get(PostComment, comment_id).provider_comment_id
+    script = _Script([_ok({"success": True}), _ok({"success": False}), _ok({"success": True})])
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    path = f"/api/v1/comments/{comment_id}/hide"
+    for hidden, status, saved in [(True, 200, True), (False, 502, True), (False, 200, False)]:
+        response = client.post(path, json={"hidden": hidden}, headers=headers)
+        assert response.status_code == status, response.text
+        assert script.calls[-1]["method"] == "POST"
+        call = script.calls[-1]
+        if network == "threads":
+            assert call["url"].endswith(f"/{remote_id}/manage_reply")
+            assert call["params"] == {"hide": str(hidden).lower()}
+        else:
+            assert call["url"].endswith(f"/{remote_id}")
+            assert call["json"] == {field: hidden}
+        with SessionLocal() as db:
+            assert db.get(PostComment, comment_id).is_hidden is saved
+
+
+@pytest.mark.parametrize("own,method", [(True, "DELETE"), (False, "POST")])
+def test_youtube_comment_removal(client, auth_headers, monkeypatch, own, method):
+    from tests.test_engagement import _connect, _published, _user_id, _add_comment
+    from app.models.engagement import PostComment
+
+    headers, _ = auth_headers
+    account = _connect(client, headers, "youtube", scopes=[YOUTUBE_FORCE_SSL])
+    post = _published(_user_id(headers), account, provider_post_id="provider-post")
+    comment = _add_comment(post, account, network="youtube", text="Comment", minutes_ago=0, is_own=own)
+    child = _add_comment(post, account, network="youtube", text="Reply", minutes_ago=0, parent_id=comment)
+    script = _Script([_ok({}, 500), httpx.Response(204)])
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    path = f"/api/v1/comments/{comment}"
+    assert client.delete(path, headers=headers).status_code == 502
+    with SessionLocal() as db:
+        row = db.get(PostComment, comment)
+        assert not row.is_deleted
+        remote_id = row.provider_comment_id
+    assert client.delete(path, headers=headers).status_code == 204
+    assert client.delete(path, headers=headers).status_code == 204
+    assert len(script.calls) == 2
+    call = script.calls[-1]
+    assert call["method"] == method
+    assert call["url"].endswith("/comments" if own else "/comments/setModerationStatus")
+    assert call["params"] == ({"id": remote_id} if own else {"id": remote_id, "moderationStatus": "rejected"})
+    with SessionLocal() as db:
+        assert db.get(PostComment, comment).is_deleted and db.get(PostComment, child).is_deleted
+
+
+@pytest.mark.parametrize("network,scopes,own,cascades", [
+    ("facebook", ["pages_manage_engagement"], False, True),
+    ("instagram", ["instagram_basic", "instagram_manage_comments", "pages_read_engagement"], False, True),
+    ("threads", ["threads_basic", "threads_delete"], True, False),
+    ("x", ["tweet.write"], True, False),
+])
+def test_provider_delete_requires_confirmation_and_is_idempotent(
+    client, auth_headers, monkeypatch, network, scopes, own, cascades
+):
+    from app.models.engagement import PostComment
+    from tests.test_engagement import _add_comment, _connect, _published, _user_id
+
+    monkeypatch.setenv("ENGAGEMENT_X_ENABLED", "true")
+    headers, _ = auth_headers
+    account = _connect(client, headers, network, scopes=scopes)
+    post = _published(_user_id(headers), account, provider_post_id="provider-post")
+    comment = _add_comment(post, account, network=network, text="Comment", minutes_ago=1, is_own=own)
+    child = _add_comment(post, account, network=network, text="Reply", minutes_ago=0, parent_id=comment)
+    with SessionLocal() as db:
+        remote_id = db.get(PostComment, comment).provider_comment_id
+
+    refused, confirmed = {"success": False}, {"success": True}
+    if network == "threads":
+        refused, confirmed = {"deleted_id": "another-reply"}, {"deleted_id": remote_id}
+    elif network == "x":
+        refused, confirmed = {"data": {"deleted": False}}, {"data": {"deleted": True}}
+    script = _Script([_ok(refused), _ok(confirmed)])
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    path = f"/api/v1/comments/{comment}"
+    assert client.delete(path, headers=headers).status_code == 502
+    with SessionLocal() as db:
+        assert not db.get(PostComment, comment).is_deleted
+        assert not db.get(PostComment, child).is_deleted
+
+    assert client.delete(path, headers=headers).status_code == 204
+    assert client.delete(path, headers=headers).status_code == 204
+    assert len(script.calls) == 2
+    suffix = f"/tweets/{remote_id}" if network == "x" else f"/{remote_id}"
+    assert all(call["method"] == "DELETE" and call["url"].endswith(suffix) for call in script.calls)
+    with SessionLocal() as db:
+        assert db.get(PostComment, comment).is_deleted
+        assert db.get(PostComment, child).is_deleted is cascades
+
+
+@pytest.mark.parametrize("network,scopes,own,action,status", [
+    ("threads", ["threads_basic", "threads_delete"], False, "delete", 403),
+    ("x", ["tweet.write"], False, "delete", 403),
+    ("facebook", ["pages_read_engagement"], True, "delete", 403),
+    ("instagram", ["instagram_basic", "pages_read_engagement"], True, "delete", 403),
+    ("youtube", [YOUTUBE_FORCE_SSL], False, "hide", 501),
+    ("threads", ["threads_basic", "threads_manage_replies"], False, "hide_nested", 409),
+    ("linkedin", ["w_member_social"], True, "delete", 501),
+    ("pinterest", ["pins:read"], True, "delete", 501),
+    ("tiktok", ["video.list"], True, "delete", 501),
+])
+def test_disallowed_moderation_stops_before_network(
+    client, auth_headers, monkeypatch, network, scopes, own, action, status
+):
+    from app.models.engagement import PostComment
+    from tests.test_engagement import _add_comment, _connect, _published, _user_id
+
+    monkeypatch.setenv("ENGAGEMENT_X_ENABLED", "true")
+    headers, _ = auth_headers
+    account = _connect(client, headers, network, scopes=scopes)
+    post = _published(_user_id(headers), account, provider_post_id="provider-post")
+    parent = None
+    if action == "hide_nested":
+        parent = _add_comment(post, account, network=network, text="Parent", minutes_ago=1)
+    comment = _add_comment(
+        post, account, network=network, text="Comment", minutes_ago=0, is_own=own, parent_id=parent
+    )
+    script = _Script([])
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    path = f"/api/v1/comments/{comment}"
+    if action == "delete":
+        response = client.delete(path, headers=headers)
+    else:
+        response = client.post(f"{path}/hide", headers=headers, json={"hidden": True})
+    assert response.status_code == status, response.text
+    assert not script.calls
+    with SessionLocal() as db:
+        row = db.get(PostComment, comment)
+        assert not row.is_hidden and not row.is_deleted
+
+
+@pytest.mark.parametrize("action,status,body,expected,recovery", [
+    ("hide", 403, {"error": {"code": 200}}, 403, "did not allow"),
+    ("delete", 429, {}, 429, "120 seconds"),
+    ("reply", 404, {}, 409, "Refresh the post"),
+    ("hide", 401, {}, 409, "Reconnect"),
+    ("hide", 200, {"data": {"hidden": False}}, 502, "Refresh the post"),
+    ("reply", None, httpx.ReadTimeout("test timeout"), 502, "response from Facebook"),
+])
+def test_comment_action_errors_preserve_state(client, auth_headers, monkeypatch, action, status, body, expected, recovery):
+    from app.models.engagement import PostComment
+    from tests.test_engagement import _add_comment, _connect, _published, _user_id
+
+    headers, _ = auth_headers
+    network = "x" if status == 200 else "facebook"
+    monkeypatch.setenv("ENGAGEMENT_X_ENABLED", "true")
+    account = _connect(client, headers, network, scopes=["pages_manage_engagement", "pages_read_user_content", "tweet.moderate.write"])
+    post = _published(_user_id(headers), account, provider_post_id="provider-post")
+    comment = _add_comment(post, account, network=network, text="Comment", minutes_ago=1)
+    reply = body if status is None else httpx.Response(status, json=body, headers={"Retry-After": "120"})
+    script = _Script([reply])
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    path = f"/api/v1/comments/{comment}"
+    if action == "delete":
+        response = client.delete(path, headers=headers)
+    else:
+        payload = {"hidden": True} if action == "hide" else {"text": "Hello"}
+        response = client.post(f"{path}/{action}", headers=headers, json=payload)
+    assert response.status_code == expected, response.text
+    assert recovery.lower() in response.json()["detail"].lower()
+    assert len(script.calls) == 1
+    if expected == 429:
+        assert response.headers["Retry-After"] == "120"
+    with SessionLocal() as db:
+        row = db.get(PostComment, comment)
+        assert not row.is_deleted and not row.is_hidden and not row.replied
+        assert db.get(ConnectedAccount, account).needs_reconnect is (status == 401)
+
+
+def test_facebook_permission_code_on_deleted_post_checks_page_listing(monkeypatch):
+    script = _Script([
+        _ok({"error": {"code": 10, "message": "Object does not exist or cannot be loaded"}}, 400),
+        _ok({"id": "acct-1"}),
+        _ok({"data": []}),
+    ])
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    with pytest.raises(RemotePostDeleted):
+        FacebookEngagement().verify_post(_account("facebook"), _post())
+
+
+def test_x_missing_post_checks_connected_user(monkeypatch):
+    script = _Script([_ok({"errors": [{"value": "123", "type": "https://api.x.com/2/problems/resource-not-found"}]}),
+                      _ok({"data": {"id": "acct-1"}})])
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    with pytest.raises(RemotePostDeleted):
+        XEngagement().verify_post(_account("x"), _post("123"))
+
+
+def test_linkedin_requires_approved_scope_and_encoded_member_post(monkeypatch):
+    provider = LinkedInEngagement()
+    urn = "urn:li:share:123"
+    with pytest.raises(PostStatusUnconfirmed):
+        provider.verify_post(_account("linkedin"), _post(urn))
+    script = _Script([_ok({"id": urn, "author": "urn:li:person:1"})])
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    provider.verify_post(_account("linkedin", "urn:li:person:1", scopes=["r_member_social"]), _post(urn))
+    assert script.calls[0]["url"].endswith("urn%3Ali%3Ashare%3A123")
+
+
+def test_pinterest_inaccessible_pin_is_not_confirmed_deleted(monkeypatch):
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", _Script([_ok({}, 404)]))
+    with pytest.raises(PostStatusUnconfirmed):
+        PinterestEngagement().verify_post(_account("pinterest"), _post("123"))
+
+
+def test_tiktok_inbox_upload_is_not_a_public_video_id(monkeypatch):
+    monkeypatch.setenv("TIKTOK_ENABLE_VIDEO_LIST", "false")
+    script = _Script([_ok({"data": {"status": "SEND_TO_USER_INBOX"}})])
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    with pytest.raises(PostStatusUnconfirmed, match="inbox"):
+        TikTokEngagement().verify_post(_account("tiktok"), _post("inbox:v_inbox_file~1"))
+    assert script.calls[0]["json"] == {"publish_id": "v_inbox_file~1"}
+
+
+@pytest.mark.parametrize("enabled,expected", [
+    ("false", "Open TikTok to check it."),
+    ("true", "reconnect TikTok"),
+])
+def test_tiktok_refresh_without_video_access_gives_user_guidance(monkeypatch, enabled, expected):
+    monkeypatch.setenv("TIKTOK_ENABLE_VIDEO_LIST", enabled)
+    provider = TikTokEngagement()
+    check = provider.fetch_insights if provider.capabilities.supports_insights else provider.verify_post
+    with pytest.raises(PostStatusUnconfirmed, match=expected) as raised:
+        check(_account("tiktok"), _post("123"))
+    assert "video.list" not in str(raised.value)
+
+
 def _post(provider_id="post-1"):
     return SimpleNamespace(
         provider_post_id=provider_id,
+        content="",
+        post_metadata={},
+        media_urls=[],
         published_at=datetime(2026, 1, 2, tzinfo=timezone.utc),
     )
 
@@ -76,9 +351,10 @@ def _ok(payload, status_code=200):
     return httpx.Response(status_code, json=payload)
 
 
-def test_oauth_scope_constants_match_the_consoles():
+def test_oauth_scope_constants_match_the_consoles(monkeypatch):
     from app.services.oauth import _providers
 
+    monkeypatch.delenv("TIKTOK_ENABLE_VIDEO_LIST", raising=False)
     providers = _providers()
     assert providers["facebook"].scopes == FACEBOOK_SCOPES
     assert providers["instagram"].scopes == INSTAGRAM_SCOPES
@@ -98,6 +374,7 @@ def test_tiktok_video_list_stays_gated(monkeypatch):
     from app.services.engagement.registry import get_engagement_provider
     from app.services.oauth import _providers
 
+    monkeypatch.setenv("TIKTOK_ENABLE_VIDEO_LIST", "false")
     assert get_engagement_provider("tiktok").capabilities.supports_insights is False
     monkeypatch.setenv("TIKTOK_ENABLE_VIDEO_LIST", "true")
     assert tiktok_scopes()[-1] == "video.list"
@@ -182,6 +459,11 @@ def test_facebook_parses_comments_reply_and_insights(monkeypatch):
     )
     monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
     provider = FacebookEngagement()
+    assert provider.capabilities.required_scopes["insights"] == (
+        "read_insights",
+        "pages_read_engagement",
+        "pages_manage_engagement",
+    )
     account = _account("facebook", "page-1")
     comments = provider.fetch_comments(account, _post("PAGE_POST"))
     assert [item.provider_comment_id for item in comments] == ["c1", "c2"]
@@ -195,12 +477,380 @@ def test_facebook_parses_comments_reply_and_insights(monkeypatch):
     assert reply.provider_comment_id == "reply-1"
     assert script.calls[1]["json"] == {"message": "Thanks"}
     assert script.calls[1]["url"].endswith("/c2/comments")
-    insights = provider.fetch_insights(account, _post("PAGE_POST"))
+    photo_post = _post("PAGE_POST")
+    photo_post.post_metadata = {
+        "facebook_object_id": "PHOTO_OBJECT",
+        "facebook_object_type": "photo",
+    }
+    insights = provider.fetch_insights(account, photo_post)
     assert insights.impressions == 20
     assert insights.reach == 11
     assert insights.likes == 4
     assert "post_impressions" not in script.calls[2]["params"]["metric"]
     assert "post_media_view" in script.calls[2]["params"]["metric"]
+    assert script.calls[2]["url"].endswith("/PAGE_POST/insights")
+
+
+def test_facebook_video_insights_use_video_object_id(monkeypatch):
+    script = _Script(
+        [
+            _ok(
+                {
+                    "data": [
+                        {"name": "total_video_views", "values": [{"value": 42}]},
+                        {"name": "total_video_views_unique", "values": [{"value": 31}]},
+                        {"name": "total_video_impressions", "values": [{"value": 58}]},
+                        {
+                            "name": "total_video_reactions_by_type_total",
+                            "values": [{"value": {"like": 4, "love": 2}}],
+                        },
+                    ]
+                }
+            )
+        ]
+    )
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    post = _post("PAGE_POST")
+    post.post_metadata = {
+        "facebook_object_id": "VIDEO_OBJECT",
+        "facebook_object_type": "video",
+    }
+
+    insights = FacebookEngagement().fetch_insights(_account("facebook", "page-1"), post)
+
+    assert script.calls[0]["url"].endswith("/VIDEO_OBJECT/video_insights")
+    assert insights.video_views == 42
+    assert insights.reach == 31
+    assert insights.impressions == 58
+    assert insights.likes == 6
+
+
+def test_facebook_video_insights_preserve_http_400(monkeypatch):
+    script = _Script(
+        [
+            _ok({"error": {"message": "Unsupported metric", "code": 100}}, 400),
+            _ok({"error": {"message": "Fallback unavailable", "code": 100}}, 400),
+        ]
+    )
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    post = _post("PAGE_POST")
+    post.post_metadata = {
+        "facebook_object_id": "VIDEO_OBJECT",
+        "facebook_object_type": "video",
+    }
+
+    with pytest.raises(ProviderHTTPError) as error:
+        FacebookEngagement().fetch_insights(_account("facebook"), post)
+
+    assert error.value.status_code == 400
+    assert "Unsupported metric" in error.value.detail
+    assert script.calls[0]["url"].endswith("/VIDEO_OBJECT/video_insights")
+    assert script.calls[1]["url"].endswith("/PAGE_POST/insights")
+
+
+def test_facebook_video_insights_fall_back_to_page_post_metrics(monkeypatch):
+    script = _Script(
+        [
+            _ok({"error": {"message": "Tried accessing nonexisting field", "code": 100}}, 400),
+            _ok(
+                {
+                    "data": [
+                        {"name": "post_media_view", "values": [{"value": 28}]},
+                    ]
+                }
+            ),
+        ]
+    )
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    post = _post("PAGE_POST")
+    post.post_metadata = {
+        "facebook_object_id": "VIDEO_OBJECT",
+        "facebook_object_type": "video",
+    }
+
+    insights = FacebookEngagement().fetch_insights(
+        _account("facebook", "page-1"), post
+    )
+
+    assert script.calls[0]["url"].endswith("/VIDEO_OBJECT/video_insights")
+    assert script.calls[1]["url"].endswith("/PAGE_POST/insights")
+    assert script.calls[1]["params"] == {"metric": "post_media_view"}
+    assert insights.impressions == 28
+    assert insights.reach is None
+    assert insights.likes is None
+    assert insights.video_views is None
+    assert insights.raw["source"] == "page_post_fallback"
+
+
+def test_facebook_resolves_video_object_for_older_page_posts(monkeypatch):
+    script = _Script(
+        [
+            _ok(
+                {
+                    "id": "LEGACY_PAGE_POST",
+                    "attachments": {"data": [{"target": {"id": "LEGACY_VIDEO_OBJECT"}}]},
+                }
+            ),
+            _ok({"data": [{"name": "total_video_views", "values": [{"value": 7}]}]}),
+        ]
+    )
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    post = _post("LEGACY_PAGE_POST")
+    post.media_urls = ["https://cdn.example.com/clip.mp4"]
+
+    insights = FacebookEngagement().fetch_insights(_account("facebook"), post)
+
+    assert script.calls[0]["url"].endswith("/LEGACY_PAGE_POST")
+    assert script.calls[0]["params"] == {"fields": "id,attachments{target}"}
+    assert script.calls[1]["url"].endswith("/LEGACY_VIDEO_OBJECT/video_insights")
+    assert insights.video_views == 7
+
+
+def test_facebook_opaque_video_url_is_resolved_before_page_post_metrics(monkeypatch):
+    script = _Script(
+        [
+            _ok(
+                {
+                    "id": "LEGACY_PAGE_POST",
+                    "attachments": {
+                        "data": [
+                            {
+                                "media_type": "video",
+                                "target": {"id": "OPAQUE_VIDEO_OBJECT"},
+                            }
+                        ]
+                    },
+                }
+            ),
+            _ok(
+                {
+                    "error": {"message": "Unsupported metric", "code": 100},
+                },
+                400,
+            ),
+            _ok(
+                {
+                    "data": [
+                        {"name": "post_media_view", "values": [{"value": 23}]},
+                    ]
+                }
+            ),
+        ]
+    )
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    post = _post("LEGACY_PAGE_POST")
+    post.media_urls = ["https://cdn.example.com/opaque-media"]
+
+    insights = FacebookEngagement().fetch_insights(
+        _account("facebook", "page-1"), post
+    )
+
+    assert script.calls[0]["params"] == {"fields": "id,attachments{target}"}
+    assert script.calls[1]["url"].endswith("/OPAQUE_VIDEO_OBJECT/video_insights")
+    assert script.calls[1]["params"]["metric"] == ",".join(
+        (
+            "total_video_views",
+            "total_video_views_unique",
+            "total_video_impressions",
+            "total_video_reactions_by_type_total",
+        )
+    )
+    assert script.calls[2]["url"].endswith("/LEGACY_PAGE_POST/insights")
+    assert script.calls[2]["params"] == {"metric": "post_media_view"}
+    assert all(
+        call["params"] != {
+            "metric": ",".join(
+                (
+                    "post_media_view",
+                    "post_total_media_view_unique",
+                    "post_reactions_like_total",
+                    "post_reactions_love_total",
+                    "post_reactions_wow_total",
+                )
+            )
+        }
+        for call in script.calls
+        if call["url"].endswith("/LEGACY_PAGE_POST/insights")
+    )
+    assert insights.impressions == 23
+    assert insights.raw["source"] == "page_post_fallback"
+
+
+def test_facebook_failed_video_id_resolution_uses_only_fallback_metric(monkeypatch):
+    script = _Script(
+        [
+            _ok({"id": "UNRESOLVED_PAGE_POST", "attachments": {"data": []}}),
+            _ok(
+                {
+                    "data": [
+                        {"name": "post_media_view", "values": [{"value": 14}]},
+                    ]
+                }
+            ),
+        ]
+    )
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    post = _post("UNRESOLVED_PAGE_POST")
+    post.post_metadata = {"facebook_object_type": "video"}
+
+    insights = FacebookEngagement().fetch_insights(
+        _account("facebook", "page-1"), post
+    )
+
+    assert len(script.calls) == 2
+    assert script.calls[1]["params"] == {"metric": "post_media_view"}
+    assert script.calls[1]["url"].endswith("/UNRESOLVED_PAGE_POST/insights")
+    assert insights.impressions == 14
+    assert insights.raw["source"] == "page_post_fallback"
+
+
+def test_facebook_untyped_photo_attachment_does_not_enter_video_path(monkeypatch):
+    script = _Script(
+        [
+            _ok(
+                {
+                    "id": "PHOTO_PAGE_POST",
+                    "attachments": {
+                        "data": [
+                            {"target": {"id": "UNTYPED_PHOTO_OBJECT"}},
+                        ]
+                    },
+                }
+            ),
+            _ok(
+                {
+                    "data": [
+                        {"name": "post_media_view", "values": [{"value": 21}]},
+                    ]
+                }
+            ),
+        ]
+    )
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    post = _post("PHOTO_PAGE_POST")
+    post.media_urls = ["https://cdn.example.com/opaque-photo"]
+
+    insights = FacebookEngagement().fetch_insights(
+        _account("facebook", "page-1"), post
+    )
+
+    assert script.calls[1]["url"].endswith("/PHOTO_PAGE_POST/insights")
+    assert not any(call["url"].endswith("/video_insights") for call in script.calls)
+    assert insights.impressions == 21
+    assert insights.raw["source"] == "page_post"
+
+
+def test_facebook_opaque_photo_url_keeps_normal_page_post_metrics(monkeypatch):
+    script = _Script(
+        [
+            _ok(
+                {
+                    "id": "PHOTO_PAGE_POST",
+                    "attachments": {
+                        "data": [
+                            {
+                                "media_type": "photo",
+                                "target": {"id": "PHOTO_OBJECT"},
+                            }
+                        ]
+                    },
+                }
+            ),
+            _ok(
+                {
+                    "data": [
+                        {"name": "post_media_view", "values": [{"value": 19}]},
+                    ]
+                }
+            ),
+        ]
+    )
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    post = _post("PHOTO_PAGE_POST")
+    post.media_urls = ["https://cdn.example.com/opaque-photo"]
+
+    insights = FacebookEngagement().fetch_insights(
+        _account("facebook", "page-1"), post
+    )
+
+    assert script.calls[1]["url"].endswith("/PHOTO_PAGE_POST/insights")
+    assert script.calls[1]["params"]["metric"] != "post_media_view"
+    assert "post_media_view" in script.calls[1]["params"]["metric"]
+    assert insights.impressions == 19
+
+
+def test_facebook_resolves_wrong_legacy_id_via_published_posts(monkeypatch):
+    script = _Script(
+        [
+            _ok({"id": "STORED_VIDEO_ID"}),
+            _ok(
+                {
+                    "data": [
+                        {
+                            "id": "RESOLVED_PAGE_POST",
+                            "message": "A video caption",
+                            "created_time": "2026-01-02T00:00:00+0000",
+                            "attachments": {
+                                "data": [{"target": {"id": "RESOLVED_VIDEO_ID"}}]
+                            },
+                        }
+                    ]
+                }
+            ),
+            _ok({"data": []}),
+            _ok(
+                {
+                    "data": [
+                        {"name": "post_media_view", "values": [{"value": 33}]},
+                    ]
+                }
+            ),
+        ]
+    )
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    post = _post("STORED_VIDEO_ID")
+    post.content = "A video caption"
+    post.media_urls = ["https://cdn.example.com/clip.mp4"]
+
+    insights = FacebookEngagement().fetch_insights(
+        _account("facebook", "page-1"), post
+    )
+
+    assert script.calls[0]["params"] == {"fields": "id,attachments{target}"}
+    assert script.calls[1]["url"].endswith("/page-1/published_posts")
+    assert script.calls[2]["url"].endswith("/RESOLVED_VIDEO_ID/video_insights")
+    assert script.calls[3]["url"].endswith("/RESOLVED_PAGE_POST/insights")
+    assert script.calls[3]["params"] == {"metric": "post_media_view"}
+    assert insights.impressions == 33
+    assert insights.reach is None
+    assert insights.video_views is None
+    assert insights.raw["source"] == "page_post_fallback"
+
+
+def test_facebook_recovers_legacy_photo_object_id_after_http_400(monkeypatch):
+    script = _Script(
+        [
+            _ok({"error": {"message": "Unsupported object", "code": 100}}, 400),
+            _ok({"page_story_id": "RESOLVED_PAGE_POST"}),
+            _ok(
+                {
+                    "data": [
+                        {"name": "post_media_view", "values": [{"value": 18}]}
+                    ]
+                }
+            ),
+        ]
+    )
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+
+    insights = FacebookEngagement().fetch_insights(
+        _account("facebook"), _post("PHOTO_OBJECT")
+    )
+
+    assert script.calls[0]["url"].endswith("/PHOTO_OBJECT/insights")
+    assert script.calls[1]["params"] == {"fields": "page_story_id"}
+    assert script.calls[2]["url"].endswith("/RESOLVED_PAGE_POST/insights")
+    assert insights.impressions == 18
 
 
 def test_instagram_parses_replies_and_views(monkeypatch):
@@ -345,6 +995,7 @@ def test_x_search_reply_metrics_hide_and_402(monkeypatch, client, auth_headers, 
             ),
             _ok({"data": {"id": "our-reply"}}),
             _ok({"data": {"hidden": True}}),
+            _ok({"data": {"hidden": False}}),
             _ok(
                 {
                     "data": {
@@ -376,6 +1027,10 @@ def test_x_search_reply_metrics_hide_and_402(monkeypatch, client, auth_headers, 
     assert script.calls[2]["method"] == "PUT"
     assert script.calls[2]["url"].endswith("/tweets/reply-9/hidden")
     assert script.calls[2]["json"] == {"hidden": True}
+    provider.hide_reply(account, _comment("reply-9"), False)
+    assert script.calls[3]["method"] == "PUT"
+    assert script.calls[3]["url"].endswith("/tweets/reply-9/hidden")
+    assert script.calls[3]["json"] == {"hidden": False}
     insights = provider.fetch_insights(account, _post("root-tweet"))
     assert insights.impressions == 100
     assert insights.likes == 5
@@ -403,7 +1058,7 @@ def test_x_search_reply_metrics_hide_and_402(monkeypatch, client, auth_headers, 
 
     user_id = _user_id(headers)
     account_id = _connect(client, headers, "x")
-    post_id = _published(user_id, account_id)
+    post_id = _published(user_id, account_id, provider_post_id="123456789")
     response = client.post(f"/api/v1/posts/{post_id}/engagement/sync", headers=headers)
     assert response.status_code == 402, response.text
     assert response.json()["detail"] == "Comments from X aren't available in SocialCastly yet"
@@ -515,7 +1170,208 @@ def test_youtube_comments_analytics_and_statistics_fallback(monkeypatch):
     assert fallback.likes == 3
     assert fallback.comments == 1
     assert "/videos" in stats.calls[0]["url"]
-    assert stats.calls[0]["params"]["part"] == "statistics"
+    assert stats.calls[0]["params"]["part"] == "snippet,status,statistics"
+
+
+def test_youtube_missing_video_requires_channel_identity_verification(monkeypatch):
+    script = _Script(
+        [
+            _ok({"items": []}),
+            _ok({"items": [{"id": "chan-1"}]}),
+        ]
+    )
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    provider = YouTubeEngagement()
+    account = _account("youtube", "chan-1", scopes=["https://www.googleapis.com/auth/youtube.readonly"])
+    with pytest.raises(RemotePostDeleted):
+        provider.fetch_insights(account, _post("video-gone"))
+    assert "/videos" in script.calls[0]["url"]
+    assert script.calls[1]["params"] == {"part": "id", "mine": "true"}
+
+
+def test_youtube_missing_video_is_not_deleted_when_channel_verification_fails(monkeypatch):
+    script = _Script([_ok({"items": []}), _ok({"items": [{"id": "different-channel"}]})])
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    with pytest.raises(ProviderAuthError):
+        YouTubeEngagement().fetch_insights(
+            _account("youtube", "chan-1", scopes=["https://www.googleapis.com/auth/youtube.readonly"]),
+            _post("video-gone"),
+        )
+
+
+def test_youtube_video_from_another_channel_is_not_treated_as_owned(monkeypatch):
+    script = _Script(
+        [
+            _ok({"items": [{"snippet": {"channelId": "different-channel"}, "statistics": {}}]}),
+        ]
+    )
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    account = _account("youtube", "chan-1", scopes=["https://www.googleapis.com/auth/youtube.readonly"])
+    with pytest.raises(ProviderAuthError):
+        YouTubeEngagement().fetch_insights(account, _post("video-1"))
+    assert len(script.calls) == 1
+
+
+@pytest.mark.parametrize(
+    ("status", "body", "error_type", "category"),
+    [
+        (401, {"error": {"code": 401, "message": "Invalid Credentials"}}, ProviderAuthError, None),
+        (403, {"error": {"code": 403, "message": "insufficientPermissions"}}, ProviderAuthError, None),
+        (403, {"error": {"code": 403, "errors": [{"reason": "quotaExceeded"}]}}, EngagementRetryableError, "rate_limit"),
+        (429, {"error": {"message": "slow down"}}, EngagementRetryableError, "rate_limit"),
+        (503, {"error": {"message": "temporarily unavailable"}}, EngagementRetryableError, "transient"),
+    ],
+)
+def test_youtube_auth_permission_quota_and_transient_errors_are_never_deletion(
+    monkeypatch, status, body, error_type, category
+):
+    script = _Script([_ok(body, status_code=status)])
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    account = _account("youtube", "chan-1", scopes=["https://www.googleapis.com/auth/youtube.readonly"])
+    with pytest.raises(error_type) as raised:
+        YouTubeEngagement().fetch_insights(account, _post("video-1"))
+    assert not isinstance(raised.value, RemotePostDeleted)
+    if category:
+        assert raised.value.category == category
+    assert len(script.calls) == 1
+
+
+@pytest.mark.parametrize("capability", ["comments", "insights"])
+def test_threads_exact_missing_media_error_verifies_account_and_listing(
+    monkeypatch, caplog, capability
+):
+    caplog.set_level("INFO", logger="app.services.engagement.http")
+    media_id = "17920690284530677"
+    script = _Script(
+        [
+            _ok(
+                {
+                    "error": {
+                        "message": (
+                            "Unsupported get request. Object with ID "
+                            "'17920690284530677' does not exist, cannot be loaded due to "
+                            "missing permissions, or does not support this operation"
+                        ),
+                        "type": "THApiException",
+                        "code": 100,
+                        "error_subcode": 33,
+                        "fbtrace_id": "ARegressThreadDeletedErrorShape123456",
+                    }
+                },
+                400,
+            ),
+            _ok({"id": "acct-1"}),
+            _ok({"data": []}),
+        ]
+    )
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    provider = ThreadsEngagement()
+    account = _account("threads", "acct-1")
+    post = _post(media_id)
+    with pytest.raises(RemotePostDeleted):
+        if capability == "comments":
+            provider.fetch_comments(account, post)
+        else:
+            provider.fetch_insights(account, post)
+    assert script.calls[1]["url"].endswith("/me")
+    assert "/acct-1/threads" in script.calls[2]["url"]
+    assert script.calls[2]["params"]["fields"] == "id,owner,timestamp"
+    assert script.calls[2]["params"]["since"] < script.calls[2]["params"]["until"]
+    assert "outcome=missing_object_candidate code=100 subcode=33 type=THApiException" in caplog.text
+    assert "HTTP 400 outcome=error" not in caplog.text
+
+
+@pytest.mark.parametrize("cursors", [list(range(10)), ["same", "same"], [None]])
+def test_threads_incomplete_listing_does_not_mark_deleted(monkeypatch, cursors):
+    pages = [
+        _ok({"data": [{"id": "another-post"}],
+             "paging": {"next": "more", "cursors": {"after": str(cursor)} if cursor is not None else {}}})
+        for cursor in cursors
+    ]
+    script = _Script([
+        _ok({"error": {"code": 100, "error_subcode": 33}}, 400),
+        _ok({"id": "acct-1"}),
+        *pages,
+    ])
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    with pytest.raises(EngagementRetryableError):
+        ThreadsEngagement().fetch_insights(_account("threads", "acct-1"), _post("thread-1"))
+    assert not script.responses
+
+
+def test_threads_missing_post_remains_retryable_if_listing_finds_it(monkeypatch):
+    script = _Script(
+        [
+            _ok({"error": {"message": "missing object", "code": 100, "error_subcode": 33}}, 400),
+            _ok({"id": "acct-1"}),
+            _ok({"data": [{"id": "thread-1", "owner": {"id": "acct-1"}}]}),
+        ]
+    )
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    with pytest.raises(ProviderHTTPError):
+        ThreadsEngagement().fetch_insights(_account("threads", "acct-1"), _post("thread-1"))
+
+
+def test_threads_missing_post_is_not_deleted_when_account_identity_differs(monkeypatch):
+    script = _Script(
+        [
+            _ok({"error": {"message": "missing object", "code": 100, "error_subcode": 33}}, 400),
+            _ok({"id": "different-account"}),
+        ]
+    )
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    with pytest.raises(ProviderAuthError):
+        ThreadsEngagement().fetch_insights(_account("threads", "acct-1"), _post("thread-gone"))
+    assert len(script.calls) == 2
+
+
+def test_threads_listing_owner_must_match_before_missing_media_is_classified(monkeypatch):
+    script = _Script(
+        [
+            _ok({"error": {"message": "missing object", "code": 100, "error_subcode": 33}}, 400),
+            _ok({"id": "acct-1"}),
+            _ok({"data": [{"id": "thread-1", "owner": {"id": "different-account"}}]}),
+        ]
+    )
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    with pytest.raises(ProviderAuthError):
+        ThreadsEngagement().fetch_insights(_account("threads", "acct-1"), _post("thread-1"))
+
+
+def test_retry_after_header_is_preserved_as_retryable_delay(monkeypatch):
+    response = httpx.Response(
+        429,
+        headers={"Retry-After": "120"},
+        json={"error": {"message": "Rate limited"}},
+    )
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", _Script([response]))
+    account = _account("youtube", "chan-1", scopes=["https://www.googleapis.com/auth/youtube.readonly"])
+    with pytest.raises(EngagementRetryableError) as raised:
+        YouTubeEngagement().fetch_insights(account, _post("video-1"))
+    assert raised.value.category == "rate_limit"
+    assert raised.value.retry_after_seconds == 120
+
+
+@pytest.mark.parametrize(
+    ("status", "body", "error_type", "category"),
+    [
+        (401, {"error": {"message": "Invalid OAuth access token", "code": 190}}, ProviderAuthError, None),
+        (403, {"error": {"message": "Insufficient permission", "code": 10}}, ProviderAuthError, None),
+        (429, {"error": {"message": "Rate limited"}}, EngagementRetryableError, "rate_limit"),
+        (503, {"error": {"message": "Temporary failure"}}, EngagementRetryableError, "transient"),
+    ],
+)
+def test_threads_auth_permission_rate_and_transient_errors_are_never_deletion(
+    monkeypatch, status, body, error_type, category
+):
+    script = _Script([_ok(body, status_code=status)])
+    monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
+    with pytest.raises(error_type) as raised:
+        ThreadsEngagement().fetch_insights(_account("threads", "acct-1"), _post("thread-1"))
+    assert not isinstance(raised.value, RemotePostDeleted)
+    if category:
+        assert raised.value.category == category
+    assert len(script.calls) == 1
 
 
 def test_pinterest_analytics_only(monkeypatch):

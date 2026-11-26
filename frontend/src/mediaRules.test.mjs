@@ -11,6 +11,7 @@ import {
   summarize,
   selectionFor,
   defaultIndices,
+  limitVideoAttachments,
   instagramCropBox,
   cropIndices,
 } from "./mediaRules.js";
@@ -35,6 +36,25 @@ const gif = () => ({ kind: "gif", ext: "gif", size: 0, width: 400, height: 300, 
 // The design's example: 1 video + 5 photos, photo 3 (index 3) too wide for Instagram.
 const MIX = [vid(), pic(), pic(), pic(3000, 1000), pic(), pic()];
 const codes = (r) => r.problems.map((p) => p.code);
+
+test("uploads and stored media share each channel's video allowance", () => {
+  const items = ["1.mp4", "2.mov", "cover.jpg"];
+  for (const platform of ["youtube", "facebook", "linkedin", "x", "tiktok", "pinterest", "instagram"]) {
+    const targets = [{ platform, format: "Reel / Video" }];
+    assert.deepEqual(limitVideoAttachments([], items, targets).accepted, [items[0], items[2]]);
+    assert.deepEqual(limitVideoAttachments([items[0]], items.slice(1), targets).accepted, [items[2]]);
+  }
+  for (const platform of ["instagram", "threads"]) {
+    const targets = [{ platform, format: "Post" }];
+    assert.deepEqual(limitVideoAttachments([], items, targets).accepted, items);
+    assert.equal(limitVideoAttachments(Array(19).fill("photo.jpg"), items, targets).accepted.length, 1);
+    targets.push({ platform: "youtube", format: "Short" });
+    assert.equal(limitVideoAttachments([], items, targets).accepted.length, 2);
+  }
+  const infos = [vid(), vid()];
+  assert.deepEqual(defaultIndices("youtube", infos), [0, 1]);
+  assert.deepEqual(codes(checkMedia("youtube", infos)), ["too_many"]);
+});
 
 test("mediaInfo classifies files and urls", () => {
   assert.equal(mediaInfo("https://x/a/clip.MOV").kind, "video");

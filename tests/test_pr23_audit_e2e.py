@@ -202,7 +202,7 @@ def test_b_mixed_instagram_carousel_keeps_videos_and_photos(client, auth_headers
         ("youtube", [V1, V2], "Reel / Video", "one video"),
         ("youtube", [P1], "Reel / Video", "needs a video"),
         ("youtube", [V1], "Post", "Community"),
-        ("tiktok", [P1], "Story", "Content Posting"),
+        ("tiktok", [P1], "Story", "Choose Photo post or Video"),
         ("instagram", [], "Post", "at least one"),
         ("facebook", [P1], "Reel / Video", "include a video"),
         ("facebook", [], "Story", "Story"),

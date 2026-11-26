@@ -237,6 +237,7 @@ def publish_post_task(post_id: str, post_format: str | None = None) -> dict[str,
         try:
             from app.services.token_refresh import (
                 PUBLISH_LEEWAY_SECONDS,
+                expired_connection_notice,
                 refresh_connected_account,
             )
 
@@ -248,6 +249,9 @@ def publish_post_task(post_id: str, post_format: str | None = None) -> dict[str,
             db.refresh(account)
             if getattr(account, "needs_reconnect", False):
                 return _fail_reconnect(db, post, account.reconnect_reason or "", log)
+            notice = expired_connection_notice(account)
+            if notice:
+                raise PublishingError(notice, code="connection_renewal_pending", retryable=True)
             result = publish(
                 account.platform,
                 decrypt_token(account.access_token_ciphertext),
@@ -262,6 +266,11 @@ def publish_post_task(post_id: str, post_format: str | None = None) -> dict[str,
             db.refresh(post)
             post.status = "published"
             post.provider_post_id = result.post_id
+            if account.platform == "facebook" and result.object_id:
+                metadata = dict(post.post_metadata or {})
+                metadata["facebook_object_id"] = result.object_id
+                metadata["facebook_object_type"] = result.object_type
+                post.post_metadata = metadata
             post.published_at = datetime.now(timezone.utc)
             post.last_error_code = post.last_error_message = None
             log.outcome, log.finished_at = "succeeded", post.published_at

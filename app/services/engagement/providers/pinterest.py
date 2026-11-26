@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
+from app.integrations.base import ProviderHTTPError
+from app.services.engagement.base import PostStatusUnconfirmed, RemotePostDeleted
 
 from app.services.engagement.base import (
     CAPABILITY_COMMENT_REPLY,
@@ -58,6 +60,23 @@ class PinterestEngagement(EngagementProvider):
             CAPABILITY_COMMENT_REPLY: comments_unavailable("pinterest"),
         },
     )
+
+    def verify_post(self, account, post) -> None:
+        token = self.access_token(account)
+        pin_id = str(post.provider_post_id)
+        api = "https://api.pinterest.com/v5"
+        try:
+            pin = request_json("GET", f"{api}/pins/{quote(pin_id, safe='')}", access_token=token)
+        except ProviderHTTPError as exc:
+            if exc.status_code == 410:
+                raise RemotePostDeleted("pinterest") from None
+            if exc.status_code != 404:
+                raise
+        else:
+            if str(pin.get("id")) == pin_id:
+                return
+            raise PostStatusUnconfirmed("Pinterest could not confirm this Pin's status.")
+        raise PostStatusUnconfirmed("Pinterest could not confirm whether this Pin is private or deleted.")
 
     def fetch_insights(self, account, post) -> ProviderInsights:
         token = self.access_token(account)

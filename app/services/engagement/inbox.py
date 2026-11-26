@@ -516,6 +516,9 @@ def capability_matrix(db: Session, user_id: UUID) -> dict:
                 "can_read_comments": can(caps.supports_comments_read, "comments_read"),
                 "can_reply": can(caps.supports_comment_reply, "comment_reply"),
                 "can_read_insights": can(caps.supports_insights, "insights"),
+                "can_delete_comment": bool(
+                    usable and provider.delete_scopes and set(provider.delete_scopes).issubset(granted)
+                ),
                 "can_hide_reply": can(caps.supports_hide_reply, CAPABILITY_HIDE_REPLY),
                 "missing_scopes": missing,
                 "reconnect_for_permissions": reconnect_for_permissions,

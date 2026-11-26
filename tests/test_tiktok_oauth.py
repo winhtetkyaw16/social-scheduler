@@ -7,6 +7,7 @@ from urllib.parse import parse_qs, urlparse
 from uuid import uuid4
 
 import pytest
+import httpx
 from fastapi import HTTPException
 
 from app.core import config
@@ -25,10 +26,23 @@ def _enable_tiktok(
     monkeypatch.setenv("TIKTOK_CLIENT_KEY", "tt-client-key")
     monkeypatch.setenv("TIKTOK_CLIENT_SECRET", "tt-client-secret")
     monkeypatch.setenv("TIKTOK_REDIRECT_URI", redirect_uri)
+    monkeypatch.setenv("TIKTOK_ENABLE_VIDEO_LIST", "false")
 
 
 def _query(url: str) -> dict[str, list[str]]:
     return parse_qs(urlparse(url).query, keep_blank_values=True)
+
+
+def test_tiktok_reconnect_shows_consent_for_added_video_scope(client, auth_headers, monkeypatch):
+    _enable_tiktok(monkeypatch)
+    monkeypatch.setenv("TIKTOK_ENABLE_VIDEO_LIST", "true")
+    headers, _ = auth_headers
+    basic = client.get("/api/v1/accounts/tiktok/connect", headers=headers)
+    assert "video.list" in _query(basic.json()["authorization_url"])["scope"][0].split(",")
+    res = client.get("/api/v1/accounts/tiktok/connect?reauth=creator", headers=headers)
+    query = _query(res.json()["authorization_url"])
+    assert query["disable_auto_auth"] == ["1"]
+    assert "video.list" in query["scope"][0].split(",")
 
 
 def test_tiktok_pkce_pair_is_hex_sha256_not_base64url():
@@ -199,12 +213,56 @@ def test_tiktok_callback_uses_verifier_stored_in_state(
     assert captured["data"]["redirect_uri"] == config.TIKTOK_REDIRECT_URI
 
 
+def test_tiktok_callback_shows_recovery_for_app_settings(client):
+    response = client.get("/api/v1/accounts/tiktok/callback", params={"error": "invalid_scope"}, follow_redirects=False)
+    assert response.status_code == 302
+    message = _query(response.headers["location"])["connect_error"][0]
+    assert "contact support" in message
+    assert "scope" not in message
+
+
+def test_connection_interrupted_during_tiktok_sign_in(client, auth_headers, monkeypatch):
+    _enable_tiktok(monkeypatch)
+    headers, _ = auth_headers
+    started = client.get("/api/v1/accounts/tiktok/connect", headers=headers)
+    state = _query(started.json()["authorization_url"])["state"][0]
+
+    def unreachable(*args, **kwargs):
+        raise httpx.ConnectError("test connection interrupted")
+
+    monkeypatch.setattr(oauth.httpx, "post", unreachable)
+    callback = client.get("/api/v1/accounts/tiktok/callback", params={"code": "test", "state": state}, follow_redirects=False)
+    assert callback.status_code == 302
+    assert _query(callback.headers["location"])["connect_error"] == [
+        "SocialCastly couldn't reach TikTok. Try connecting again in a few minutes."
+    ]
+
+
+def test_rate_limit_during_tiktok_sign_in(client, auth_headers, monkeypatch):
+    _enable_tiktok(monkeypatch)
+    headers, _ = auth_headers
+    started = client.get("/api/v1/accounts/tiktok/connect", headers=headers)
+    state = _query(started.json()["authorization_url"])["state"][0]
+    monkeypatch.setattr(oauth.httpx, "post", lambda *args, **kwargs: httpx.Response(429))
+
+    callback = client.get(
+        "/api/v1/accounts/tiktok/callback",
+        params={"code": "test", "state": state},
+        follow_redirects=False,
+    )
+
+    assert callback.status_code == 302
+    assert _query(callback.headers["location"])["connect_error"] == [
+        "TikTok is busy right now. Wait a little before connecting again."
+    ]
+
+
 def test_tiktok_connect_requires_client_credentials(client, auth_headers):
     headers, _tokens = auth_headers
     missing = client.get("/api/v1/accounts/tiktok/connect", headers=headers)
     assert missing.status_code == 503
-    assert "TIKTOK_CLIENT_KEY" in missing.text
-    assert "TIKTOK_CLIENT_SECRET" in missing.text
+    assert "contact support" in missing.json()["detail"]
+    assert "TIKTOK_CLIENT" not in missing.text
 
 
 def test_x_pkce_stays_base64url(monkeypatch):

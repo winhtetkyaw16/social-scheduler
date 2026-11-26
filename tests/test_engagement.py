@@ -21,10 +21,12 @@ from app.models.engagement import PostComment, PostInsightsSnapshot
 from app.services.engagement.base import (
     EngagementCapabilities,
     EngagementProvider,
+    EngagementRetryableError,
     NotSupported,
     ProviderComment,
     ProviderInsights,
     ProviderReply,
+    RemotePostDeleted,
     UnsupportedEngagementProvider,
 )
 from app.services.engagement.registry import canonical_network, supported_networks
@@ -356,9 +358,10 @@ def test_default_provider_raises_not_supported():
         provider.fetch_insights(None, None)
 
 
-def test_registry_capability_matrix():
+def test_registry_capability_matrix(monkeypatch):
     from app.services.engagement.registry import get_engagement_provider
 
+    monkeypatch.setenv("TIKTOK_ENABLE_VIDEO_LIST", "false")
     assert supported_networks() == (
         "facebook",
         "instagram",
@@ -370,9 +373,9 @@ def test_registry_capability_matrix():
         "pinterest",
     )
     expected = {
-        "facebook": (True, True, True, False),
-        "instagram": (True, True, True, False),
-        "threads": (True, True, True, False),
+        "facebook": (True, True, True, True),
+        "instagram": (True, True, True, True),
+        "threads": (True, True, True, True),
         "x": (False, False, False, False),
         "linkedin": (False, False, False, False),
         "youtube": (True, True, True, False),
@@ -423,6 +426,7 @@ def test_x_engagement_is_refused_until_the_flag_is_on(client, auth_headers, monk
     from app.services.engagement.providers.x import XEngagement
     from app.services.engagement.registry import get_engagement_provider
     from app.services.engagement.sync import sync_posts
+    monkeypatch.delenv("X_ENABLE_POST_STATUS", raising=False)
 
     monkeypatch.delenv("ENGAGEMENT_X_ENABLED", raising=False)
     assert engagement_x_enabled() is False
@@ -537,7 +541,7 @@ def test_alembic_head_is_the_engagement_revision():
         for line in (result.stdout + "\n" + result.stderr).splitlines()
         if "(head)" in line
     ]
-    assert lines == ["20261111_comments_insights (head)"]
+    assert lines == ["20261123_remote_post_sync_state (head)"]
 
 
 def test_engagement_migration_upgrades_and_downgrades(tmp_path):
@@ -557,7 +561,7 @@ def test_engagement_migration_upgrades_and_downgrades(tmp_path):
     assert INSIGHT_COLUMNS <= insight_columns
     unique = {item["name"] for item in inspect(engine).get_unique_constraints("post_comments")}
     assert "uq_post_comments_account_network_provider" in unique
-    _alembic(url, "downgrade", "-1")
+    _alembic(url, "downgrade", "20261111_approval_decisions")
     left = set(inspect(engine).get_table_names())
     assert "post_comments" not in left
     assert "post_insights_snapshots" not in left
@@ -721,11 +725,14 @@ def test_sync_upserts_throttles_insights_and_isolates_account_errors(client, aut
 
     facebook.calls.clear()
     second = sweep_engagement()
-    assert second["errors"] == 1
+    assert second["errors"] == 0
     assert second["insights_captured"] == 0
     assert "insights" not in facebook.calls
     db = SessionLocal()
     try:
+        failed_post = db.get(ScheduledPost, broken_post)
+        assert failed_post.engagement_sync_failures == 1
+        assert failed_post.engagement_sync_retry_at is not None
         assert (
             db.scalar(
                 select(func.count())
@@ -734,6 +741,98 @@ def test_sync_upserts_throttles_insights_and_isolates_account_errors(client, aut
             )
             == 1
         )
+    finally:
+        db.close()
+
+
+def test_remote_deleted_post_is_persisted_and_excluded_from_later_sweeps(
+    client, auth_headers, monkeypatch
+):
+    from app.schemas.post import PostRead
+    from app.services.engagement.sync import posts_in_lookback
+
+    headers, _ = auth_headers
+    user_id = _user_id(headers)
+    account_id = _connect(client, headers, "youtube")
+    post_id = _published(user_id, account_id, provider_post_id="video-gone")
+
+    class DeletedProvider(FakeProvider):
+        def fetch_comments(self, account, post, since=None):
+            if not self._selected(account):
+                return []
+            self.calls.append("comments")
+            raise RemotePostDeleted("youtube")
+
+    provider = DeletedProvider("youtube", only={account_id})
+    _install(monkeypatch, {"youtube": provider}, unsupported_rest=True)
+    from app.tasks.sync_engagement import sweep_engagement
+
+    first = sweep_engagement()
+    assert first["errors"] == 0
+    assert provider.calls == ["comments"]
+    db = SessionLocal()
+    try:
+        post = db.get(ScheduledPost, post_id)
+        assert post.remote_status == "deleted"
+        assert post.remote_deleted_at is not None
+        assert post.engagement_sync_failures == 0
+        assert post.engagement_sync_retry_at is None
+        assert post.attempt_count == 0
+        response = PostRead.model_validate(post)
+        assert response.remote_status == "deleted"
+        assert response.remote_deleted_at is not None
+        assert post_id not in {row.id for row in posts_in_lookback(db)}
+    finally:
+        db.close()
+
+    second = sweep_engagement()
+    assert second["errors"] == 0
+    assert provider.calls == ["comments"]
+
+
+def test_engagement_backoff_is_bounded_and_does_not_change_publish_attempts(
+    client, auth_headers
+):
+    from app.services.engagement.sync import _record_engagement_retry
+
+    headers, _ = auth_headers
+    user_id = _user_id(headers)
+    account_id = _connect(client, headers)
+    post_id = _published(user_id, account_id)
+    db = SessionLocal()
+    try:
+        post = db.get(ScheduledPost, post_id)
+        post.attempt_count = 4
+        post.engagement_sync_failures = 8
+        db.commit()
+        before = datetime.now(timezone.utc)
+        _record_engagement_retry(db, post_id, RuntimeError("temporary provider error"))
+        db.refresh(post)
+        retry_at = post.engagement_sync_retry_at
+        if retry_at.tzinfo is None:
+            retry_at = retry_at.replace(tzinfo=timezone.utc)
+        delay = retry_at - before
+        assert timedelta(hours=23, minutes=59) < delay < timedelta(hours=24, minutes=1)
+        assert post.engagement_sync_failures == 9
+        assert post.attempt_count == 4
+
+        before_retry_after = datetime.now(timezone.utc)
+        _record_engagement_retry(
+            db,
+            post_id,
+            EngagementRetryableError(
+                "rate limited", category="rate_limit", retry_after_seconds=10**9
+            ),
+        )
+        db.refresh(post)
+        retry_at = post.engagement_sync_retry_at
+        if retry_at.tzinfo is None:
+            retry_at = retry_at.replace(tzinfo=timezone.utc)
+        retry_after_delay = retry_at - before_retry_after
+        assert timedelta(days=6, hours=23) < retry_after_delay < timedelta(days=7, minutes=1)
+        assert post.engagement_sync_failures == 10
+        assert post.engagement_sync_error_code == "rate_limit"
+        assert post.attempt_count == 4
     finally:
         db.close()
 
@@ -1095,6 +1194,66 @@ def test_insights_and_manual_sync(client, auth_headers, monkeypatch):
     assert facebook["reconnect_for_permissions"] is True
     assert facebook["message"] == "Reconnect your Facebook account to see comments and insights"
     assert "pages_read_engagement" in facebook["missing_scopes"]["comments_read"]
+
+
+def test_manual_sync_shows_provider_retry_window(client, auth_headers, monkeypatch):
+    from app.services.engagement.base import EngagementRetryableError
+
+    headers, _ = auth_headers
+    account_id = _connect(client, headers, scopes=["pages_manage_engagement"])
+    post_id = _published(_user_id(headers), account_id)
+
+    def throttled(*args):
+        raise EngagementRetryableError(
+            "provider details", category="rate_limit", retry_after_seconds=120
+        )
+
+    monkeypatch.setattr("app.api.v1.endpoints.engagement.sync_one_post", throttled)
+    response = client.post(f"/api/v1/posts/{post_id}/engagement/sync", headers=headers)
+    assert response.status_code == 429
+    assert response.headers["Retry-After"] == "120"
+    assert response.json()["detail"] == "The network is busy. Try again in 120 seconds."
+
+
+def test_manual_sync_bypasses_sweep_lookback_and_retry_backoff(
+    client, auth_headers, monkeypatch
+):
+    headers, _ = auth_headers
+    user_id = _user_id(headers)
+    account_id = _connect(client, headers, "youtube")
+    post_id = _published(user_id, account_id, provider_post_id="video-gone")
+    db = SessionLocal()
+    try:
+        post = db.get(ScheduledPost, post_id)
+        post.published_at = datetime.now(timezone.utc) - timedelta(days=90)
+        post.engagement_sync_retry_at = datetime.now(timezone.utc) + timedelta(days=2)
+        post.engagement_sync_failures = 3
+        db.commit()
+    finally:
+        db.close()
+
+    class DeletedProvider(FakeProvider):
+        def fetch_comments(self, account, post, since=None):
+            self.calls.append("comments")
+            raise RemotePostDeleted("youtube")
+
+    provider = DeletedProvider("youtube", only={account_id})
+    _install(monkeypatch, {"youtube": provider}, unsupported_rest=True)
+    response = client.post(
+        f"/api/v1/posts/{post_id}/engagement/sync", headers=headers
+    )
+
+    assert response.status_code == 410
+    assert provider.calls == ["comments"]
+    db = SessionLocal()
+    try:
+        post = db.get(ScheduledPost, post_id)
+        assert post.remote_status == "deleted"
+        assert post.remote_deleted_at is not None
+        assert post.engagement_sync_failures == 0
+        assert post.engagement_sync_retry_at is None
+    finally:
+        db.close()
 
 
 def test_threaded_comments_endpoint_orders_replies(client, auth_headers):

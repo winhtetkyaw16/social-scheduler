@@ -8,12 +8,18 @@ failures become ``CreditsRequired`` and do not flag the account.
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from typing import Any
 
 import httpx
 
 from app.integrations.base import ProviderHTTPError, provider_error_summary
-from app.services.engagement.base import CreditsRequired, ProviderAuthError
+from app.services.engagement.base import (
+    CreditsRequired,
+    EngagementRetryableError,
+    ProviderAuthError,
+)
 from app.services.engagement.copy import comments_unavailable, reconnect_for_comments
 from app.services.token_refresh import reconnect_copy
 
@@ -42,6 +48,14 @@ _AUTH_REASONS = {
 }
 _GRAPH_AUTH_CODES = {190, 102, 463, 467}
 _GRAPH_PERMISSION_CODES = {10, 200}
+_GRAPH_RATE_CODES = {4, 17, 32, 613}
+_RATE_REASONS = {
+    "quotaexceeded",
+    "dailylimitexceeded",
+    "ratelimitexceeded",
+    "userratelimitexceeded",
+    "servinglimitexceeded",
+}
 
 
 def auth_message(account, kind: str) -> str:
@@ -60,9 +74,10 @@ def request_json(
     params: dict | None = None,
     json_body: dict | None = None,
     data: dict | None = None,
+    extra_headers: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Send one authenticated request and return a JSON object."""
-    headers = {"Authorization": f"Bearer {access_token}"}
+    headers = {**(extra_headers or {}), "Authorization": f"Bearer {access_token}"}
     try:
         response = httpx.request(
             method,
@@ -74,9 +89,9 @@ def request_json(
             timeout=30.0,
         )
     except httpx.TimeoutException as exc:
-        raise RuntimeError("The network timed out") from exc
+        raise EngagementRetryableError("The network timed out", category="connection") from exc
     except httpx.RequestError as exc:
-        raise RuntimeError("Could not connect to the social network") from exc
+        raise EngagementRetryableError("Could not connect to the social network", category="connection") from exc
     if response.is_error:
         raise _classified(response)
     if not response.content:
@@ -97,6 +112,7 @@ def collect_graph(
     params: dict,
     *,
     max_pages: int = 5,
+    require_complete: bool = False,
 ) -> list:
     """Follow Graph ``paging.cursors.after``. The cursor is not a full URL, so the token stays in the header."""
     rows: list = []
@@ -104,15 +120,26 @@ def collect_graph(
     seen: set[str] = set()
     for _ in range(max_pages):
         body = request_json("GET", url, access_token=access_token, params=query)
+        if require_complete:
+            data = body.get("data")
+            if not isinstance(data, list) or any(not isinstance(item, dict) or not item.get("id") for item in data):
+                raise EngagementRetryableError("The network returned an incomplete post list.")
         page = body.get("data") or []
         if isinstance(page, list):
             rows.extend(item for item in page if isinstance(item, dict))
         cursors = (body.get("paging") or {}).get("cursors") or {}
         after = cursors.get("after") if isinstance(cursors, dict) else None
+        if require_complete:
+            if not (body.get("paging") or {}).get("next") and not after:
+                return rows
+            if not after or after in seen or not page:
+                raise EngagementRetryableError("Could not finish checking the network's post list.")
         if not after or not page or after in seen:
             break
         seen.add(str(after))
         query["after"] = after
+    if require_complete:
+        raise EngagementRetryableError("Could not finish checking the network's post list.")
     return rows
 
 
@@ -154,6 +181,54 @@ def _graph_code(response: httpx.Response) -> int | None:
     return None
 
 
+def _provider_error_fields(response: httpx.Response) -> tuple[str | int | None, str | int | None, str | None]:
+    try:
+        body = response.json()
+    except Exception:
+        return None, None, None
+    if not isinstance(body, dict):
+        return None, None, None
+    error = body.get("error")
+    if not isinstance(error, dict):
+        return None, None, None
+    provider_code = error.get("code")
+    subcode = error.get("error_subcode")
+    errors = error.get("errors")
+    reason = None
+    if isinstance(errors, list):
+        reason = next(
+            (str(item.get("reason")) for item in errors if isinstance(item, dict) and item.get("reason")),
+            None,
+        )
+    if reason is None:
+        reason = error.get("type") if isinstance(error.get("type"), str) else None
+    return provider_code, subcode, reason
+
+
+def _provider_marks_transient(response: httpx.Response) -> bool:
+    try:
+        error = response.json().get("error")
+    except Exception:
+        return False
+    return isinstance(error, dict) and error.get("is_transient") is True
+
+
+def _retry_after_seconds(response: httpx.Response) -> float | None:
+    raw = response.headers.get("Retry-After")
+    if not raw:
+        return None
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        try:
+            retry_at = parsedate_to_datetime(raw)
+        except (TypeError, ValueError, OverflowError):
+            return None
+        if retry_at.tzinfo is None:
+            retry_at = retry_at.replace(tzinfo=timezone.utc)
+        return max(0.0, (retry_at - datetime.now(timezone.utc)).total_seconds())
+
+
 def _is_credits(response: httpx.Response, blob: str) -> bool:
     if response.status_code == 402:
         return True
@@ -162,6 +237,12 @@ def _is_credits(response: httpx.Response, blob: str) -> bool:
 
 def _classified(response: httpx.Response) -> Exception:
     blob = _blob(response)
+    provider_code, provider_subcode, provider_reason = _provider_error_fields(response)
+    code = _graph_code(response)
+    reason_key = str(provider_reason or "").replace("_", "").replace("-", "").lower()
+    retry_code = str(provider_code or "").lower()
+    retry_reason = reason_key in _RATE_REASONS or retry_code in _RATE_REASONS
+    retry_after = _retry_after_seconds(response)
     if _is_credits(response, blob):
         # Provider text stays in the log. The product shows a plain sentence.
         logger.info(
@@ -171,7 +252,25 @@ def _classified(response: httpx.Response) -> Exception:
             provider_error_summary(response),
         )
         return CreditsRequired(comments_unavailable("x"))
-    code = _graph_code(response)
+    if code in _GRAPH_RATE_CODES or response.status_code == 429 or retry_reason:
+        return EngagementRetryableError(
+            "The social network is rate limiting requests.",
+            category="rate_limit",
+            retry_after_seconds=retry_after,
+            provider_error_code=str(provider_code or code or provider_reason or "rate_limit"),
+        )
+    if (
+        code in {1, 2}
+        or _provider_marks_transient(response)
+        or response.status_code in {408, 425}
+        or response.status_code >= 500
+    ):
+        return EngagementRetryableError(
+            "The social network is temporarily unavailable.",
+            category="transient",
+            retry_after_seconds=retry_after,
+            provider_error_code=str(provider_code or code or response.status_code),
+        )
     if response.status_code == 401 or code in _GRAPH_AUTH_CODES:
         return ProviderAuthError("expired", kind="expired")
     if code in _GRAPH_PERMISSION_CODES or (
@@ -183,11 +282,40 @@ def _classified(response: httpx.Response) -> Exception:
             return ProviderHTTPError(response.status_code, provider_error_summary(response))
         kind = "permission" if "permission" in blob or "scope" in blob else "expired"
         return ProviderAuthError(kind, kind=kind)
+    if code == 100 and str(provider_subcode or "") == "33":
+        # Threads reports a missing media object as HTTP 400. The provider
+        # adapter still verifies ownership/listing before deciding deleted.
+        # Don't label this preliminary response as a sync failure here.
+        logger.info(
+            "Engagement provider HTTP %s outcome=missing_object_candidate code=%s subcode=%s type=%s",
+            response.status_code,
+            provider_code,
+            provider_subcode,
+            provider_reason,
+        )
+        return ProviderHTTPError(
+            response.status_code,
+            provider_error_summary(response),
+            provider_code=provider_code,
+            provider_subcode=provider_subcode,
+            provider_reason=provider_reason,
+            retry_after_seconds=retry_after,
+        )
     logger.info(
-        "Engagement provider HTTP %s outcome=error",
+        "Engagement provider HTTP %s outcome=error provider_code=%s provider_subcode=%s provider_reason=%s",
         response.status_code,
+        provider_code,
+        provider_subcode,
+        provider_reason,
     )
-    return ProviderHTTPError(response.status_code, provider_error_summary(response))
+    return ProviderHTTPError(
+        response.status_code,
+        provider_error_summary(response),
+        provider_code=provider_code,
+        provider_subcode=provider_subcode,
+        provider_reason=provider_reason,
+        retry_after_seconds=retry_after,
+    )
 
 
 def _raise_for_tiktok_error(body: dict) -> None:

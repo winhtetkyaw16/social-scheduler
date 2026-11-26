@@ -582,15 +582,16 @@ def test_sweep_refreshes_only_the_due_account(client, auth_headers, monkeypatch)
         db.close()
 
 
-def test_publish_stops_when_refresh_is_permanently_rejected(
-    client, auth_headers, monkeypatch
+@pytest.mark.parametrize("temporary", [False, True])
+def test_publish_waits_for_working_access(
+    client, auth_headers, monkeypatch, temporary
 ):
     from app.tasks.publish_post import publish_post_task
 
     _enable(monkeypatch, "x")
     headers, _ = auth_headers
     account_id = _connect(
-        client, headers, "x", hours=0.01, access="x-access", refresh="x-refresh"
+        client, headers, "x", hours=-1 if temporary else 0.01, access="x-access", refresh="x-refresh"
     )
     created = client.post(
         "/api/v1/posts",
@@ -613,19 +614,46 @@ def test_publish_stops_when_refresh_is_permanently_rejected(
         "app.tasks.publish_post.publish",
         lambda *args, **kwargs: calls.append(1),
     )
-    _patch_post(
-        monkeypatch, {"error": "invalid_grant", "error_description": "revoked"}, 400
-    )
+    monkeypatch.setattr(publish_post_task, "apply_async", lambda **kwargs: None)
+    if temporary:
+        _patch_post(monkeypatch, {}, 503)
+    else:
+        _patch_post(monkeypatch, {"error": "invalid_grant", "error_description": "revoked"}, 400)
     result = publish_post_task.run(post_id)
-    assert result["status"] == "failed"
+    assert result["status"] == ("queued" if temporary else "failed")
     assert calls == []
     db, account = _open(account_id)
     try:
         post = db.get(ScheduledPost, UUID(post_id))
-        assert account.needs_reconnect is True
-        assert post.status == "failed"
-        assert post.last_error_message == account.reconnect_reason
+        assert account.needs_reconnect is (not temporary)
+        assert post.status == result["status"]
+        if temporary:
+            assert post.last_error_code == "connection_renewal_pending"
+        else:
+            assert post.last_error_message == account.reconnect_reason
         assert "invalid_grant" not in (post.last_error_message or "").lower()
+    finally:
+        db.close()
+
+
+@pytest.mark.parametrize("refreshable", [True, False])
+def test_inbox_stops_before_using_expired_access(client, auth_headers, monkeypatch, refreshable):
+    from app.services.engagement.base import AccountUnavailable, ReconnectRequired
+    from app.services.engagement.tokens import prepare_account
+
+    headers, _ = auth_headers
+    _enable(monkeypatch, "linkedin")
+    account_id = _connect(client, headers, "linkedin", hours=-1, refresh="old-refresh" if refreshable else None)
+    calls = []
+    _patch_post(monkeypatch, {}, status_code=503, capture=calls)
+    db, account = _open(account_id)
+    try:
+        with pytest.raises(AccountUnavailable if refreshable else ReconnectRequired) as error:
+            prepare_account(db, account)
+        assert "LinkedIn" in str(error.value)
+        assert ("Reconnect" in str(error.value)) is (not refreshable)
+        assert account.needs_reconnect is (not refreshable)
+        assert len(calls) == int(refreshable)
     finally:
         db.close()
 

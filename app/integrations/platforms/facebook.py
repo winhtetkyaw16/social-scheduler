@@ -111,7 +111,10 @@ class FacebookPlatform(SocialPlatform):
                     "Facebook accepted the video without returning a video identifier"
                 )
             return ProviderPublishResult(
-                post_id=str(post_id), status_code=response.status_code
+                post_id=str(post_id),
+                status_code=response.status_code,
+                object_id=str(body.get("id") or "") or None,
+                object_type="video",
             )
 
         if len(media_urls) == 1:
@@ -129,7 +132,10 @@ class FacebookPlatform(SocialPlatform):
                     "Facebook accepted the photo without returning a post identifier"
                 )
             return ProviderPublishResult(
-                post_id=str(post_id), status_code=response.status_code
+                post_id=str(post_id),
+                status_code=response.status_code,
+                object_id=str(body.get("id") or "") or None,
+                object_type="photo",
             )
 
         if media_urls:
@@ -230,7 +236,12 @@ def _publish_reel(
             "Facebook did not publish this Reel. It was not published as a Page video."
         )
     post_id = body.get("post_id") or body.get("id") or video_id
-    return ProviderPublishResult(post_id=str(post_id), status_code=response.status_code)
+    return ProviderPublishResult(
+        post_id=str(post_id),
+        status_code=response.status_code,
+        object_id=str(video_id),
+        object_type="video",
+    )
 
 
 def _publish_story(
@@ -278,7 +289,12 @@ def _photo_story(access_token: str, base: str, url: str) -> ProviderPublishResul
     post_id = body.get("post_id") or body.get("id")
     if not post_id:
         raise RuntimeError("Facebook did not return a Story id")
-    return ProviderPublishResult(post_id=str(post_id), status_code=response.status_code)
+    return ProviderPublishResult(
+        post_id=str(post_id),
+        status_code=response.status_code,
+        object_id=str(body.get("id") or "") or None,
+        object_type="photo",
+    )
 
 
 def _video_story(access_token: str, base: str, url: str) -> ProviderPublishResult:
@@ -307,7 +323,12 @@ def _video_story(access_token: str, base: str, url: str) -> ProviderPublishResul
             "Facebook did not publish this video Story. It was not posted to the feed."
         )
     post_id = body.get("post_id") or body.get("id") or video_id
-    return ProviderPublishResult(post_id=str(post_id), status_code=response.status_code)
+    return ProviderPublishResult(
+        post_id=str(post_id),
+        status_code=response.status_code,
+        object_id=str(video_id),
+        object_type="video",
+    )
 
 
 def _rupload(upload_url: str, access_token: str, file_url: str) -> None:

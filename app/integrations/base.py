@@ -16,6 +16,8 @@ class ProviderPublishResult:
     post_id: str
     request_id: str | None = None
     status_code: int | None = None
+    object_id: str | None = None
+    object_type: str | None = None
 
 
 class SocialPlatform(ABC):
@@ -88,9 +90,22 @@ def provider_delete(
 class ProviderHTTPError(RuntimeError):
     """Provider returned an HTTP error status."""
 
-    def __init__(self, status_code: int, detail: str | None = None):
+    def __init__(
+        self,
+        status_code: int,
+        detail: str | None = None,
+        *,
+        provider_code: str | int | None = None,
+        provider_subcode: str | int | None = None,
+        provider_reason: str | None = None,
+        retry_after_seconds: float | None = None,
+    ):
         self.status_code = status_code
         self.detail = detail or None
+        self.provider_code = provider_code
+        self.provider_subcode = provider_subcode
+        self.provider_reason = provider_reason
+        self.retry_after_seconds = retry_after_seconds
         message = f"Provider returned HTTP {status_code}"
         super().__init__(f"{message}: {detail}" if detail else message)
 

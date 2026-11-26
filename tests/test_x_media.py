@@ -347,7 +347,7 @@ def test_402_credits_maps_to_clear_message(monkeypatch, env):
     assert r["category"] == "x_credits_depleted"
     assert (
         r["banner"]
-        == "X API has no credits: add credits in the X developer console to post."
+        == "Publishing to X is temporarily unavailable."
     )
     # Same mapping for the CreditsDepleted wording without a status code.
     assert (

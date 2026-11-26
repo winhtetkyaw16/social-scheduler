@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+from urllib.parse import quote
+from app.integrations.base import ProviderHTTPError
+from app.integrations.platforms.linkedin import _headers as linkedin_headers
+from app.services.engagement.base import PostStatusUnconfirmed, RemotePostDeleted
+
 from app.services.engagement.base import (
     CAPABILITY_COMMENT_REPLY,
     CAPABILITY_COMMENTS_READ,
@@ -28,6 +33,26 @@ class LinkedInEngagement(EngagementProvider):
 
     network = "linkedin"
 
+    def verify_post(self, account, post) -> None:
+        if "r_member_social" not in (account.scopes or []):
+            raise PostStatusUnconfirmed("Published (last known status).")
+        token = self.access_token(account)
+        urn = str(post.provider_post_id)
+        try:
+            body = request_json("GET", f"https://api.linkedin.com/rest/posts/{quote(urn, safe='')}",
+                                access_token=token, extra_headers=linkedin_headers())
+        except ProviderHTTPError as exc:
+            if exc.status_code != 404:
+                raise
+            me = request_json("GET", "https://api.linkedin.com/v2/userinfo", access_token=token)
+            if me.get("sub") and f"urn:li:person:{me['sub']}" == account.platform_account_id:
+                raise RemotePostDeleted("linkedin") from None
+            raise PostStatusUnconfirmed("LinkedIn could not verify the post owner.") from None
+        if body.get("id") != urn or body.get("author") != account.platform_account_id:
+            raise PostStatusUnconfirmed("LinkedIn could not verify this member post.")
+        if body.get("lifecycleState") == "DELETED":
+            raise RemotePostDeleted("linkedin")
+
     def __init__(self) -> None:
         self.capabilities = EngagementCapabilities(
             reasons={
@@ -42,6 +67,49 @@ class TikTokEngagement(EngagementProvider):
     """Comments stay unsupported. Video-count insights run only behind the env flag."""
 
     network = "tiktok"
+
+    def _video_ids(self, account, post):
+        saved = str(post.provider_post_id)
+        if saved.startswith(("inbox:", "v_", "p_")) or "~" in saved:
+            body = request_json("POST", "https://open.tiktokapis.com/v2/post/publish/status/fetch/",
+                                access_token=self.access_token(account),
+                                json_body={"publish_id": saved.removeprefix("inbox:")})
+            data = body.get("data") or {}
+            state = data.get("status")
+            if state == "SEND_TO_USER_INBOX":
+                raise PostStatusUnconfirmed("Sent to your TikTok inbox. Finish publishing in TikTok.")
+            if state == "FAILED":
+                raise PostStatusUnconfirmed("TikTok reports that this upload failed.")
+            if state != "PUBLISH_COMPLETE":
+                raise PostStatusUnconfirmed("TikTok has not confirmed publication yet.")
+            ids = data.get("publicaly_available_post_id") or data.get("publicly_available_post_id")
+            if not isinstance(ids, list) or not ids:
+                raise PostStatusUnconfirmed("TikTok confirmed publication but has not returned a public post ID.")
+            return [str(i) for i in ids]
+        return [saved]
+
+    def _videos(self, account, post, fields):
+        ids = self._video_ids(account, post)
+        if "video.list" not in (account.scopes or []):
+            message = (
+                "To check public videos, reconnect TikTok and allow access to your video list."
+                if tiktok_video_list_enabled()
+                else "SocialCastly can't check this video's status on TikTok right now. Open TikTok to check it."
+            )
+            raise PostStatusUnconfirmed(message)
+        body = request_json("POST", QUERY_URL, access_token=self.access_token(account),
+                            params={"fields": fields}, json_body={"filters": {"video_ids": ids}})
+        videos = (body.get("data") or {}).get("videos") or []
+        for video in videos:
+            if isinstance(video, dict) and str(video.get("id")) in ids:
+                return video
+        raise PostStatusUnconfirmed("TikTok cannot see this video. It may be private or deleted.")
+
+    def verify_post(self, account, post) -> None:
+        # When insights are enabled the same manual sync calls fetch_insights,
+        # which verifies the ID while retrieving metrics in one query.
+        if not self.capabilities.supports_insights:
+            self._videos(account, post, "id")
 
     def __init__(self) -> None:
         enabled = tiktok_video_list_enabled()
@@ -64,18 +132,7 @@ class TikTokEngagement(EngagementProvider):
     def fetch_insights(self, account, post) -> ProviderInsights:
         if not tiktok_video_list_enabled():
             raise NotSupported(self.network, CAPABILITY_INSIGHTS)
-        token = self.access_token(account)
-        video_id = str(post.provider_post_id or "").strip()
-        body = request_json(
-            "POST",
-            QUERY_URL,
-            access_token=token,
-            params={"fields": _FIELDS},
-            json_body={"filters": {"video_ids": [video_id]}},
-        )
-        data = body.get("data") if isinstance(body.get("data"), dict) else {}
-        videos = data.get("videos") if isinstance(data.get("videos"), list) else []
-        video = videos[0] if videos and isinstance(videos[0], dict) else {}
+        video = self._videos(account, post, _FIELDS)
         return ProviderInsights(
             video_views=as_int(video.get("view_count")),
             likes=as_int(video.get("like_count")),

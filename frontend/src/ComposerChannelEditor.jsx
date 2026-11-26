@@ -32,7 +32,7 @@ import {
   commitDraft,
   UNSUPPORTED_FIELDS,
 } from "./settingsDraft.js";
-import { SUPPORTED_FORMATS } from "./fixPlan.js";
+import { formatOptions } from "./fixPlan.js";
 import { AccountAvatar } from "./ManageAccounts.jsx";
 import facebookPng from "./assets/logos/facebook.svg";
 import instagramPng from "./assets/logos/instagram.svg";
@@ -52,23 +52,6 @@ const CHANNEL_UI = {
   tiktok: { label: "TikTok", brand: "#111827", mark: "♪" },
   pinterest: { label: "Pinterest", brand: "#BD081C", mark: "p" },
 };
-const FORMAT_LABEL = {
-  x: { Post: "Post", "Reel / Video": "Video" },
-  facebook: { Post: "Post", "Reel / Video": "Reel / video", Story: "Story" },
-  instagram: { Post: "Post", "Reel / Video": "Reel", Story: "Story" },
-  youtube: { "Reel / Video": "Video", Short: "Short" },
-  tiktok: { Post: "Photo post", "Reel / Video": "Video" },
-  linkedin: { Post: "Post", "Reel / Video": "Video" },
-  pinterest: { Post: "Pin", "Reel / Video": "Video Pin" },
-  threads: { Post: "Post" },
-};
-
-function formatOptions(platform) {
-  const values = SUPPORTED_FORMATS[platform] || ["Post"];
-  const labels = FORMAT_LABEL[platform] || {};
-  return values.map((value) => ({ value, label: labels[value] || value }));
-}
-
 const BRAND_PNGS = {
   facebook: facebookPng,
   instagram: instagramPng,
@@ -632,8 +615,7 @@ export function PlatformSettingsPopover({
             </div>
             {unsupported.length > 0 && (
               <p className="mt-3 rounded-lg bg-slate-50 px-2.5 py-2 text-xs leading-4 text-slate-500 dark:bg-slate-800/70 dark:text-slate-400">
-                Not available through {CHANNEL_UI[platform]?.label || "this network"}'s publishing
-                API, so it's hidden here: {unsupported.join("; ")}. Set it in the app after posting.
+                After posting, open {CHANNEL_UI[platform]?.label || "the network's app"} to change these settings: {unsupported.join(", ")}.
               </p>
             )}
             <footer className="scd sticky bottom-0 -mx-1 -mb-1 mt-3 flex justify-end gap-2 bg-white/90 px-1 pb-1 pt-2 backdrop-blur-md dark:bg-slate-900/95">

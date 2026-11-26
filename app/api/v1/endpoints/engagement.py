@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_db
 from app.integrations.base import ProviderHTTPError
+from app.services.error_messages import network_name
 from app.models import User
 from app.models.engagement import PostComment
 from app.schemas.engagement import (
@@ -90,6 +91,17 @@ def _remember_auth_failure(db: Session, account, exc: ReconnectRequired) -> None
     mark_needs_reconnect(db, account, auth_message(account, exc.kind))
 
 
+def _rate_limit_response(exc: EngagementRetryableError) -> HTTPException:
+    delay = exc.retry_after_seconds
+    if delay is not None and isfinite(delay) and delay > 0:
+        seconds = ceil(delay)
+        return HTTPException(
+            429, f"The network is busy. Try again in {seconds} seconds.",
+            headers={"Retry-After": str(seconds)},
+        )
+    return HTTPException(429, "The network is busy. Wait a little and try again.")
+
+
 @contextmanager
 def _comment_action_errors(db, account, provider, comment, capability, fallback):
     try:
@@ -102,25 +114,23 @@ def _comment_action_errors(db, account, provider, comment, capability, fallback)
         raise
     except ProviderAuthError as exc:
         if exc.kind == "permission":
-            raise HTTPException(403, "The network did not grant permission for this action.") from None
+            raise HTTPException(403, "The network did not allow this action on this comment.") from None
         _remember_auth_failure(db, account, exc)
         raise HTTPException(409, auth_message(account, exc.kind)) from None
     except (ReconnectRequired, AccountUnavailable) as exc:
         raise HTTPException(409, str(exc)) from None
     except EngagementRetryableError as exc:
+        if exc.category == "connection":
+            name = network_name(provider.network)
+            raise HTTPException(502, f"SocialCastly couldn't get a response from {name}. Refresh the post before trying again.") from None
         if exc.category == "rate_limit":
-            delay = exc.retry_after_seconds
-            if delay is not None and isfinite(delay) and delay > 0:
-                seconds = ceil(delay)
-                raise HTTPException(429, f"The network is busy. Try again in {seconds} seconds.",
-                                    headers={"Retry-After": str(seconds)}) from None
-            raise HTTPException(429, "The network is limiting requests. Try again later.") from None
+            raise _rate_limit_response(exc) from None
         raise HTTPException(502, fallback) from None
     except ProviderHTTPError as exc:
         if exc.status_code in (404, 410):
             raise HTTPException(409, "The network could not find this comment. Refresh the post.") from None
         if exc.status_code == 403:
-            raise HTTPException(403, "The network did not grant permission for this action.") from None
+            raise HTTPException(403, "The network did not allow this action on this comment.") from None
         raise HTTPException(502, fallback) from None
     except Exception:
         logger.exception("Comment action failed action=%s comment=%s network=%s",
@@ -360,7 +370,7 @@ def delete_comment(
     if provider.deletes_own_only and not comment.is_own:
         raise HTTPException(403, "Only your own replies can be deleted on this network.")
     if not set(provider.delete_scopes).issubset(account.scopes or []):
-        raise HTTPException(403, "This account has not granted permission to remove comments.")
+        raise HTTPException(403, "Reconnect this account and allow SocialCastly to manage comments.")
     if not (comment.provider_comment_id or "").strip():
         raise HTTPException(409, "This comment has no network ID.")
     with _comment_action_errors(
@@ -499,6 +509,13 @@ def sync_post_engagement(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail) from None
     except AccountUnavailable as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from None
+    except EngagementRetryableError as exc:
+        if exc.category == "rate_limit":
+            raise _rate_limit_response(exc) from None
+        if exc.category == "connection":
+            name = network_name(post.connected_account.platform)
+            raise HTTPException(502, f"SocialCastly couldn't reach {name}. Try refreshing the post in a few minutes.") from None
+        raise HTTPException(502, "SocialCastly could not refresh this post. Try again.") from None
     except Exception:
         logger.exception("Engagement sync failed post=%s", post_id)
         raise HTTPException(

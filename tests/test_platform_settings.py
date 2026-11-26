@@ -356,9 +356,10 @@ def test_publish_passes_settings_only_to_adapters_that_take_them(monkeypatch):
 # --- OAuth scopes for first comment (Facebook) and Threads replies ---
 
 
-def test_oauth_requests_engagement_and_reply_scopes():
+def test_oauth_requests_engagement_and_reply_scopes(monkeypatch):
     from app.services.oauth import _providers
 
+    monkeypatch.delenv("TIKTOK_ENABLE_VIDEO_LIST", raising=False)
     providers = _providers()
     assert "pages_manage_engagement" in providers["facebook"].scopes
     assert "pages_read_user_content" in providers["facebook"].scopes
@@ -376,6 +377,8 @@ def test_oauth_requests_engagement_and_reply_scopes():
     assert "https://www.googleapis.com/auth/youtube.readonly" in providers["youtube"].scopes
     assert "tweet.moderate.write" in providers["x"].scopes
     assert "video.list" not in providers["tiktok"].scopes
+    monkeypatch.setenv("TIKTOK_ENABLE_VIDEO_LIST", "true")
+    assert "video.list" in _providers()["tiktok"].scopes
 
 
 def test_facebook_first_comment_uses_page_token_and_comments_edge(monkeypatch):

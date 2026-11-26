@@ -21,6 +21,7 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.core import config
+from app.services.error_messages import network_name
 
 logger = logging.getLogger(__name__)
 
@@ -259,14 +260,14 @@ def _require_provider(platform: str) -> _ProviderOAuth:
     if normalized not in connectable_platform_names():
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="OAuth is not available for this platform",
+            detail="This network cannot be connected to SocialCastly yet.",
         )
     provider = _providers()[normalized]
     if provider.missing_env:
-        names = " and ".join(provider.missing_env)
+        logger.warning("Connection setup incomplete for %s: %s", normalized, ", ".join(provider.missing_env))
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Set {names} before connecting {provider.platform}.",
+            detail="SocialCastly can't connect this network right now. Try again later or contact support.",
         )
     return provider
 
@@ -465,6 +466,10 @@ def start_oauth(
     }
 
 
+def _connection_rate_limit(platform: str) -> str:
+    return f"{network_name(platform)} is busy right now. Wait a little before connecting again."
+
+
 def finish_oauth(
     db: Session,
     platform: str,
@@ -481,21 +486,17 @@ def finish_oauth(
             return_base, connect_error="That platform cannot be connected."
         )
     if provider_error:
+        if provider_error in {"rate_limit_exceeded", "too_many_requests"}:
+            return _studio_redirect(return_base, connect_error=_connection_rate_limit(normalized))
         if normalized == "tiktok" and provider_error in {"invalid_scope", "scope_not_authorized", "invalid_redirect_uri", "invalid_client"}:
-            detail = {
-                "invalid_scope": "TikTok rejected the requested permissions. Check the scopes approved for this app version.",
-                "scope_not_authorized": "TikTok did not authorize the requested permissions for this app.",
-                "invalid_redirect_uri": "The TikTok Web redirect URI must match the callback URL registered in Login Kit.",
-                "invalid_client": "TikTok did not recognize the configured app credentials.",
-            }[provider_error]
-            return _studio_redirect(return_base, connect_error=detail)
+            return _studio_redirect(return_base, connect_error="SocialCastly couldn't connect to TikTok. Try again later or contact support.")
         return _studio_redirect(
             return_base, connect_error="Authorization was cancelled or denied."
         )
     if not code or not state:
         return _studio_redirect(
             return_base,
-            connect_error="The provider did not return an authorization code.",
+            connect_error="Sign-in didn't finish. Start the connection again.",
         )
     try:
         provider = _require_provider(normalized)
@@ -510,7 +511,7 @@ def finish_oauth(
         token_payload = _exchange_code(provider, code, verifier)
         if (provider.platform == "tiktok" and "video.list" in provider.scopes
                 and "video.list" not in token_payload["scopes"]):
-            return _studio_redirect(return_base, connect_error="TikTok did not grant access to your video list. Select that permission when reconnecting.")
+            return _studio_redirect(return_base, connect_error="TikTok did not grant access to your video list. Reconnect and allow SocialCastly to see your public videos.")
         identity = _identity(provider, token_payload["access_token"])
         if provider.platform == "tiktok" and _peek_reauth(state) not in {None, identity["id"]}:
             return _studio_redirect(return_base, connect_error="Choose the same TikTok account you are reconnecting.")
@@ -560,12 +561,14 @@ def finish_oauth(
             },
         )
     except HTTPException as exc:
-        detail = (
-            exc.detail
-            if isinstance(exc.detail, str)
-            else "Could not connect the account."
-        )
+        detail = "Couldn't finish connecting the account. Try connecting again later."
+        if isinstance(exc.__cause__, httpx.RequestError):
+            detail = f"SocialCastly couldn't reach {network_name(normalized)}. Try connecting again in a few minutes."
+        elif exc.status_code < 500 and isinstance(exc.detail, str):
+            detail = exc.detail
         return _studio_redirect(return_base, connect_error=detail)
+    except httpx.RequestError:
+        return _studio_redirect(return_base, connect_error=f"SocialCastly couldn't reach {network_name(normalized)}. Try connecting again in a few minutes.")
     except Exception:
         return _studio_redirect(
             return_base,
@@ -629,6 +632,8 @@ def _exchange_code(provider: _ProviderOAuth, code: str, verifier: str | None) ->
             detail=f"Could not reach {provider.platform} to exchange the code.",
         ) from exc
     if response.is_error:
+        if response.status_code == 429:
+            raise HTTPException(429, _connection_rate_limit(provider.platform))
         raise HTTPException(
             status_code=502,
             detail=f"{provider.platform} rejected the authorization code.",
@@ -818,6 +823,8 @@ def _authorized_get(
             detail="Could not reach the provider to read the account profile.",
         ) from exc
     if response.is_error:
+        if response.status_code == 429:
+            raise HTTPException(429, "The network is busy. Wait a little before connecting again.")
         logger.warning(
             "Provider profile request failed: url=%s status=%s body=%s",
             url,
@@ -978,6 +985,8 @@ def _tiktok_identity(access_token: str) -> dict:
             detail="Could not reach TikTok to read the account profile.",
         ) from exc
     if response.is_error:
+        if response.status_code == 429:
+            raise HTTPException(429, _connection_rate_limit("tiktok"))
         raise HTTPException(
             status_code=502, detail="TikTok refused the account profile request."
         )

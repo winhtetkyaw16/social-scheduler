@@ -82,7 +82,7 @@ def test_removed_formats_are_rejected_and_missing_format_does_not_fail_open():
     assert "Community" in publish_problem(
         "youtube", ["https://cdn.example.com/a.mp4"], "hi", "Post"
     )
-    assert "Content Posting" in publish_problem(
+    assert "Choose Photo post or Video" in publish_problem(
         "tiktok", ["https://cdn.example.com/a.jpg"], "hi", "Story"
     )
     assert "no saved format" in publish_problem(
@@ -257,7 +257,7 @@ def test_format_limits_use_local_facts_and_ignore_remote_duration(monkeypatch):
         )
         is None
     )
-    assert "no API flag" in publish_problem(
+    assert "Choose Video" in publish_problem(
         "youtube", ["https://cdn.example.com/remote-only.mp4"], "hi", "Short"
     )
 
@@ -517,7 +517,7 @@ def test_youtube_short_uploads_without_a_shorts_flag_and_refuses_a_landscape_fil
         lambda url: (_mp4(20, 1920, 1080), "video/mp4"),
     )
     sent.clear()
-    with pytest.raises(ProviderConfigurationError, match="no API flag"):
+    with pytest.raises(ProviderConfigurationError, match="Choose Video"):
         YouTubePlatform().publish(
             "tok", "UC1", "Wide", ["https://cdn.example.com/v.mp4"], format="Short"
         )
@@ -534,7 +534,7 @@ def test_tiktok_story_makes_no_request(monkeypatch):
         raise AssertionError("TikTok Story must not call the API")
 
     monkeypatch.setattr("app.integrations.platforms.tiktok.httpx.post", boom)
-    with pytest.raises(ProviderConfigurationError, match="Content Posting"):
+    with pytest.raises(ProviderConfigurationError, match="Choose Photo post or Video"):
         TikTokPlatform().publish(
             "tok", "open", "hi", ["https://cdn.example.com/a.mp4"], format="Story"
         )

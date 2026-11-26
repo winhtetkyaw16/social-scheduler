@@ -1,3 +1,4 @@
+import { readableDetail } from "./requestErrors.js";
 // Connect, reconnect, and remove social accounts, and pick a destination after OAuth.
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -649,12 +650,12 @@ export default function ManageAccounts({
     if (!account?.is_active) return "";
     if (account.needs_reconnect) {
       return (
-        account.reconnect_reason ||
-        account.connection_warning ||
+        readableDetail(account.reconnect_reason) ||
+        readableDetail(account.connection_warning) ||
         "This account needs to be reconnected before scheduled posts can publish."
       );
     }
-    if (account.connection_warning) return account.connection_warning;
+    if (account.connection_warning) return readableDetail(account.connection_warning) || "Reconnect this account to keep posting.";
     if ("connection_warning" in account) return "";
     const exp = account.token_expires_at ? new Date(account.token_expires_at) : null;
     if (exp && !account.has_refresh_token && exp - Date.now() < 7 * DAY) {
@@ -668,7 +669,11 @@ export default function ManageAccounts({
   const health = (account) => {
     if (!account.is_active) return ["Disconnected", ""];
     if (account.needs_reconnect) return ["Needs reconnect", "b-error"];
-    if (account.connection_warning) return ["Reconnect soon", "b-warning"];
+    if (account.connection_warning) {
+      return Date.parse(account.token_expires_at) <= Date.now()
+        ? ["Reconnect needed", "b-error"]
+        : ["Reconnect soon", "b-warning"];
+    }
     const exp = account.token_expires_at ? new Date(account.token_expires_at) : null;
     if (exp && exp < new Date() && !account.has_refresh_token && !("connection_warning" in account))
       return ["Reconnect needed", "b-error"];

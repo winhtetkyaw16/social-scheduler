@@ -202,6 +202,13 @@ def due_for_refresh(account, now: datetime | None = None) -> bool:
     return access_token_due(account, refresh_window(account.platform), now)
 
 
+def expired_connection_notice(account) -> str | None:
+    """An expired credential must not be sent while renewal is still pending."""
+    if token_is_non_expiring(account) or not access_token_due(account, timedelta(0)):
+        return None
+    return f"SocialCastly couldn't renew your {network_name(account.platform)} connection yet. Try again in a few minutes."
+
+
 def reconnect_copy(platform: str, *, expired: bool = False) -> str:
     """Plain-language reconnect reason. No error codes or provider jargon."""
     name = network_name(platform)
@@ -509,6 +516,8 @@ def _refresh_holding_lock(
     if account.needs_reconnect and not force:
         return RefreshResult("skipped")
     if not _can_auto_refresh(account):
+        if _mark_expired_without_refresh(db, account, datetime.now(timezone.utc)):
+            return RefreshResult("permanent", account.reconnect_reason)
         return RefreshResult("skipped")
     limit = window if window is not None else timedelta(seconds=PUBLISH_LEEWAY_SECONDS)
     if not force and not access_token_due(account, limit):

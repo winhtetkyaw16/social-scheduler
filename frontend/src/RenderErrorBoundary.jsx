@@ -3,10 +3,10 @@ import React from "react";
 import { AlertTriangle, RotateCcw } from "lucide-react";
 
 export default class RenderErrorBoundary extends React.Component {
-  state = { error: null, componentStack: "" };
+  state = { failed: false };
 
-  static getDerivedStateFromError(error) {
-    return { error: error instanceof Error ? error : new Error(String(error)) };
+  static getDerivedStateFromError() {
+    return { failed: true };
   }
 
   componentDidCatch(error, info) {
@@ -16,14 +16,12 @@ export default class RenderErrorBoundary extends React.Component {
       error,
       componentStack,
     );
-    this.setState({ componentStack });
   }
 
-  reset = () => this.setState({ error: null, componentStack: "" });
+  reset = () => this.setState({ failed: false });
 
   render() {
-    const { error, componentStack } = this.state;
-    if (!error) return this.props.children;
+    if (!this.state.failed) return this.props.children;
     const compact = this.props.compact === true;
     return (
       <section
@@ -36,19 +34,11 @@ export default class RenderErrorBoundary extends React.Component {
           </span>
           <div className="min-w-0 flex-1">
             <h2 className=" text-sm font-extrabold">
-              {this.props.scope || "This section"} hit a display error
+              Couldn't display {this.props.scope || "this section"}
             </h2>
-            <p className="mt-1 break-words text-xs leading-5">{error.message || String(error)}</p>
+            <p className="mt-1 text-xs leading-5">Try opening this section again. If it still doesn't load, reload the page.</p>
           </div>
         </div>
-        {componentStack && (
-          <details className="mt-3 rounded-xl border border-rose-200/80 bg-white/60 p-3 text-[10px] dark:border-rose-900/50 dark:bg-slate-950/40">
-            <summary className="cursor-pointer font-bold">Show component stack</summary>
-            <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words font-mono leading-4">
-              {componentStack}
-            </pre>
-          </details>
-        )}
         <div className="mt-4 flex flex-wrap gap-2">
           <button
             type="button"
@@ -56,7 +46,7 @@ export default class RenderErrorBoundary extends React.Component {
             className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-indigo-600 via-purple-600 to-blue-600 px-3 py-2 text-[10px] font-bold text-white"
           >
             <RotateCcw size={12} />
-            Try rendering again
+            Try again
           </button>
           <button
             type="button"

@@ -50,7 +50,7 @@ def test_failed_post_friendly_error_and_reschedule(client, auth_headers, monkeyp
     assert got["friendly_error"]["category"] == "x_credits_depleted"
     assert (
         got["friendly_error"]["banner"]
-        == "X API has no credits: add credits in the X developer console to post."
+        == "Publishing to X is temporarily unavailable."
     )
 
     new_time = (datetime.now(timezone.utc) + timedelta(days=2)).isoformat()

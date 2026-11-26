@@ -91,8 +91,11 @@ class TikTokEngagement(EngagementProvider):
     def _videos(self, account, post, fields):
         ids = self._video_ids(account, post)
         if "video.list" not in (account.scopes or []):
-            message = ("To check public videos, reconnect TikTok and allow access to your video list." if tiktok_video_list_enabled()
-                       else "SocialCastly needs TikTok video.list approval to check current public visibility.")
+            message = (
+                "To check public videos, reconnect TikTok and allow access to your video list."
+                if tiktok_video_list_enabled()
+                else "SocialCastly can't check this video's status on TikTok right now. Open TikTok to check it."
+            )
             raise PostStatusUnconfirmed(message)
         body = request_json("POST", QUERY_URL, access_token=self.access_token(account),
                             params={"fields": fields}, json_body={"filters": {"video_ids": ids}})

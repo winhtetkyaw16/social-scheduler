@@ -339,7 +339,7 @@ function PostsListView({
                 <div className="body">
                   <div className="row" style={{ gap: 8, marginBottom: 4 }}>
                     <AcctName account={account} accounts={accounts} />
-                    <StatusBadge status={post.status} post={post} />
+                    <StatusBadge status={post.status} post={post} account={account} />
                   </div>
                   <div className="txt">{post.content || "Untitled post"}</div>
                   {failed && (
@@ -1495,6 +1495,7 @@ function LibraryView({ request, onUseAsset }) {
                     <button
                       type="button"
                       onClick={() => onUseAsset?.(asset)}
+                      disabled={!onUseAsset}
                       className={`${primary} min-w-0 flex-1 !px-2 !py-2 !text-xs`}
                     >
                       <Plus size={12} />
@@ -2107,7 +2108,7 @@ function QueueView({
                       <div className="body">
                         <div className="row" style={{ gap: 8, marginBottom: 4 }}>
                           <AcctName account={acc} accounts={accounts} />
-                          <StatusBadge status={p.status} post={p} />
+                          <StatusBadge status={p.status} post={p} account={acc} />
                           {p.post_metadata?.evergreen_source_id && (
                             <span className="badge nodot">Evergreen</span>
                           )}
@@ -3014,7 +3015,7 @@ function PostPopover({
             <span className="pp-name" id="pp-title">
               {accountDisplayName(account) || current.preview_account_name || channelName}
             </span>
-            <StatusBadge status={current.status} post={current} />
+            <StatusBadge status={current.status} post={current} account={account} />
           </div>
           <div className="pp-sub">{account ? identityLine(account) : network}</div>
         </div>
@@ -3055,7 +3056,7 @@ function PostPopover({
         <span className="pp-ch" id="pp-title">
           {channelName}
         </span>
-        <StatusBadge status={current.status} post={current} />
+        <StatusBadge status={current.status} post={current} account={account} />
         <button type="button" className="pp-x" aria-label="Close" onClick={onClose} data-autofocus>
           ×
         </button>

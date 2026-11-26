@@ -72,6 +72,17 @@ const joinNames = (names) =>
  * "Media needs a few changes" panel with the account avatars). rows: mediaReport rows ({ account, infos, check }).
  * Returns [{ key, accounts, message }].
  */
+export function shortMediaProblem(problem) {
+  const { title, detail } = problem;
+  if (/^too many (items|videos)$/i.test(title) && detail) {
+    return detail.replace(/\. Use Fix for me to pick which one\.$/i, ".").replace(/\.$/, "");
+  }
+  if (/too (short|long)|shape doesn't fit|doesn't fit/i.test(title) && detail) {
+    return detail.replace(/\.$/, "");
+  }
+  return title.replace(/\.$/, "");
+}
+
 export function blockingGroups(rows = []) {
   const groups = new Map();
   const add = (key, account, text) => {
@@ -87,7 +98,8 @@ export function blockingGroups(rows = []) {
     if (many) add("one_video", row.account, null);
     for (const pr of row.check?.problems || []) {
       if (many && pr.code === "too_many") continue; // said once, as "allow only 1 video per post"
-      add(`${pr.code}:${pr.title}`, row.account, pr.title + (pr.detail ? ` — ${pr.detail}` : ""));
+      const text = shortMediaProblem(pr);
+      add(`${pr.code}:${text}`, row.account, text);
     }
   }
   return [...groups.values()].map((group) => {
@@ -360,6 +372,23 @@ export const SUPPORTED_FORMATS = {
   threads: ["Post"],
 };
 
+const FORMAT_LABEL = {
+  x: { Post: "Post", "Reel / Video": "Video" },
+  facebook: { Post: "Post", "Reel / Video": "Reel / video", Story: "Story" },
+  instagram: { Post: "Post", "Reel / Video": "Reel", Story: "Story" },
+  youtube: { "Reel / Video": "Video", Short: "Short" },
+  tiktok: { Post: "Photo post", "Reel / Video": "Video" },
+  linkedin: { Post: "Post", "Reel / Video": "Video" },
+  pinterest: { Post: "Pin", "Reel / Video": "Video Pin" },
+  threads: { Post: "Post" },
+};
+
+export function formatOptions(platform) {
+  const values = SUPPORTED_FORMATS[platform] || ["Post"];
+  const labels = FORMAT_LABEL[platform] || {};
+  return values.map((value) => ({ value, label: labels[value] || value }));
+}
+
 // One wording for the "video format without a video" error, shared with app/services/post_formats.py
 // so the composer, the API and the worker all say the same, actionable thing.
 export function videoFormatMessage(format) {
@@ -374,6 +403,7 @@ export function autoFormat(platform, infos = []) {
   const fallback = supported.includes("Post") ? "Post" : supported[0];
   const videos = (infos || []).filter((i) => i?.kind === "video");
   if (!videos.length) return fallback;
+  if (platform === "instagram" && videos.length > 1) return "Post";
   const v = videos[0];
   const vertical = v.height > v.width * 1.15;
   const candidate =
@@ -404,14 +434,25 @@ export function channelErrors({
   const out = [];
   const chosen = typeof format === "string" ? format.trim() : "";
   if (!chosen) out.push("Choose a format before publishing. This post has no saved format.");
-  else if (!(SUPPORTED_FORMATS[platform] || ["Post"]).includes(chosen))
-    out.push(`${chosen} is not available for ${label || platform}; choose a supported format.`);
+  const key = net(platform);
+  const supported = formatOptions(key);
+  const allowed = supported.some((option) => option.value === chosen);
+  if (chosen && !allowed) {
+    if (key === "youtube" && chosen === "Post") out.push("SocialCastly can't publish YouTube Community posts. Choose Video or Short.");
+    else if (key === "tiktok" && chosen === "Story") out.push("SocialCastly can't publish TikTok Stories. Choose Photo post or Video.");
+    else {
+      const choices = supported.map((option) => option.label);
+      const options = new Intl.ListFormat("en", { type: "disjunction" }).format(choices);
+      out.push(`This format is not available for ${NETWORK[key] || label || platform}. Choose ${options}.`);
+    }
+  }
   if (!String(text).trim()) out.push("Add a caption for this channel.");
   if (String(text).length > limit)
     out.push(`Caption is over this channel’s ${limit.toLocaleString()} character limit.`);
-  if ((chosen === "Short" || chosen === "Reel / Video") && !hasVideo)
+  // checkMedia reports the missing video for every YouTube format.
+  if (allowed && key !== "youtube" && (chosen === "Short" || chosen === "Reel / Video") && !hasVideo)
     out.push(videoFormatMessage(chosen));
-  if (chosen === "Story" && !mediaCount) out.push("Add a photo or video to create this Story.");
+  if (allowed && chosen === "Story" && !mediaCount) out.push("Add a photo or video to create this Story.");
   return out;
 }
 

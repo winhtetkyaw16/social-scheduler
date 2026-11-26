@@ -238,11 +238,12 @@ def test_disallowed_moderation_stops_before_network(
 
 
 @pytest.mark.parametrize("action,status,body,expected,recovery", [
-    ("hide", 403, {"error": {"code": 200}}, 403, "permission"),
+    ("hide", 403, {"error": {"code": 200}}, 403, "did not allow"),
     ("delete", 429, {}, 429, "120 seconds"),
     ("reply", 404, {}, 409, "Refresh the post"),
     ("hide", 401, {}, 409, "Reconnect"),
     ("hide", 200, {"data": {"hidden": False}}, 502, "Refresh the post"),
+    ("reply", None, httpx.ReadTimeout("test timeout"), 502, "response from Facebook"),
 ])
 def test_comment_action_errors_preserve_state(client, auth_headers, monkeypatch, action, status, body, expected, recovery):
     from app.models.engagement import PostComment
@@ -254,7 +255,8 @@ def test_comment_action_errors_preserve_state(client, auth_headers, monkeypatch,
     account = _connect(client, headers, network, scopes=["pages_manage_engagement", "pages_read_user_content", "tweet.moderate.write"])
     post = _published(_user_id(headers), account, provider_post_id="provider-post")
     comment = _add_comment(post, account, network=network, text="Comment", minutes_ago=1)
-    script = _Script([httpx.Response(status, json=body, headers={"Retry-After": "120"})])
+    reply = body if status is None else httpx.Response(status, json=body, headers={"Retry-After": "120"})
+    script = _Script([reply])
     monkeypatch.setattr("app.services.engagement.http.httpx.request", script)
     path = f"/api/v1/comments/{comment}"
     if action == "delete":
@@ -316,6 +318,19 @@ def test_tiktok_inbox_upload_is_not_a_public_video_id(monkeypatch):
     with pytest.raises(PostStatusUnconfirmed, match="inbox"):
         TikTokEngagement().verify_post(_account("tiktok"), _post("inbox:v_inbox_file~1"))
     assert script.calls[0]["json"] == {"publish_id": "v_inbox_file~1"}
+
+
+@pytest.mark.parametrize("enabled,expected", [
+    ("false", "Open TikTok to check it."),
+    ("true", "reconnect TikTok"),
+])
+def test_tiktok_refresh_without_video_access_gives_user_guidance(monkeypatch, enabled, expected):
+    monkeypatch.setenv("TIKTOK_ENABLE_VIDEO_LIST", enabled)
+    provider = TikTokEngagement()
+    check = provider.fetch_insights if provider.capabilities.supports_insights else provider.verify_post
+    with pytest.raises(PostStatusUnconfirmed, match=expected) as raised:
+        check(_account("tiktok"), _post("123"))
+    assert "video.list" not in str(raised.value)
 
 
 def _post(provider_id="post-1"):

@@ -145,9 +145,37 @@ export function autoSplit(platform, infos, { format = "Post" } = {}) {
   return all;
 }
 
-/** Media the account publishes when the user hasn't picked per-channel media. YouTube quietly takes just the video. */
-export function defaultIndices(platform, infos, opts) {
-  return net(platform) === "youtube" ? autoSplit(platform, infos, opts) : infos.map((_, i) => i);
+// Keep valid files from a mixed drop, in order. Stored URLs count alongside new files.
+export function limitVideoAttachments(existing, incoming, targets) {
+  let videoCount = existing.filter((item) => mediaInfo(item).kind === "video").length;
+  const accepted = [];
+  let message = "";
+  for (const item of incoming) {
+    const video = mediaInfo(item).kind === "video";
+    let reason = "";
+    for (const { platform, format } of targets) {
+      if (platform === "threads" || (platform === "instagram" && format === "Post")) {
+        const limit = LIMITS[platform].carousel;
+        if (existing.length + accepted.length >= limit)
+          reason = `${NETWORK[platform]} allows up to ${limit} items per carousel.`;
+      } else if (video && videoCount >= 1) {
+        reason = `${NETWORK[platform]} allows one video for this post. Remove the current video to add another.`;
+      }
+      if (reason) break;
+    }
+    if (reason) {
+      message ||= reason;
+      continue;
+    }
+    if (video) videoCount++;
+    accepted.push(item);
+  }
+  return { accepted, message };
+}
+
+/** Keep all YouTube video candidates visible until the user resolves an excess. */
+export function defaultIndices(platform, infos) {
+  return net(platform) === "youtube" ? videosOf(infos) : infos.map((_, i) => i);
 }
 
 /** Selection lookup: account -> network default -> null (use the post default). Values are lists of media keys. */
@@ -472,7 +500,7 @@ export function checkMedia(platform, infos, { format = "Post", igRatio = null } 
         mediaProblem(
           "unsupported",
           "TikTok Story isn't available",
-          "TikTok's posting API has photo posts and videos only. Choose one of those.",
+          "Choose a photo post or a video to publish to TikTok.",
           { id: "use_video", label: "Use the video" },
         ),
       );
@@ -509,9 +537,11 @@ export function checkMedia(platform, infos, { format = "Post", igRatio = null } 
         }),
       );
   } else if (platformKey === "youtube") {
+    if (vids.length > 1)
+      problems.push(mediaProblem("too_many", "Choose one video for YouTube.", "", { id: "use_video", label: "Keep one video" }));
     if (!vids.length)
       problems.push(
-        mediaProblem("no_video", "Add a video", "YouTube posts need a video.", {
+        mediaProblem("no_video", "Add a video to this post.", "", {
           id: "add_video",
           label: "Add a video",
         }),

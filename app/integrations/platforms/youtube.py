@@ -19,7 +19,7 @@ from app.integrations.media_urls import (
     public_media_url,
 )
 from app.services.media_probe import measure_bytes
-from app.services.post_formats import POST, REEL, SHORT, short_problem
+from app.services.post_formats import YOUTUBE_COMMUNITY_MESSAGE, POST, REEL, SHORT, short_problem
 
 # Composer "Platform settings" -> YouTube Data API v3 videos.insert (snippet.categoryId, status.*).
 YOUTUBE_CATEGORY_IDS = {
@@ -80,10 +80,7 @@ class YouTubePlatform(SocialPlatform):
     ) -> ProviderPublishResult:
         fmt = (format or "").strip()
         if fmt == POST:
-            raise ProviderConfigurationError(
-                "YouTube Community posts are not available through YouTube's API. "
-                "Choose Video or Short. Nothing was uploaded."
-            )
+            raise ProviderConfigurationError(YOUTUBE_COMMUNITY_MESSAGE)
         if fmt not in {"", REEL, SHORT}:
             raise ProviderConfigurationError(
                 f"{fmt} is not available for YouTube. Choose Video or Short. Nothing was uploaded."

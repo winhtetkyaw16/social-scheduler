@@ -1,5 +1,7 @@
 /** Plain rules for the post drawer and inbox. No React, no network, no made-up numbers. */
 
+import { readableDetail, requestError } from "../requestErrors.js";
+
 export function viewportTier(width) {
   const n = Number(width) || 0;
   if (n < 768) return "phone";
@@ -270,7 +272,11 @@ export function replyHint(handle, network) {
 export function commentActionError(error) {
   if (error?.status === 401) return "Sign in again to update this comment.";
   if (error?.status === 404) return "This comment is unavailable. Refresh the post.";
-  if ([402, 403, 409, 429, 501, 502].includes(error?.status) && error.detail) return error.detail;
+  if ([402, 403, 409, 429, 501, 502].includes(error?.status)) {
+    const detail = readableDetail(error.detail);
+    if (detail) return detail;
+  }
+  if (error?.status === 429) return requestError(429).message;
   return "Couldn't confirm the comment update. Check your connection and refresh the post before trying again.";
 }
 

@@ -6,6 +6,14 @@ from uuid import uuid4
 import pytest
 
 
+def test_unsupported_upload_suggests_accepted_file_types(client, auth_headers):
+    headers, _ = auth_headers
+    response = client.post("/api/v1/upload", headers=headers, files={"file": ("notes.txt", b"hello", "text/plain")})
+    assert response.status_code == 415
+    assert "JPG or PNG" in response.json()["detail"]
+    assert "MP4 or MOV" in response.json()["detail"]
+
+
 def _connect(client, headers, platform):
     r = client.post(
         "/api/v1/accounts",

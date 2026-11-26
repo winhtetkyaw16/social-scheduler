@@ -197,10 +197,10 @@ def test_video_processing_failed(monkeypatch, tmp_path, env):
         "LinkedIn could not process the video (PROCESSING_FAILED: Unsupported codec)",
         "linkedin",
     )
-    assert (
-        r["category"] == "linkedin_processing_failed"
-        and 'LinkedIn said: "' in r["what_happened"]
-    )
+    assert r["category"] == "linkedin_processing_failed"
+    assert "Use an MP4 video" in r["what_to_do"]
+    assert r["platform_reason"] is None
+    assert "PROCESSING_FAILED" not in r["what_happened"]
 
 
 def test_video_poll_timeout(monkeypatch, tmp_path, env):
@@ -272,10 +272,10 @@ def test_permission_and_token_errors():
         "Provider returned HTTP 403: Not enough permissions to access: partnerApiPostsExternal.CREATE",
         "linkedin",
     )
-    assert (
-        r["category"] == "linkedin_permission_missing"
-        and "LinkedIn said:" in r["what_happened"]
-    )
+    assert r["category"] == "linkedin_permission_missing"
+    assert "Reconnect the LinkedIn account" in r["what_to_do"]
+    assert r["platform_reason"] is None
+    assert "partnerApiPostsExternal" not in r["what_happened"]
     assert r["actions"][0]["id"] == "reconnect"
     assert (
         friendly_error(

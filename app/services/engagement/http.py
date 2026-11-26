@@ -89,9 +89,9 @@ def request_json(
             timeout=30.0,
         )
     except httpx.TimeoutException as exc:
-        raise EngagementRetryableError("The network timed out") from exc
+        raise EngagementRetryableError("The network timed out", category="connection") from exc
     except httpx.RequestError as exc:
-        raise EngagementRetryableError("Could not connect to the social network") from exc
+        raise EngagementRetryableError("Could not connect to the social network", category="connection") from exc
     if response.is_error:
         raise _classified(response)
     if not response.content:

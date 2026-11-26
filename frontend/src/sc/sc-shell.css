@@ -37,6 +37,12 @@
 .scd .week { grid-template-columns: 56px repeat(7, minmax(0, 1fr)); }
 .scd .week .ev { overflow: hidden; }
 .scd.sc-auth-root { min-height: 100vh; background: var(--bg); color: var(--text); }
+.scd .sc-auth-error { display: flex; align-items: flex-start; gap: 6px; color: #b42318; font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+.scd .sc-auth-error svg { flex: none; margin-top: 2px; }
+.scd .input[aria-invalid="true"] { border-color: #d92d20; box-shadow: 0 0 0 1px #d92d20; }
+.scd .input[aria-invalid="true"]:focus { border-color: #d92d20; box-shadow: 0 0 0 2px rgba(217, 45, 32, .25); }
+html.dark .scd .sc-auth-error { color: #fda29b; }
+html.dark .scd .input[aria-invalid="true"] { border-color: #f97066; box-shadow: 0 0 0 1px #f97066; }
 .scd .auth .art { position: relative; overflow: hidden; }
 .scd .sc-auth-mobile-logo { display: none; }
 @media (max-width: 1023px) {

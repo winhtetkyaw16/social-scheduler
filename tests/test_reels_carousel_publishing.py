@@ -292,7 +292,9 @@ def test_new_friendly_messages():
         "Instagram carousels can have at most 10 items (this post has 12).",
         "instagram",
     )
-    assert r["category"] == "instagram_too_many_items" and "10" in r["what_happened"]
+    assert r["category"] == "instagram_too_many_items"
+    assert "up to 20" in r["what_happened"]
+    assert "up to 20" in r["what_to_do"]
     r = friendly_error(
         "provider_config",
         "Threads carousels can have at most 20 items (this post has 21).",

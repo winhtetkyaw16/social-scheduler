@@ -318,7 +318,7 @@ export default function PostDetailDrawer({
   const urls = [...new Set((targets.length ? targets : [{ post }]).flatMap((target) => target.post?.media_urls || post?.media_urls || []))];
   const previewTarget = tab === "comments" ? selectedTarget : targets.find((target) => target.key === String(post?.id));
   const who = previewTarget?.name || "Account";
-  const when = remotePostStatusLabel(previewTarget?.post || post) || publishedLabel(publishedAt);
+  const when = remotePostStatusLabel(previewTarget?.post || post, previewTarget?.account) || publishedLabel(publishedAt);
   const compact = tab === "comments" && !expanded;
 
   function choose(key) {

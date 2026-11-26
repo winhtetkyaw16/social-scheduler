@@ -1196,6 +1196,25 @@ def test_insights_and_manual_sync(client, auth_headers, monkeypatch):
     assert "pages_read_engagement" in facebook["missing_scopes"]["comments_read"]
 
 
+def test_manual_sync_shows_provider_retry_window(client, auth_headers, monkeypatch):
+    from app.services.engagement.base import EngagementRetryableError
+
+    headers, _ = auth_headers
+    account_id = _connect(client, headers, scopes=["pages_manage_engagement"])
+    post_id = _published(_user_id(headers), account_id)
+
+    def throttled(*args):
+        raise EngagementRetryableError(
+            "provider details", category="rate_limit", retry_after_seconds=120
+        )
+
+    monkeypatch.setattr("app.api.v1.endpoints.engagement.sync_one_post", throttled)
+    response = client.post(f"/api/v1/posts/{post_id}/engagement/sync", headers=headers)
+    assert response.status_code == 429
+    assert response.headers["Retry-After"] == "120"
+    assert response.json()["detail"] == "The network is busy. Try again in 120 seconds."
+
+
 def test_manual_sync_bypasses_sweep_lookback_and_retry_backoff(
     client, auth_headers, monkeypatch
 ):

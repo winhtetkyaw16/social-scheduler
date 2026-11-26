@@ -288,8 +288,8 @@ export function Ico({ d, children, style }) {
 
 // Status badges: neutral for anything still waiting (scheduled, queued, draft, pending),
 // green for done, amber for "needs a look soon", red only for failures.
-export function StatusBadge({ status, post }) {
-  const remoteStatusLabel = remotePostStatusLabel(post);
+export function StatusBadge({ status, post, account }) {
+  const remoteStatusLabel = remotePostStatusLabel(post, account);
   if (remoteStatusLabel) {
     return <span className="badge b-warning">{remoteStatusLabel}</span>;
   }

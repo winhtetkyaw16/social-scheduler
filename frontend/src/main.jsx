@@ -1,15 +1,19 @@
 // Studio shell: session, composer, navigation, and the API client for the signed-in app.
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { publishNotice } from "./publishNotice.js";
+import { friendlyError } from "./sc/PostActions.jsx";
 import { igCropPayload } from "./igFrame.js";
 import { autoFormat, channelErrors, effectiveFormat, urlsForSelection } from "./fixPlan.js";
 import { useObjectUrl } from "./objectUrl.js";
 import { accessTokenExpiresAtMs } from "./accessToken.js";
+import { channelConnectionError, connectionError, readSessionRefresh, rejectedWorkspaceSession, requestError } from "./requestErrors.js";
 import {
   actionIndices,
   autoSplit,
   checkMedia,
   cropIndices,
   defaultIndices,
+  limitVideoAttachments,
   mediaInfo,
   mediaKeyOf,
   selectionFor,
@@ -47,6 +51,8 @@ import {
   Expand,
   Check,
   CheckCircle2,
+  CircleAlert,
+  TriangleAlert,
   ChevronDown,
   ChevronRight,
   CircleHelp,
@@ -154,6 +160,7 @@ const PUBLISHABLE_PLATFORMS = new Set([
 ]);
 let sessionAccessToken = "";
 let sessionRefreshHandler = null;
+let sessionExpiredHandler = null;
 let refreshInFlight = null;
 const THEME_KEY = "social_studio_theme";
 const MAX_CHARS = 10000;
@@ -292,13 +299,6 @@ function oauthReturnTabFromUrl() {
   return "home";
 }
 
-function getErrorMessage(body, fallback) {
-  if (typeof body?.detail === "string") return body.detail;
-  if (Array.isArray(body?.detail))
-    return body.detail.map((item) => item.msg || "Invalid input").join(" · ");
-  return fallback;
-}
-
 function isVideoMedia(item) {
   if (typeof item === "string") return /\.(mp4|mov|webm|m4v|ogv)(\?|$)/i.test(item);
   return Boolean(item?.type?.startsWith("video/"));
@@ -367,11 +367,11 @@ async function refreshAccessToken() {
           body: JSON.stringify({ refresh_token: refreshToken }),
         });
       } catch {
-        return "";
+        throw new Error(connectionError);
       }
-      if (!response.ok) return "";
-      const body = await response.json().catch(() => null);
-      if (!body?.access_token) return "";
+      const body = await readSessionRefresh(response);
+      if (readStoredValue(REFRESH_KEY) !== refreshToken) throw new Error("Your sign-in changed. Try again.");
+      if (!body) return "";
       const user = {
         full_name: body.full_name || readStoredValue("social_studio_full_name"),
         workspace_name: body.workspace_name || readStoredValue("social_studio_workspace_name"),
@@ -417,29 +417,34 @@ async function api(path, { token, _retried = false, ...options } = {}) {
   try {
     response = await fetch(`${API_BASE}${path}`, { cache: "no-store", ...options, headers });
   } catch {
-    throw new Error("Could not reach SocialCastly. Check that the API is running and try again.");
-  }
-  if (response.status === 401 && !_retried && !authPaths.includes(path)) {
-    const next = await refreshAccessToken();
-    if (next) return api(path, { ...options, token: next, _retried: true });
+    throw new Error(connectionError);
   }
   if (response.status === 204) return null;
-  const text = await response.text();
+  let text;
+  try {
+    text = await response.text();
+  } catch {
+    throw new Error(connectionError);
+  }
   let body = null;
-  let detail;
   if (text) {
     try {
       body = JSON.parse(text);
-      if (typeof body?.detail === "string") detail = body.detail;
     } catch {
-      body = { detail: text };
+      if (response.ok) body = { detail: text };
     }
   }
-  if (!response.ok)
-    throw Object.assign(new Error(getErrorMessage(body, `Request failed (${response.status})`)), {
-      detail,
-      status: response.status,
-    });
+  if (!response.ok) {
+    if (bearer && bearer === sessionAccessToken && !authPaths.includes(path) && path !== "/auth/signup" &&
+        rejectedWorkspaceSession(response, body?.detail)) {
+      if (!_retried) {
+        const next = await refreshAccessToken();
+        if (next) return api(path, { ...options, token: next, _retried: true });
+      }
+      if (bearer === sessionAccessToken) sessionExpiredHandler?.();
+    }
+    throw requestError(response.status, body, response.headers);
+  }
   return body;
 }
 
@@ -526,6 +531,7 @@ function AuthScreen({
   remember,
   setRemember,
   initialMode = "login",
+  initialError = "",
 }) {
   const [mode, setMode] = useState(initialMode === "signup" ? "signup" : "login");
   const [fields, setFields] = useState({
@@ -536,7 +542,7 @@ function AuthScreen({
   });
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState(initialError);
   const set = (key) => (event) =>
     setFields((previous) => ({ ...previous, [key]: event.target.value }));
   async function submit(event) {
@@ -562,6 +568,7 @@ function AuthScreen({
     setMode(next);
     setError("");
   };
+  const invalidCredentials = mode === "login" && error === "Check your email and password and try again.";
   return (
     <div className={`scd sc-auth-root ${dark ? "dark" : ""}`}>
       <main className="auth">
@@ -729,6 +736,8 @@ function AuthScreen({
                   <input
                     id="auth-pw"
                     className="input grow"
+                    aria-invalid={invalidCredentials || undefined}
+                    aria-describedby={invalidCredentials ? "auth-error" : undefined}
                     type={showPassword ? "text" : "password"}
                     autoComplete={mode === "signup" ? "new-password" : "current-password"}
                     required
@@ -747,6 +756,12 @@ function AuthScreen({
                     {showPassword ? "Hide" : "Show"}
                   </button>
                 </div>
+                {invalidCredentials && (
+                  <div id="auth-error" role="alert" className="sc-auth-error">
+                    <TriangleAlert size={15} aria-hidden="true" />
+                    <span>{error}</span>
+                  </div>
+                )}
               </div>
               {mode === "login" ? (
                 <label className="row sm" style={{ cursor: "pointer" }}>
@@ -789,9 +804,10 @@ function AuthScreen({
                   </span>
                 </label>
               )}
-              {error && (
-                <div role="alert" className="alert error sm">
-                  {error}
+              {error && !invalidCredentials && (
+                <div role="alert" className="sc-auth-error">
+                  <CircleAlert size={20} aria-hidden="true" />
+                  <span>{error}</span>
                 </div>
               )}
               <button disabled={busy} className="btn btn-primary btn-lg">
@@ -1423,8 +1439,7 @@ function QuickStudioDialogContent({
                 className="max-h-72 w-full rounded-2xl bg-black"
               />
               <p className="text-xs leading-5 text-slate-500">
-                Review your video here before scheduling. Trim and export tools depend on a media
-                editing service, which is not part of this API.
+                Preview your video before scheduling. To trim it, edit the original video and upload the new version.
               </p>
             </div>
           )}
@@ -1521,6 +1536,7 @@ function ConnectChannelPicker({ open, onClose, onPick, onRequestChannel }) {
 function App() {
   const [token, setToken] = useState(() => readStoredValue(TOKEN_KEY));
   const [isLoggedIn, setIsLoggedIn] = useState(() => Boolean(readStoredValue(TOKEN_KEY)));
+  const [sessionNotice, setSessionNotice] = useState("");
   const [user, setUser] = useState(() => ({
     full_name: readStoredValue("social_studio_full_name"),
     workspace_name: readStoredValue("social_studio_workspace_name"),
@@ -1717,11 +1733,7 @@ function App() {
           previous.filter((id) => active.some((item) => item.id === id)),
         );
       } catch (error) {
-        if (error.status === 401) {
-          clearStoredSession();
-          setToken("");
-          setIsLoggedIn(false);
-        } else setLoadError(error.message);
+        setLoadError(error.message);
       } finally {
         setLoadingAccounts(false);
       }
@@ -2362,6 +2374,7 @@ function App() {
   }
 
   function handleAuthenticated(result, submitted) {
+    setSessionNotice("");
     const accessToken = result?.access_token;
     if (!accessToken) throw new Error("The sign-in response did not include an access token.");
     const nextUser = {
@@ -2745,6 +2758,11 @@ function App() {
       notify({ title: "Review channel requirements", message: channelWarnings[0].message });
       return;
     }
+    const mediaBlocker = mediaReport.find((row) => row.check.problems.length);
+    if (mediaBlocker) {
+      notify({ title: "Review your media", message: mediaBlocker.check.problems[0].title });
+      return;
+    }
     const emptyCaptionAccount = selectedAccounts.find(
       (account) => !captionForAccount(account).trim(),
     );
@@ -2875,37 +2893,38 @@ function App() {
           });
         }),
       );
-      const successCount = results.filter((result) => result.status === "fulfilled").length;
-      const failureMessages = results
-        .filter((result) => result.status === "rejected")
-        .map((result) => result.reason?.message);
-      if (successCount) {
-        const createdIds = results
-          .filter((result) => result.status === "fulfilled")
-          .map((result) => result.value?.id)
-          .filter(Boolean);
-        let [accountData, postData] = await Promise.all([
-          authenticatedFetch("/accounts"),
-          authenticatedFetch("/posts"),
-        ]);
-        // Post now finishes in a background worker; poll briefly so the calendar flips to published.
-        if (mode === "now" && createdIds.length) {
-          const terminal = new Set(["published", "failed", "cancelled", "archived"]);
-          for (let attempt = 0; attempt < 8; attempt += 1) {
-            const pending = (Array.isArray(postData) ? postData : []).filter(
-              (post) => createdIds.includes(post.id) && !terminal.has(post.status),
-            );
-            if (!pending.length) break;
-            await new Promise((resolve) => setTimeout(resolve, 1000));
-            try {
-              postData = await authenticatedFetch("/posts");
-            } catch {
-              break;
-            }
+      const rejected = [];
+      const accepted = [];
+      results.forEach((result, index) => {
+        const account = selectedAccounts[index];
+        if (result.status === "fulfilled") accepted.push(result.value);
+        else rejected.push({ account, message: result.reason?.message, status: result.reason?.status });
+      });
+      let latest = accepted;
+      if (accepted.length) {
+        const ids = new Set(accepted.map((post) => post.id));
+        // Creation has already succeeded. Keep its receipt even if a later read fails.
+        setPosts((current) => [...accepted, ...current.filter((post) => !ids.has(post.id))]);
+        const accountRefresh = authenticatedFetch("/accounts").then((rows) => {
+          if (Array.isArray(rows)) setAccounts(rows);
+        }).catch(() => { /* Keep the current account list when refresh is unavailable. */ });
+        const attempts = mode === "now" ? 9 : 1;
+        for (let attempt = 0; attempt < attempts; attempt += 1) {
+          if (attempt) await new Promise((resolve) => setTimeout(resolve, 1000));
+          try {
+            const rows = await authenticatedFetch("/posts");
+            if (!Array.isArray(rows)) break;
+            const byId = new Map(rows.map((post) => [post.id, post]));
+            latest = latest.map((post) => byId.get(post.id) || post);
+            setPosts([...latest.filter((post) => !byId.has(post.id)), ...rows]);
+          } catch {
+            break;
           }
+          if (latest.every((post) => ["published", "failed", "cancelled", "archived"].includes(post.status))) break;
         }
-        setAccounts(Array.isArray(accountData) ? accountData : []);
-        setPosts(Array.isArray(postData) ? postData : []);
+        await accountRefresh;
+      }
+      if (accepted.length && !rejected.length) {
         if (editingDraftId) {
           try {
             await authenticatedFetch(`/publish/drafts/${editingDraftId}`, { method: "DELETE" });
@@ -2932,39 +2951,15 @@ function App() {
         formatOverridesRef.current = {};
         setFormatOverridesByAccount({});
         setPlatformSettingsByAccount({});
-        const refreshedCreated = (Array.isArray(postData) ? postData : []).filter((post) =>
-          createdIds.includes(post.id),
-        );
-        const publishedCount = refreshedCreated.filter(
-          (post) => post.status === "published",
-        ).length;
-        const failedCount = refreshedCreated.filter((post) => post.status === "failed").length;
-        const nowTitle =
-          publishedCount === createdIds.length
-            ? "Published"
-            : failedCount
-              ? "Publish finished with errors"
-              : "Your post is on its way";
-        const nowMessage =
-          publishedCount === createdIds.length
-            ? `${publishedCount} account${publishedCount === 1 ? "" : "s"} published successfully.`
-            : failedCount
-              ? `${publishedCount} published, ${failedCount} failed.${failureMessages.length ? ` ${failureMessages[0]}` : ""}`
-              : `${successCount} account${successCount === 1 ? "" : "s"} queued for publishing. The status will update automatically.`;
-        notify({
-          title: mode === "now" ? nowTitle : mode === "queue" ? "Added to queue" : "Post scheduled",
-          message:
-            mode === "now"
-              ? nowMessage
-              : `${successCount} account${successCount === 1 ? "" : "s"} ${mode === "queue" ? "placed in the next free queue slot" : "scheduled for a specific time"}.${failureMessages.length ? ` ${failureMessages.length} account${failureMessages.length === 1 ? "" : "s"} could not be scheduled.` : ""}`,
-          kind: failureMessages.length || failedCount ? "error" : "success",
-        });
+      } else if (accepted.length) {
+        setSelectedIds(rejected.map(({ account }) => account.id));
       }
-      if (!successCount)
-        notify({
-          title: "Couldn’t create your post",
-          message: failureMessages[0] || "Please try again.",
-        });
+      const failures = latest.filter((post) => post.status === "failed").map((post) => {
+        const account = selectedAccounts.find((item) => item.id === post.connected_account_id);
+        return friendlyError(post, account);
+      });
+      notify(publishNotice(mode, latest, failures, rejected));
+
     } catch (error) {
       notify({ title: "Couldn’t create your post", message: error.message || "Please try again." });
     } finally {
@@ -3002,7 +2997,7 @@ function App() {
       await loadWorkspace(token);
       notify({
         title: "Retry queued",
-        message: "The post will publish again after the provider accepts it.",
+        message: "Check the post in Publish for the result of this attempt.",
         kind: "success",
       });
     } catch (error) {
@@ -3036,8 +3031,20 @@ function App() {
     }
   }
 
+  function allowedAttachments(incoming) {
+    if (!selectedAccounts.length) return [];
+    const targets = selectedAccounts.map((account) => ({
+      platform: account.platform,
+      format: formatOverridesByAccount[account.id] ? formatForAccount(account) : "Post",
+    }));
+    const { accepted, message } = limitVideoAttachments(sharedMedia, incoming, targets);
+    if (message) notify({ title: message });
+    return accepted;
+  }
+
   function useLibraryAsset(asset) {
     const absoluteUrl = new URL(asset.public_url, API_ORIGIN).href;
+    if (!libraryMediaUrls.includes(absoluteUrl) && !allowedAttachments([absoluteUrl]).length) return;
     setLibraryMediaUrls((current) =>
       current.includes(absoluteUrl) ? current : [...current, absoluteUrl],
     );
@@ -3051,8 +3058,14 @@ function App() {
 
   useEffect(() => {
     sessionRefreshHandler = (next) => setToken(next);
+    sessionExpiredHandler = () => {
+      logout();
+      setSessionNotice("Your SocialCastly session has expired. Sign in again to continue.");
+      setAuthView("login");
+    };
     return () => {
-      if (sessionRefreshHandler) sessionRefreshHandler = null;
+      sessionRefreshHandler = null;
+      sessionExpiredHandler = null;
     };
   }, []);
   useEffect(() => {
@@ -3161,7 +3174,7 @@ function App() {
         message: `${connected} is ready. The token stays encrypted on the server.`,
         kind: "success",
       });
-    if (connectError) notify({ title: "Couldn't connect the channel", message: connectError });
+    if (connectError) notify({ title: "Couldn't connect the channel", message: channelConnectionError(connectError) });
     const url = new URL(window.location.href);
     url.searchParams.delete("connected");
     url.searchParams.delete("connect_error");
@@ -3203,6 +3216,7 @@ function App() {
         <AuthScreen
           key={authView}
           initialMode={authView}
+          initialError={sessionNotice}
           onAuthenticated={handleAuthenticated}
           dark={dark}
           toggleTheme={() => setDark((value) => !value)}
@@ -3372,7 +3386,7 @@ function App() {
                   onRemoveLocalDraft={removeLocalDraft}
                   onCreatePost={openStudio}
                   onOpenDraft={openSavedDraft}
-                  onUseAsset={useLibraryAsset}
+                  onUseAsset={selectedAccounts.length ? useLibraryAsset : undefined}
                   onRefresh={() => {
                     void loadWorkspace(token);
                     void refreshNavCounts();
@@ -3404,7 +3418,7 @@ function App() {
               </RenderErrorBoundary>
             ) : activeTab === "media" ? (
               <RenderErrorBoundary scope="Media library">
-                <ScMedia request={authenticatedFetch} onUseAsset={useLibraryAsset} />
+                <ScMedia request={authenticatedFetch} onUseAsset={selectedAccounts.length ? useLibraryAsset : undefined} />
               </RenderErrorBoundary>
             ) : activeTab === "team" ? (
               <ScTeam user={user} accounts={accounts} />
@@ -3486,7 +3500,10 @@ function App() {
                     libraryMediaUrls={libraryMediaUrls}
                     setLibraryMediaUrls={setLibraryMediaUrls}
                     onFilesAdded={(incoming) => {
-                      void suggestFormatsForAccounts(incoming);
+                      const accepted = allowedAttachments(incoming);
+                      if (!accepted.length) return;
+                      setFiles((old) => [...old, ...accepted].slice(0, 35));
+                      void suggestFormatsForAccounts(accepted);
                     }}
                     onEditFile={(file) => {
                       setQuickFile(file);

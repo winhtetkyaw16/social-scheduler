@@ -15,7 +15,7 @@ from app.integrations.media_urls import (
     local_upload_path,
     public_media_url,
 )
-from app.services.post_formats import POST, REEL, STORY
+from app.services.post_formats import TIKTOK_STORY_MESSAGE, POST, REEL, STORY
 
 _DIRECT_INIT = "https://open.tiktokapis.com/v2/post/publish/video/init/"
 _INBOX_INIT = "https://open.tiktokapis.com/v2/post/publish/inbox/video/init/"
@@ -41,10 +41,7 @@ class TikTokPlatform(SocialPlatform):
     ) -> ProviderPublishResult:
         fmt = (format or "").strip()
         if fmt == STORY:
-            raise ProviderConfigurationError(
-                "TikTok Story is not part of TikTok's Content Posting API. "
-                "Choose Photo post or Video. Nothing was posted."
-            )
+            raise ProviderConfigurationError(TIKTOK_STORY_MESSAGE)
         if fmt not in {"", POST, REEL}:
             raise ProviderConfigurationError(
                 f"{fmt} is not available for TikTok. Choose Photo post or Video. Nothing was posted."
@@ -55,7 +52,7 @@ class TikTokPlatform(SocialPlatform):
             )
         if not media_urls:
             raise ProviderConfigurationError(
-                "TikTok publishing requires exactly one video. Text-only posts are not supported by the Content Posting API."
+                "TikTok needs one video or 1-35 photos. Add a video or photos."
             )
         kinds = [guess_media_kind(m) for m in media_urls]
         if fmt == POST and "video" in kinds:

@@ -1,5 +1,8 @@
-export function remotePostStatusLabel(post) {
-  return post?.remote_status === "deleted" ? "Deleted on network" : null;
+import { networkName, platformOf } from "./publishedDelete.js";
+
+export function remotePostStatusLabel(post, account) {
+  if (post?.remote_status !== "deleted") return null;
+  return platformOf(post, account) ? `Deleted on ${networkName(post, account)}` : "Deleted";
 }
 
 export function statusMatchesFilter(post, filter) {

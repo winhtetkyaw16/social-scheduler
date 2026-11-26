@@ -26,6 +26,7 @@ NETWORK_NAMES = {
 
 # Jargon that must not appear in the non-fallback copy.
 BANNED_WORDS = (
+    "credit", "credits", "permission", "permissions", "scope", "scopes", "token",
     "developer account",
     "api",
     "json",
@@ -98,6 +99,15 @@ def sanitize_raw(message: str | None, limit: int = 200) -> str:
     return text
 
 
+def _public_reason(message, limit=200):
+    text = sanitize_raw(message, limit)
+    if any(word in text.lower() for word in BANNED_WORDS) or re.search(
+        r"\b\w+_\w+\b|\b(?:video\.list|media\.write|tweet\.write|user\.info\.\w+)\b", text, re.I
+    ):
+        return ""
+    return text
+
+
 def _status(text: str) -> int | None:
     """HTTP status mentioned in a provider message, or None."""
     match = _HTTP_STATUS.search(text)
@@ -119,9 +129,21 @@ def classify_error(
     key = (platform or "").lower()
     code_l = (code or "").lower()
     text = f"{code or ''} {message or ''}".lower()
+    if code_l in {"media_invalid", "format_invalid"}:
+        return "content_needs_edit"
     if code_l == CONNECTION:
         return CONNECTION
+    if code_l == "connection_renewal_pending":
+        return code_l
+    if code_l == "provider_request_error" and _has(text, (
+        "could not connect to", "could not reach", "request timed out",
+        "could not upload the video", "upload failed: could not send",
+        "upload timed out", "upload session timed out",
+    )):
+        return NETWORK
     status = _status(message or "")
+    if status == 429 or code_l == RATE_LIMIT:
+        return RATE_LIMIT
     media = list(media_urls) if media_urls is not None else None
 
     if key == "youtube" and _has(
@@ -247,10 +269,6 @@ def classify_error(
         ),
     ):
         return MEDIA_FETCH
-    if code_l == "provider_request_error" and _has(
-        text, ("could not connect to", "could not reach")
-    ):
-        return NETWORK
     if _has(text, ("timeout", "timed out", "still processing")):
         return TIMEOUT
     if status == 402 or _has(
@@ -265,7 +283,7 @@ def classify_error(
         ),
     ):
         return X_CREDITS if key in {"x", "twitter"} else RATE_LIMIT
-    if status == 429 or _has(
+    if _has(
         text,
         (
             "too many requests",
@@ -420,7 +438,7 @@ def _reconnect(network_label: str) -> list[dict[str, str]]:
 
 def _plain_reconnect_banner(message: str | None) -> str | None:
     """Use a stored reconnect sentence when it has no codes or provider jargon."""
-    text = sanitize_raw(message)
+    text = _public_reason(message)
     if not text:
         return None
     lowered = text.lower()
@@ -444,9 +462,15 @@ def friendly_error(
         return None
     net = network_name(platform)
     category = classify_error(code, message, platform, media_urls)
-    raw = sanitize_raw(message)
+    raw = _public_reason(message)
 
     copy: dict[str, tuple[str, str, str, list]] = {
+        "content_needs_edit": (
+            f"Edit this post before publishing to {net}.",
+            raw or f"The selected format or media doesn't work for {net}.",
+            "Open Edit post, update the content, and save your changes before publishing again.",
+            _EDIT,
+        ),
         IG_NO_MEDIA: (
             "Instagram needs at least one image or video; caption-only posts aren't allowed.",
             "This post only had a caption. Instagram doesn't publish text-only posts.",
@@ -455,7 +479,7 @@ def friendly_error(
         ),
         IG_ONE_IMAGE: (
             "Instagram couldn't accept this media file.",
-            "Instagram accepts one photo (JPG), one video (posted as a Reel), or a carousel of 2-10 photos/videos. "
+            "Instagram accepts one photo (JPG), one video (posted as a Reel), or a carousel of 2-20 photos/videos. "
             "This file type or combination wasn't accepted.",
             "Use JPG photos or MP4/MOV videos, then try again.",
             _EDIT,
@@ -468,8 +492,8 @@ def friendly_error(
         ),
         IG_TOO_MANY: (
             "Too many items for an Instagram carousel.",
-            "Instagram carousels can hold up to 10 photos and videos.",
-            "Remove some items so the post has 10 or fewer, then try again.",
+            "An Instagram carousel in SocialCastly can contain up to 20 photos and videos.",
+            "Select up to 20 items for this post, then try again.",
             _EDIT,
         ),
         TOO_MANY_ITEMS: (
@@ -515,22 +539,22 @@ def friendly_error(
             _EDIT,
         ),
         X_CREDITS: (
-            "X API has no credits: add credits in the X developer console to post.",
-            'X refused the request with "payment required" (402 / CreditsDepleted): the X developer app this connection uses has no API credits left. Your post itself is fine and nothing was published.',
-            "Add credits (or a plan) for the app in the X developer console (console.x.com), then retry. You can also reschedule for later.",
+            "Publishing to X is temporarily unavailable.",
+            'X is not accepting posts from SocialCastly right now.',
+            "Try again later or reschedule your post.",
             _RETRY,
         ),
         X_MEDIA: (
             "X can't accept this media.",
-            sanitize_raw(message, 300)
+            _public_reason(message, 300)
             or "X accepts up to 4 photos (JPG/PNG/WEBP, 5 MB each), 1 GIF (15 MB) or 1 MP4 video.",
             "Fix the media for X as described, then try again.",
             _EDIT,
         ),
         X_MEDIA_SCOPE: (
             "Reconnect X to allow media.",
-            "X refused the photo/video upload because this X connection was approved before SocialCastly asked for permission to upload media (media.write). Nothing was posted.",
-            "Reconnect X in Accounts and approve all requested permissions, then retry.",
+            "This X connection cannot upload photos or videos yet.",
+            "Reconnect X in Accounts and allow SocialCastly to upload photos and videos.",
             _reconnect("X") + _RETRY[:1],
         ),
         X_PROCESSING: (
@@ -545,10 +569,16 @@ def friendly_error(
             f"Reconnect your {net} account in Accounts, then retry the post.",
             _reconnect(net) + _RETRY[:1],
         ),
+        "connection_renewal_pending": (
+            f"SocialCastly couldn't renew your {net} connection yet.",
+            f"Your post is waiting for a working connection to {net}.",
+            "Try again in a few minutes.",
+            _RETRY,
+        ),
         PERMISSION: (
-            f"SocialCastly doesn't have permission to post to this {net} account.",
-            f"{net} said the connection is missing a required permission (for Facebook/Instagram, usually Page publishing permission).",
-            f"Reconnect {net} and, when asked, allow all requested permissions and select this Page/account, then retry.",
+            f"SocialCastly can't publish to this {net} account yet.",
+            f"This connection does not allow SocialCastly to publish here.",
+            f"Reconnect {net}, choose where to publish, and allow SocialCastly to post there.",
             _reconnect(net) + _RETRY[:1],
         ),
         APP_BLOCKED: (
@@ -564,16 +594,15 @@ def friendly_error(
             _EDIT,
         ),
         RATE_LIMIT: (
-            f"{net} is limiting how often this account can post right now.",
-            f"Too many posts or requests were sent to {net} in a short time, so it asked us to slow down.",
-            "Wait a while (usually 15–60 minutes) and retry, or reschedule for later.",
+            f"{net} asked us to wait before posting again.",
+            f"{net} temporarily paused publishing for this account.",
+            "Wait a little before trying again, or reschedule the post for later.",
             _RETRY,
         ),
         NETWORK: (
-            f"SocialCastly couldn't reach {net}: no internet connection.",
-            f"The computer running SocialCastly couldn't connect to {net} (Wi-Fi dropped, no internet, or a firewall/VPN blocked it). "
-            f"Nothing was sent to {net}.",
-            "Check this computer's internet connection, then press Retry now.",
+            f"SocialCastly couldn't get a response from {net}.",
+            f"We couldn't confirm whether your post appeared on {net}.",
+            f"Check your {net} profile. If the post is missing, try again in a few minutes.",
             _RETRY,
         ),
         PLATFORM_DOWN: (
@@ -590,7 +619,7 @@ def friendly_error(
         ),
         LI_MEDIA: (
             "LinkedIn can't accept this media.",
-            sanitize_raw(message, 300)
+            _public_reason(message, 300)
             or "LinkedIn accepts one MP4 video, one photo, or 2-20 JPG/PNG/GIF photos.",
             "Fix the media for LinkedIn as described, then try again.",
             _EDIT,
@@ -608,9 +637,9 @@ def friendly_error(
             _EDIT + _RETRY[:1],
         ),
         LI_PERMISSION: (
-            "SocialCastly doesn't have permission to post this to LinkedIn.",
-            "LinkedIn said the connection is missing a permission (posting needs the w_member_social scope from the Share on LinkedIn product), or the account doesn't own this media.",
-            "Reconnect LinkedIn and approve all requested permissions, then retry.",
+            "LinkedIn did not allow this post.",
+            "This account may not allow posting or may not own the attached media.",
+            "Reconnect the LinkedIn account that owns the media and allow SocialCastly to post.",
             _reconnect("LinkedIn") + _RETRY[:1],
         ),
         MEDIA_UNSUPPORTED: (
@@ -655,7 +684,7 @@ def friendly_error(
         "category": category,
         "network": net,
         # The platform's own (sanitised) reason, when it answered with an error.
-        "platform_reason": raw if raw and is_http_provider_code(code) else None,
+        "platform_reason": raw if raw and is_http_provider_code(code) and category != RATE_LIMIT else None,
         "banner": banner,
         "what_happened": what_happened,
         "what_to_do": what_to_do,

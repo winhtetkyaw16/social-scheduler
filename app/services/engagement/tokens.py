@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.services.engagement.base import AccountUnavailable, ReconnectRequired
 from app.services.error_messages import network_name
-from app.services.token_refresh import PUBLISH_LEEWAY_SECONDS, refresh_connected_account
+from app.services.token_refresh import PUBLISH_LEEWAY_SECONDS, expired_connection_notice, refresh_connected_account
 
 
 def reconnect_message(account) -> str:
@@ -61,3 +61,6 @@ def prepare_account(db: Session, account) -> None:
     db.refresh(account)
     if getattr(account, "needs_reconnect", False):
         raise ReconnectRequired(reconnect_message(account))
+    notice = expired_connection_notice(account)
+    if notice:
+        raise AccountUnavailable(notice)
